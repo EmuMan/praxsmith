@@ -1,0 +1,51 @@
+// Top-level constants
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
+
+// The main rule
+praxsmth = _{ SOI ~ definition* ~ EOI }
+
+// Common rules
+definition = _{
+    agent_def
+  | trait_def
+  | directional_def
+  | reciprocal_def
+  | evaluation_def
+}
+
+var_name = @{ (ASCII_ALPHANUMERIC | "_")+ }
+
+field_def = { var_name ~ ":" ~ field }
+
+field        = _{ number_range | variant_list }
+number_range =  { number ~ ".." ~ number }
+number       = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+variant_list =  { var_name ~ ("|" ~ var_name)+ }
+
+field_brackets = {
+    "{" ~ "}"
+  | "{" ~ field_def ~ ("," ~ field_def)* ~ ","? ~ "}"
+}
+
+// Agent rules
+agent_def = { "agent" ~ agent_inner }
+
+agent_inner = { var_name ~ agent_brackets? }
+
+agent_brackets = {
+    "{" ~ "}"
+  | "{" ~ agent_inner ~ ("," ~ agent_inner)* ~ ","? ~ "}"
+}
+
+// Trait rules
+trait_def = { "trait" ~ var_name ~ field_brackets? }
+
+// Directional rules
+directional_def = { "directional" ~ var_name ~ var_name ~ field_brackets? }
+
+// Reciprocal rules
+reciprocal_def = { "reciprocal" ~ var_name ~ field_brackets? }
+
+// Evaluation rules
+evaluation_def = { "evaluation" ~ var_name ~ var_name ~ field_brackets? }

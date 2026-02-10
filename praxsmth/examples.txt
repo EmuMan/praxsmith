@@ -1,0 +1,49 @@
+// Agents
+
+agent house {
+    living_room {
+        sofa,
+        bean_bag // someone on the bean bag is also in the house? not sure how to do
+    },
+    kitchen,
+    patio
+}
+
+agent dummy
+
+// Traits
+
+trait hungry
+
+trait confidence {
+    level: 0..100
+}
+
+trait lactose_intolerant {
+    severity: mild | moderate | severe,
+    prefers: oat_milk | almond_milk | lactose_free_milk | drink_milk_anyways
+}
+
+// Directional relationships
+
+directional in contains
+
+directional on holds
+
+directional likes liked_by {
+    strength: 0..100
+}
+
+// Reciprocal relationships
+
+reciprocal married_to {
+    since: 0..3000
+}
+
+reciprocal siblings
+
+// Evaluations
+
+evaluation annoyed_by annoys {
+    strength: slightly | moderately | strongly
+}
