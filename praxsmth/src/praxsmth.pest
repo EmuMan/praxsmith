@@ -74,11 +74,10 @@ practice_brackets = {
   | "{" ~ practice_field_def ~ ("," ~ practice_field_def)* ~ ","? ~ "}"
 }
 
-practice_field_def = {
-    #display = "display" ~ ":" ~ string
-  | #actions = "actions" ~ ":" ~ practice_actions
-  | var_name ~ ":" ~ field
-}
+practice_field_def     = _{ practice_display | practice_actions_field | practice_generic_field }
+practice_display       =  { "display" ~ ":" ~ string }
+practice_actions_field =  { "actions" ~ ":" ~ practice_actions }
+practice_generic_field =  { var_name ~ ":" ~ field }
 
 practice_actions = {
     "[" ~ "]"
@@ -89,12 +88,11 @@ practice_action = {
     "{" ~ practice_action_field_def ~ ("," ~ practice_action_field_def)* ~ ","? ~ "}"
 }
 
-practice_action_field_def = {
-    #for = "for" ~ ":" ~ var_name
-  | #name = "name" ~ ":" ~ string
-  | #conditions = "conditions" ~ ":" ~ practice_conditions
-  | #outcomes = "outcomes" ~ ":" ~ practice_outcomes
-}
+practice_action_field_def = _{ practice_for | practice_name | practice_conditions_field | practice_outcomes_field }
+practice_for              =  { "for" ~ ":" ~ var_name }
+practice_name             =  { "name" ~ ":" ~ string }
+practice_conditions_field =  { "conditions" ~ ":" ~ practice_conditions }
+practice_outcomes_field   =  { "outcomes" ~ ":" ~ practice_outcomes }
 
 practice_conditions = {
     "[" ~ "]"
@@ -119,12 +117,11 @@ practice_outcomes = {
   | "[" ~ practice_outcome ~ ("," ~ practice_outcome)* ~ ","? ~ "]"
 }
 
-practice_outcome = {
-    #print = "print" ~ string
-  | #delete = "delete" ~ sentence
-  | #set = "set" ~ sentence ~ "to" ~ value
-  | #increase = "increase" ~ sentence ~ "by" ~ number
-  | #cycle = "cycle" ~ sentence ~ "by" ~ number
-}
+practice_outcome = _{ outcome_print | outcome_delete | outcome_set | outcome_increase | outcome_cycle }
+outcome_print    =  { "print" ~ string }
+outcome_delete   =  { "delete" ~ sentence }
+outcome_set      =  { "set" ~ sentence ~ "to" ~ value }
+outcome_increase =  { "increase" ~ sentence ~ "by" ~ number }
+outcome_cycle    =  { "cycle" ~ sentence ~ "by" ~ number }
 
 sentence = ${ var_name ~ ("." ~ var_name)* }
