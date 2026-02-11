@@ -12,6 +12,8 @@ definition = _{
   | directional_def
   | reciprocal_def
   | evaluation_def
+  | emotion_def
+  | practice_def
 }
 
 var_name = @{ (ASCII_ALPHANUMERIC | "_")+ }
@@ -20,12 +22,23 @@ field_def = { var_name ~ ":" ~ field }
 
 field        = _{ number_range | variant_list }
 number_range =  { number ~ ".." ~ number }
-number       = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 variant_list =  { var_name ~ ("|" ~ var_name)+ }
 
 field_brackets = {
     "{" ~ "}"
   | "{" ~ field_def ~ ("," ~ field_def)* ~ ","? ~ "}"
+}
+
+value = _{ number | string }
+
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+
+string       = ${ "\"" ~ string_inner ~ "\"" }
+string_inner = @{ char* }
+char         =  {
+    !("\"" | "\\") ~ ANY
+  | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+  | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 
 // Agent rules
@@ -49,3 +62,69 @@ reciprocal_def = { "reciprocal" ~ var_name ~ field_brackets? }
 
 // Evaluation rules
 evaluation_def = { "evaluation" ~ var_name ~ var_name ~ field_brackets? }
+
+// Emotion rules
+emotion_def = { "emotion" ~ var_name ~ field_brackets? }
+
+// Practice rules
+practice_def      = { "practice" ~ var_name ~ practice_params ~ practice_brackets }
+practice_params   = { "(" ~ var_name ~ ("," ~ var_name)* ~ ")" }
+practice_brackets = {
+    "{" ~ "}"
+  | "{" ~ practice_field_def ~ ("," ~ practice_field_def)* ~ ","? ~ "}"
+}
+
+practice_field_def = {
+    #display = "display" ~ ":" ~ string
+  | #actions = "actions" ~ ":" ~ practice_actions
+  | var_name ~ ":" ~ field
+}
+
+practice_actions = {
+    "[" ~ "]"
+  | "[" ~ practice_action ~ ("," ~ practice_action)* ~ ","? ~ "]"
+}
+
+practice_action = {
+    "{" ~ practice_action_field_def ~ ("," ~ practice_action_field_def)* ~ ","? ~ "}"
+}
+
+practice_action_field_def = {
+    #for = "for" ~ ":" ~ var_name
+  | #name = "name" ~ ":" ~ string
+  | #conditions = "conditions" ~ ":" ~ practice_conditions
+  | #outcomes = "outcomes" ~ ":" ~ practice_outcomes
+}
+
+practice_conditions = {
+    "[" ~ "]"
+  | "[" ~ practice_condition ~ ("," ~ practice_condition)* ~ ","? ~ "]"
+}
+
+// Pratt parsing, following Pest's example
+practice_condition = {
+    pc_prefix? ~ pc_primary ~ (pc_infix ~ pc_prefix? ~ pc_primary)*
+}
+
+pc_infix   = _{ and | or | is }
+and        = @{ "and" ~ !ASCII_ALPHANUMERIC }
+or         = @{ "or" ~ !ASCII_ALPHANUMERIC }
+is         = @{ "is" ~ !ASCII_ALPHANUMERIC }
+pc_prefix  = _{ not }
+not        = @{ "not" ~ !ASCII_ALPHANUMERIC }
+pc_primary = _{ sentence }
+
+practice_outcomes = {
+    "[" ~ "]"
+  | "[" ~ practice_outcome ~ ("," ~ practice_outcome)* ~ ","? ~ "]"
+}
+
+practice_outcome = {
+    #print = "print" ~ string
+  | #delete = "delete" ~ sentence
+  | #set = "set" ~ sentence ~ "to" ~ value
+  | #increase = "increase" ~ sentence ~ "by" ~ number
+  | #cycle = "cycle" ~ sentence ~ "by" ~ number
+}
+
+sentence = ${ var_name ~ ("." ~ var_name)* }

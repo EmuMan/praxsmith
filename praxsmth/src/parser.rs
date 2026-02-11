@@ -19,6 +19,7 @@ enum PraxsmthValue {
     Directional(Directional),
     Reciprocal(Reciprocal),
     Evaluation(Evaluation),
+    Emotion(Emotion),
 }
 
 impl Serialize for PraxsmthValue {
@@ -29,6 +30,7 @@ impl Serialize for PraxsmthValue {
             PraxsmthValue::Directional(d) => d.serialize(),
             PraxsmthValue::Reciprocal(r) => r.serialize(),
             PraxsmthValue::Evaluation(e) => e.serialize(),
+            PraxsmthValue::Emotion(em) => em.serialize(),
         }
     }
 }
@@ -129,6 +131,18 @@ impl Serialize for Evaluation {
             "evaluation {} / {} {{{}}}",
             self.forward_name, self.backward_name, fields_str
         )
+    }
+}
+
+struct Emotion {
+    name: String,
+    fields: Vec<(String, Field)>,
+}
+
+impl Serialize for Emotion {
+    fn serialize(&self) -> String {
+        let fields_str = self.fields.serialize();
+        format!("emotion {} {{{}}}", self.name, fields_str)
     }
 }
 
@@ -259,6 +273,22 @@ fn parse_praxsmth(input_str: &str) -> Result<Vec<PraxsmthValue>, Error<Rule>> {
         }
     }
 
+    fn parse_emotion(pair: Pair<Rule>) -> Emotion {
+        // pair is Rule::emotion_def: "emotion" ~ var_name ~ emotion_brackets?
+        let mut inner = pair.into_inner();
+        let name = inner.next().unwrap().as_str().to_string();
+
+        // Check if there's a field_brackets
+        let fields = if let Some(brackets) = inner.next() {
+            // brackets is Rule::field_brackets, contains field_def pairs
+            parse_field_brackets(brackets)
+        } else {
+            Vec::new()
+        };
+
+        Emotion { name, fields }
+    }
+
     let values = pairs
         .filter(|pair| {
             matches!(
@@ -268,6 +298,7 @@ fn parse_praxsmth(input_str: &str) -> Result<Vec<PraxsmthValue>, Error<Rule>> {
                     | Rule::directional_def
                     | Rule::reciprocal_def
                     | Rule::evaluation_def
+                    | Rule::emotion_def
             )
         })
         .map(|pair| match pair.as_rule() {
@@ -280,6 +311,7 @@ fn parse_praxsmth(input_str: &str) -> Result<Vec<PraxsmthValue>, Error<Rule>> {
             Rule::directional_def => PraxsmthValue::Directional(parse_directional(pair)),
             Rule::reciprocal_def => PraxsmthValue::Reciprocal(parse_reciprocal(pair)),
             Rule::evaluation_def => PraxsmthValue::Evaluation(parse_evaluation(pair)),
+            Rule::emotion_def => PraxsmthValue::Emotion(parse_emotion(pair)),
             _ => unreachable!(),
         })
         .collect();

@@ -47,3 +47,50 @@ reciprocal siblings
 evaluation annoyed_by annoys {
     strength: slightly | moderately | strongly
 }
+
+// Emotions
+
+emotion happy
+emotion sad
+emotion angry
+emotion tired {
+    level: 0..10
+}
+
+// Practices
+
+practice greet (Greeter, Greeted) {
+    display: "[Greeter] is greeting [Greeted]",
+    actions: [
+        {
+            for: Greeter,
+            name: "Greet [Greeted]",
+            conditions: [
+                Greeter.in.Room and Greeted.in.Room // this is the same room for both parts
+            ],
+            outcomes: [
+                print "[Greeter] has greeted [Greeted]",
+                delete self
+            ],
+        }
+    ]
+}
+
+practice argue (Actor_1, Actor_2) {
+    display: "[Actor_1] and [Actor_2] are arguing",
+    turn: Actor_1 | Actor_2,
+    actions: [
+        {
+            for: Actor_1,
+            name: "Argue with [Actor_2]",
+            conditions: [
+                turn is Actor_1
+            ],
+            outcomes: [
+                set Actor_2.annoyed_by.Actor_1.reason to "we argued earlier",
+                increase Actor_2.annoyed_by.Actor_1.strength by 1,
+                cycle self.turn by 1
+            ]
+        }
+    ]
+}
