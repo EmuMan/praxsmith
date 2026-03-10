@@ -9,4 +9,76 @@ agent house {
     patio
 }
 
-agent dummy
+agent robin
+agent demetrius
+agent maru
+agent sebastian
+
+// Relationships
+
+robin.is_married_to.demetrius {
+    since: 2010
+}
+
+maru.is_sibling_of.sebastian
+sebastian.is_child_of.robin
+sebastian.is_child_of.demetrius
+maru.is_child_of.robin
+maru.is_child_of.demetrius
+
+robin.likes.demetrius {
+    strength: 90
+}
+
+demetrius.likes.robin {
+    strength: 90
+}
+
+robin.is_in.house.living_room.sofa
+demetrius.is_in.house.living_room.sofa
+
+robin.likes.sebastian {
+    strength: 80
+}
+
+sebastian.likes.robin {
+    strength: 30
+}
+
+// Evaluations
+
+sebastian.is_annoyed_by.robin {
+    strength: moderately,
+    reason: "I am edgy and Robin is my mom"
+}
+
+sebastian.annoys.maru {
+    strength: strongly,
+    reason: "He is way too edgy all the time"
+}
+
+// Traits
+
+robin.is.hungry
+demetrius.is.confident {
+    level: 80
+}
+
+maru.is.lactose_intolerant {
+    severity: moderate,
+    prefers: almond_milk
+}
+
+// Emotions
+
+sebastian.feels.tired {
+    level: 7
+}
+
+demetrius.feels.happy
+
+// Practices
+
+practice.greet.demetrius.robin
+
+practice.argue.sebastian.maru

@@ -13,9 +13,11 @@ trait lactose_intolerant {
 
 // Directional relationships
 
-directional in contains
+directional is_in contains
 
 directional on holds
+
+directional is_child_of is_parent_of
 
 directional likes liked_by {
     strength: 0..100
@@ -23,15 +25,15 @@ directional likes liked_by {
 
 // Reciprocal relationships
 
-reciprocal married_to {
+reciprocal is_married_to {
     since: 0..3000
 }
 
-reciprocal siblings
+reciprocal is_sibling_of
 
 // Evaluations
 
-evaluation annoyed_by annoys {
+evaluation is_annoyed_by annoys {
     strength: slightly | moderately | strongly
 }
 
