@@ -1,12 +1,12 @@
 // Agents
 
-agent house {
-    living_room {
-        sofa,
-        bean_bag // someone on the bean bag is also in the house? not sure how to do
-    },
-    kitchen,
-    patio
+agent house "House" {
+    living_room "Living Room" {
+        sofa "Sofa"
+        bean_bag "Bean Bag" // someone on the bean bag is also in the house? not sure how to do
+    }
+    kitchen "Kitchen"
+    patio "Patio"
 }
 
 agent robin
@@ -48,12 +48,12 @@ sebastian.likes.robin {
 // Evaluations
 
 sebastian.is_annoyed_by.robin {
-    strength: moderately,
+    strength: moderately
     reason: "I am edgy and Robin is my mom"
 }
 
 sebastian.annoys.maru {
-    strength: strongly,
+    strength: strongly
     reason: "He is way too edgy all the time"
 }
 
@@ -65,7 +65,7 @@ demetrius.is.confident {
 }
 
 maru.is.lactose_intolerant {
-    severity: moderate,
+    severity: moderate
     prefers: almond_milk
 }
 

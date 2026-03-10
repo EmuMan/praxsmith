@@ -19,7 +19,7 @@ variant_list =  { var_name ~ ("|" ~ var_name)+ }
 
 field_brackets = {
     "{" ~ "}"
-  | "{" ~ field_def ~ ("," ~ field_def)* ~ ","? ~ "}"
+  | "{" ~ field_def+ ~ "}"
 }
 
 value = _{ number | string }
@@ -67,7 +67,7 @@ t_practice          = { "practice" ~ var_name ~ t_practice_params ~ t_practice_b
 t_practice_params   = { "(" ~ var_name ~ ("," ~ var_name)* ~ ")" }
 t_practice_brackets = {
     "{" ~ "}"
-  | "{" ~ t_practice_field_def ~ ("," ~ t_practice_field_def)* ~ ","? ~ "}"
+  | "{" ~ t_practice_field_def+ ~ "}"
 }
 
 t_practice_field_def     = _{ t_practice_display | t_practice_actions_field | t_practice_generic_field }
@@ -77,11 +77,11 @@ t_practice_generic_field =  { var_name ~ ":" ~ field }
 
 t_practice_actions = {
     "[" ~ "]"
-  | "[" ~ t_practice_action ~ ("," ~ t_practice_action)* ~ ","? ~ "]"
+  | "[" ~ t_practice_action+ ~ "]"
 }
 
 t_practice_action = {
-    "{" ~ t_practice_action_field_def ~ ("," ~ t_practice_action_field_def)* ~ ","? ~ "}"
+    "{" ~ t_practice_action_field_def+ ~ "}"
 }
 
 t_practice_action_field_def = _{ t_practice_for | t_practice_name | t_practice_conditions_field | t_practice_outcomes_field }
@@ -92,7 +92,7 @@ t_practice_outcomes_field   =  { "outcomes" ~ ":" ~ t_practice_outcomes }
 
 t_practice_conditions = {
     "[" ~ "]"
-  | "[" ~ t_practice_condition ~ ("," ~ t_practice_condition)* ~ ","? ~ "]"
+  | "[" ~ t_practice_condition+ ~ "]"
 }
 
 // Pratt parsing, following Pest's example
@@ -110,7 +110,7 @@ pc_primary = _{ sentence }
 
 t_practice_outcomes = {
     "[" ~ "]"
-  | "[" ~ t_practice_outcome ~ ("," ~ t_practice_outcome)* ~ ","? ~ "]"
+  | "[" ~ t_practice_outcome+ ~ "]"
 }
 
 t_practice_outcome = _{ outcome_print | outcome_delete | outcome_set | outcome_increase | outcome_cycle }
@@ -135,5 +135,5 @@ w_agent_inner = { var_name ~ w_agent_brackets? }
 
 w_agent_brackets = {
     "{" ~ "}"
-  | "{" ~ w_agent_inner ~ ("," ~ w_agent_inner)* ~ ","? ~ "}"
+  | "{" ~ w_agent_inner+ ~ "}"
 }
