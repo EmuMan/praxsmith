@@ -1,0 +1,12 @@
+// Agents
+
+agent house {
+    living_room {
+        sofa,
+        bean_bag // someone on the bean bag is also in the house? not sure how to do
+    },
+    kitchen,
+    patio
+}
+
+agent dummy

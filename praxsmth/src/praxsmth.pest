@@ -2,21 +2,14 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 
-// The main rule
-praxsmth = _{ SOI ~ definition* ~ EOI }
+// Top level rules
+praxsmth_types = _{ SOI ~ type_definition* ~ EOI }
+praxsmth_world = _{ SOI ~ world_definition* ~ EOI }
 
 // Common rules
-definition = _{
-    agent_def
-  | trait_def
-  | directional_def
-  | reciprocal_def
-  | evaluation_def
-  | emotion_def
-  | practice_def
-}
-
 var_name = @{ (ASCII_ALPHANUMERIC | "_")+ }
+
+sentence = ${ var_name ~ ("." ~ var_name)* }
 
 field_def = { var_name ~ ":" ~ field }
 
@@ -41,66 +34,69 @@ char         =  {
   | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 
-// Agent rules
-agent_def = { "agent" ~ agent_inner }
+// ================
+// TYPE DEFINITIONS
+// ================
 
-agent_inner = { var_name ~ agent_brackets? }
-
-agent_brackets = {
-    "{" ~ "}"
-  | "{" ~ agent_inner ~ ("," ~ agent_inner)* ~ ","? ~ "}"
+type_definition = _{
+    t_trait
+  | t_directional
+  | t_reciprocal
+  | t_evaluation
+  | t_emotion
+  | t_practice
 }
 
 // Trait rules
-trait_def = { "trait" ~ var_name ~ field_brackets? }
+t_trait = { "trait" ~ var_name ~ field_brackets? }
 
 // Directional rules
-directional_def = { "directional" ~ var_name ~ var_name ~ field_brackets? }
+t_directional = { "directional" ~ var_name ~ var_name ~ field_brackets? }
 
 // Reciprocal rules
-reciprocal_def = { "reciprocal" ~ var_name ~ field_brackets? }
+t_reciprocal = { "reciprocal" ~ var_name ~ field_brackets? }
 
 // Evaluation rules
-evaluation_def = { "evaluation" ~ var_name ~ var_name ~ field_brackets? }
+t_evaluation = { "evaluation" ~ var_name ~ var_name ~ field_brackets? }
 
 // Emotion rules
-emotion_def = { "emotion" ~ var_name ~ field_brackets? }
+t_emotion = { "emotion" ~ var_name ~ field_brackets? }
 
 // Practice rules
-practice_def      = { "practice" ~ var_name ~ practice_params ~ practice_brackets }
-practice_params   = { "(" ~ var_name ~ ("," ~ var_name)* ~ ")" }
-practice_brackets = {
+t_practice          = { "practice" ~ var_name ~ t_practice_params ~ t_practice_brackets }
+t_practice_params   = { "(" ~ var_name ~ ("," ~ var_name)* ~ ")" }
+t_practice_brackets = {
     "{" ~ "}"
-  | "{" ~ practice_field_def ~ ("," ~ practice_field_def)* ~ ","? ~ "}"
+  | "{" ~ t_practice_field_def ~ ("," ~ t_practice_field_def)* ~ ","? ~ "}"
 }
 
-practice_field_def     = _{ practice_display | practice_actions_field | practice_generic_field }
-practice_display       =  { "display" ~ ":" ~ string }
-practice_actions_field =  { "actions" ~ ":" ~ practice_actions }
-practice_generic_field =  { var_name ~ ":" ~ field }
+t_practice_field_def     = _{ t_practice_display | t_practice_actions_field | t_practice_generic_field }
+t_practice_display       =  { "display" ~ ":" ~ string }
+t_practice_actions_field =  { "actions" ~ ":" ~ t_practice_actions }
+t_practice_generic_field =  { var_name ~ ":" ~ field }
 
-practice_actions = {
+t_practice_actions = {
     "[" ~ "]"
-  | "[" ~ practice_action ~ ("," ~ practice_action)* ~ ","? ~ "]"
+  | "[" ~ t_practice_action ~ ("," ~ t_practice_action)* ~ ","? ~ "]"
 }
 
-practice_action = {
-    "{" ~ practice_action_field_def ~ ("," ~ practice_action_field_def)* ~ ","? ~ "}"
+t_practice_action = {
+    "{" ~ t_practice_action_field_def ~ ("," ~ t_practice_action_field_def)* ~ ","? ~ "}"
 }
 
-practice_action_field_def = _{ practice_for | practice_name | practice_conditions_field | practice_outcomes_field }
-practice_for              =  { "for" ~ ":" ~ var_name }
-practice_name             =  { "name" ~ ":" ~ string }
-practice_conditions_field =  { "conditions" ~ ":" ~ practice_conditions }
-practice_outcomes_field   =  { "outcomes" ~ ":" ~ practice_outcomes }
+t_practice_action_field_def = _{ t_practice_for | t_practice_name | t_practice_conditions_field | t_practice_outcomes_field }
+t_practice_for              =  { "for" ~ ":" ~ var_name }
+t_practice_name             =  { "name" ~ ":" ~ string }
+t_practice_conditions_field =  { "conditions" ~ ":" ~ t_practice_conditions }
+t_practice_outcomes_field   =  { "outcomes" ~ ":" ~ t_practice_outcomes }
 
-practice_conditions = {
+t_practice_conditions = {
     "[" ~ "]"
-  | "[" ~ practice_condition ~ ("," ~ practice_condition)* ~ ","? ~ "]"
+  | "[" ~ t_practice_condition ~ ("," ~ t_practice_condition)* ~ ","? ~ "]"
 }
 
 // Pratt parsing, following Pest's example
-practice_condition = {
+t_practice_condition = {
     pc_prefix? ~ pc_primary ~ (pc_infix ~ pc_prefix? ~ pc_primary)*
 }
 
@@ -112,16 +108,32 @@ pc_prefix  = _{ not }
 not        = @{ "not" ~ !ASCII_ALPHANUMERIC }
 pc_primary = _{ sentence }
 
-practice_outcomes = {
+t_practice_outcomes = {
     "[" ~ "]"
-  | "[" ~ practice_outcome ~ ("," ~ practice_outcome)* ~ ","? ~ "]"
+  | "[" ~ t_practice_outcome ~ ("," ~ t_practice_outcome)* ~ ","? ~ "]"
 }
 
-practice_outcome = _{ outcome_print | outcome_delete | outcome_set | outcome_increase | outcome_cycle }
-outcome_print    =  { "print" ~ string }
-outcome_delete   =  { "delete" ~ sentence }
-outcome_set      =  { "set" ~ sentence ~ "to" ~ value }
-outcome_increase =  { "increase" ~ sentence ~ "by" ~ number }
-outcome_cycle    =  { "cycle" ~ sentence ~ "by" ~ number }
+t_practice_outcome = _{ outcome_print | outcome_delete | outcome_set | outcome_increase | outcome_cycle }
+outcome_print      =  { "print" ~ string }
+outcome_delete     =  { "delete" ~ sentence }
+outcome_set        =  { "set" ~ sentence ~ "to" ~ value }
+outcome_increase   =  { "increase" ~ sentence ~ "by" ~ number }
+outcome_cycle      =  { "cycle" ~ sentence ~ "by" ~ number }
 
-sentence = ${ var_name ~ ("." ~ var_name)* }
+// =================
+// WORLD DEFINITIONS
+// =================
+
+world_definition = _{
+    w_agent
+}
+
+// Agent rules
+w_agent = { "agent" ~ w_agent_inner }
+
+w_agent_inner = { var_name ~ w_agent_brackets? }
+
+w_agent_brackets = {
+    "{" ~ "}"
+  | "{" ~ w_agent_inner ~ ("," ~ w_agent_inner)* ~ ","? ~ "}"
+}
