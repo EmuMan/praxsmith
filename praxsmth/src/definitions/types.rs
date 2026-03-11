@@ -1,4 +1,6 @@
-use crate::Serialize;
+use crate::definitions::{PraxsmthValue, Serialize};
+
+use crate::definitions::{PraxsmthField, Sentence};
 
 pub enum PraxsmthTypes {
     Trait(Trait),
@@ -22,33 +24,9 @@ impl Serialize for PraxsmthTypes {
     }
 }
 
-pub enum Field {
-    NumberRange(i64, i64),
-    VariantList(Vec<String>),
-}
-
-impl Serialize for Field {
-    fn serialize(&self) -> String {
-        match self {
-            Field::NumberRange(start, end) => format!("{}..{}", start, end),
-            Field::VariantList(variants) => variants.join(" | "),
-        }
-    }
-}
-
-impl Serialize for Vec<(String, Field)> {
-    fn serialize(&self) -> String {
-        let fields_str: Vec<_> = self
-            .iter()
-            .map(|(name, field)| format!("{}: {}", name, field.serialize()))
-            .collect();
-        fields_str.join(", ")
-    }
-}
-
 pub struct Trait {
     pub name: String,
-    pub fields: Vec<(String, Field)>,
+    pub fields: Vec<(String, PraxsmthField)>,
 }
 
 impl Serialize for Trait {
@@ -64,7 +42,7 @@ impl Serialize for Trait {
 pub struct Directional {
     pub forward_name: String,
     pub backward_name: String,
-    pub fields: Vec<(String, Field)>,
+    pub fields: Vec<(String, PraxsmthField)>,
 }
 
 impl Serialize for Directional {
@@ -79,7 +57,7 @@ impl Serialize for Directional {
 
 pub struct Reciprocal {
     pub name: String,
-    pub fields: Vec<(String, Field)>,
+    pub fields: Vec<(String, PraxsmthField)>,
 }
 
 impl Serialize for Reciprocal {
@@ -92,7 +70,7 @@ impl Serialize for Reciprocal {
 pub struct Evaluation {
     pub forward_name: String,
     pub backward_name: String,
-    pub fields: Vec<(String, Field)>,
+    pub fields: Vec<(String, PraxsmthField)>,
 }
 
 impl Serialize for Evaluation {
@@ -107,7 +85,7 @@ impl Serialize for Evaluation {
 
 pub struct Emotion {
     pub name: String,
-    pub fields: Vec<(String, Field)>,
+    pub fields: Vec<(String, PraxsmthField)>,
 }
 
 impl Serialize for Emotion {
@@ -122,7 +100,7 @@ pub struct Practice {
     pub params: Vec<String>,
     pub display: Option<String>,
     pub actions: Option<Vec<PracticeAction>>,
-    pub fields: Vec<(String, Field)>,
+    pub fields: Vec<(String, PraxsmthField)>,
 }
 
 pub struct PracticeAction {
@@ -133,7 +111,7 @@ pub struct PracticeAction {
 }
 
 pub enum PracticeCondition {
-    Sentence(String),
+    Value(PraxsmthValue),
     And(Box<PracticeCondition>, Box<PracticeCondition>),
     Or(Box<PracticeCondition>, Box<PracticeCondition>),
     Is(Box<PracticeCondition>, Box<PracticeCondition>),
@@ -142,10 +120,10 @@ pub enum PracticeCondition {
 
 pub enum PracticeOutcome {
     Print(String),
-    Delete(String),
-    Set(String, String),
-    Increase(String, i64),
-    Cycle(String, i64),
+    Delete(Sentence),
+    Set(Sentence, PraxsmthValue),
+    Increase(Sentence, i64),
+    Cycle(Sentence, i64),
 }
 
 impl Serialize for Practice {

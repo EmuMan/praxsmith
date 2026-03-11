@@ -6,17 +6,49 @@ use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest_derive::Parser;
 
-use crate::Serialize;
-use crate::types::*;
+use crate::definitions::{
+    PraxsmthConstant, PraxsmthField, PraxsmthValue, Sentence, Serialize, types::*,
+};
 
 #[derive(Parser)]
 #[grammar = "praxsmth.pest"]
 struct PraxsmthParser;
 
+fn parse_string(pair: Pair<Rule>) -> String {
+    // pair is Rule::string
+    pair.as_str().trim_matches('"').to_string()
+}
+
+fn parse_sentence(pair: Pair<Rule>) -> Sentence {
+    // pair is Rule::sentence
+    pair.into_inner()
+        .map(|token| token.as_str().to_string())
+        .collect()
+}
+
+fn parse_value(pair: Pair<Rule>) -> PraxsmthValue {
+    match pair.as_rule() {
+        Rule::number => PraxsmthValue::Number(pair.as_str().parse().unwrap()),
+        Rule::string => PraxsmthValue::String(parse_string(pair)),
+        Rule::var_name => PraxsmthValue::Variant(pair.as_str().to_string()),
+        Rule::variable => PraxsmthValue::Variable(parse_sentence(pair)),
+        _ => unreachable!(),
+    }
+}
+
+fn parse_constant(pair: Pair<Rule>) -> PraxsmthConstant {
+    match pair.as_rule() {
+        Rule::number => PraxsmthConstant::Number(pair.as_str().parse().unwrap()),
+        Rule::string => PraxsmthConstant::String(parse_string(pair)),
+        Rule::var_name => PraxsmthConstant::Variant(pair.as_str().to_string()),
+        _ => unreachable!(),
+    }
+}
+
 fn parse_types(input_str: &str) -> Result<Vec<PraxsmthTypes>, Error<Rule>> {
     let pairs = PraxsmthParser::parse(Rule::praxsmth_types, input_str)?;
 
-    fn parse_field(pair: Pair<Rule>) -> Field {
+    fn parse_field(pair: Pair<Rule>) -> PraxsmthField {
         // pair is either Rule::number_range or Rule::variant_list
         match pair.as_rule() {
             Rule::number_range => {
@@ -24,7 +56,7 @@ fn parse_types(input_str: &str) -> Result<Vec<PraxsmthTypes>, Error<Rule>> {
                 let mut numbers = pair.into_inner();
                 let start: i64 = numbers.next().unwrap().as_str().parse().unwrap();
                 let end: i64 = numbers.next().unwrap().as_str().parse().unwrap();
-                Field::NumberRange(start, end)
+                PraxsmthField::NumberRange(start, end)
             }
             Rule::variant_list => {
                 // variant_list is: var_name ~ ("|" ~ var_name)+
@@ -32,13 +64,13 @@ fn parse_types(input_str: &str) -> Result<Vec<PraxsmthTypes>, Error<Rule>> {
                     .into_inner()
                     .map(|var| var.as_str().to_string())
                     .collect();
-                Field::VariantList(variants)
+                PraxsmthField::VariantList(variants)
             }
             _ => unreachable!(),
         }
     }
 
-    fn parse_field_brackets(pair: Pair<Rule>) -> Vec<(String, Field)> {
+    fn parse_field_brackets(pair: Pair<Rule>) -> Vec<(String, PraxsmthField)> {
         // pair is Rule::field_brackets, contains field_def pairs
         pair.into_inner()
             .map(|field_def| {
@@ -143,9 +175,9 @@ fn parse_types(input_str: &str) -> Result<Vec<PraxsmthTypes>, Error<Rule>> {
 
     fn parse_practice_condition(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> PracticeCondition {
         pratt
-            .map_primary(|primary| match primary.as_rule() {
-                Rule::sentence => PracticeCondition::Sentence(primary.as_str().to_string()),
-                _ => unreachable!(),
+            .map_primary(|primary| {
+                println!("Parsing primary condition: {:?}", primary);
+                PracticeCondition::Value(parse_value(primary))
             })
             .map_prefix(|op, rhs| match op.as_rule() {
                 Rule::not => PracticeCondition::Not(Box::new(rhs)),
@@ -168,37 +200,32 @@ fn parse_types(input_str: &str) -> Result<Vec<PraxsmthTypes>, Error<Rule>> {
             Rule::outcome_print => {
                 // "print" ~ string
                 let string_pair = inner.next().unwrap();
-                PracticeOutcome::Print(string_pair.as_str().trim_matches('"').to_string())
+                PracticeOutcome::Print(parse_string(string_pair))
             }
             Rule::outcome_delete => {
                 // "delete" ~ sentence
                 let sentence_pair = inner.next().unwrap();
-                PracticeOutcome::Delete(sentence_pair.as_str().to_string())
+                PracticeOutcome::Delete(parse_sentence(sentence_pair))
             }
             Rule::outcome_set => {
                 // "set" ~ sentence ~ "to" ~ value
                 let sentence_pair = inner.next().unwrap();
                 let value_pair = inner.next().unwrap();
-                let value_str = match value_pair.as_rule() {
-                    Rule::string => value_pair.as_str().trim_matches('"').to_string(),
-                    Rule::number => value_pair.as_str().to_string(),
-                    _ => unreachable!(),
-                };
-                PracticeOutcome::Set(sentence_pair.as_str().to_string(), value_str)
+                PracticeOutcome::Set(parse_sentence(sentence_pair), parse_value(value_pair))
             }
             Rule::outcome_increase => {
                 // "increase" ~ sentence ~ "by" ~ number
                 let sentence_pair = inner.next().unwrap();
                 let number_pair = inner.next().unwrap();
                 let num: i64 = number_pair.as_str().parse().unwrap();
-                PracticeOutcome::Increase(sentence_pair.as_str().to_string(), num)
+                PracticeOutcome::Increase(parse_sentence(sentence_pair), num)
             }
             Rule::outcome_cycle => {
                 // "cycle" ~ sentence ~ "by" ~ number
                 let sentence_pair = inner.next().unwrap();
                 let number_pair = inner.next().unwrap();
                 let num: i64 = number_pair.as_str().parse().unwrap();
-                PracticeOutcome::Cycle(sentence_pair.as_str().to_string(), num)
+                PracticeOutcome::Cycle(parse_sentence(sentence_pair), num)
             }
             _ => unreachable!(),
         }
@@ -224,7 +251,7 @@ fn parse_types(input_str: &str) -> Result<Vec<PraxsmthTypes>, Error<Rule>> {
                 Rule::t_practice_name => {
                     // "name" ~ ":" ~ string
                     let string_pair = inner.next().unwrap();
-                    name = string_pair.as_str().trim_matches('"').to_string();
+                    name = parse_string(string_pair);
                 }
                 Rule::t_practice_conditions_field => {
                     // "conditions" ~ ":" ~ t_practice_conditions
@@ -288,7 +315,7 @@ fn parse_types(input_str: &str) -> Result<Vec<PraxsmthTypes>, Error<Rule>> {
                 Rule::t_practice_display => {
                     // "display" ~ ":" ~ string
                     let string_pair = field_inner.next().unwrap();
-                    display = Some(string_pair.as_str().trim_matches('"').to_string());
+                    display = Some(parse_string(string_pair));
                 }
                 Rule::t_practice_actions_field => {
                     // "actions" ~ ":" ~ t_practice_actions

@@ -7,25 +7,7 @@ praxsmth_types = _{ SOI ~ type_definition* ~ EOI }
 praxsmth_world = _{ SOI ~ world_definition* ~ EOI }
 
 // Common rules
-var_name = @{ (ASCII_ALPHANUMERIC | "_")+ }
-
-sentence = ${ var_name ~ ("." ~ var_name)* }
-
-field_def = { var_name ~ ":" ~ field }
-
-field        = _{ number_range | variant_list }
-number_range =  { number ~ ".." ~ number }
-variant_list =  { var_name ~ ("|" ~ var_name)+ }
-
-field_brackets = {
-    "{" ~ "}"
-  | "{" ~ field_def+ ~ "}"
-}
-
-value = _{ number | string }
-
-number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-
+number       = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 string       = ${ "\"" ~ string_inner ~ "\"" }
 string_inner = @{ char* }
 char         =  {
@@ -33,6 +15,18 @@ char         =  {
   | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
   | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
+var_name     = @{ (ASCII_ALPHANUMERIC | "_")+ }
+sentence     = ${ var_name ~ ("." ~ var_name)* }
+variable     = ${ "$" ~ sentence }
+
+field_brackets =  { "{" ~ field_def* ~ "}" }
+field_def      =  { var_name ~ ":" ~ field }
+field          = _{ number_range | variant_list }
+number_range   =  { number ~ ".." ~ number }
+variant_list   =  { var_name ~ ("|" ~ var_name)+ }
+
+const = _{ number | string | var_name }
+value = _{ number | string | var_name | variable }
 
 // ================
 // TYPE DEFINITIONS
@@ -65,20 +59,14 @@ t_emotion = { "emotion" ~ var_name ~ field_brackets? }
 // Practice rules
 t_practice          = { "practice" ~ var_name ~ t_practice_params ~ t_practice_brackets }
 t_practice_params   = { "(" ~ var_name ~ ("," ~ var_name)* ~ ")" }
-t_practice_brackets = {
-    "{" ~ "}"
-  | "{" ~ t_practice_field_def+ ~ "}"
-}
+t_practice_brackets = { "{" ~ t_practice_field_def* ~ "}" }
 
 t_practice_field_def     = _{ t_practice_display | t_practice_actions_field | t_practice_generic_field }
 t_practice_display       =  { "display" ~ ":" ~ string }
 t_practice_actions_field =  { "actions" ~ ":" ~ t_practice_actions }
 t_practice_generic_field =  { var_name ~ ":" ~ field }
 
-t_practice_actions = {
-    "[" ~ "]"
-  | "[" ~ t_practice_action+ ~ "]"
-}
+t_practice_actions = { "[" ~ t_practice_action* ~ "]" }
 
 t_practice_action = {
     "{" ~ t_practice_action_field_def+ ~ "}"
@@ -90,10 +78,7 @@ t_practice_name             =  { "name" ~ ":" ~ string }
 t_practice_conditions_field =  { "conditions" ~ ":" ~ t_practice_conditions }
 t_practice_outcomes_field   =  { "outcomes" ~ ":" ~ t_practice_outcomes }
 
-t_practice_conditions = {
-    "[" ~ "]"
-  | "[" ~ t_practice_condition+ ~ "]"
-}
+t_practice_conditions = { "[" ~ t_practice_condition* ~ "]" }
 
 // Pratt parsing, following Pest's example
 t_practice_condition = {
@@ -106,12 +91,9 @@ or         = @{ "or" ~ !ASCII_ALPHANUMERIC }
 is         = @{ "is" ~ !ASCII_ALPHANUMERIC }
 pc_prefix  = _{ not }
 not        = @{ "not" ~ !ASCII_ALPHANUMERIC }
-pc_primary = _{ sentence }
+pc_primary = _{ value }
 
-t_practice_outcomes = {
-    "[" ~ "]"
-  | "[" ~ t_practice_outcome+ ~ "]"
-}
+t_practice_outcomes = { "[" ~ t_practice_outcome* ~ "]" }
 
 t_practice_outcome = _{ outcome_print | outcome_delete | outcome_set | outcome_increase | outcome_cycle }
 outcome_print      =  { "print" ~ string }
@@ -126,14 +108,16 @@ outcome_cycle      =  { "cycle" ~ sentence ~ "by" ~ number }
 
 world_definition = _{
     w_agent
+  | w_declaration
 }
 
 // Agent rules
 w_agent = { "agent" ~ w_agent_inner }
 
-w_agent_inner = { var_name ~ w_agent_brackets? }
+w_agent_inner    = { var_name ~ ("as" ~ string)? ~ w_agent_brackets? }
+w_agent_brackets = { "{" ~ w_agent_inner* ~ "}" }
 
-w_agent_brackets = {
-    "{" ~ "}"
-  | "{" ~ w_agent_inner+ ~ "}"
-}
+// Declaration rules
+w_declaration    = { sentence ~ w_decl_brackets? }
+w_decl_brackets  = { "{" ~ w_decl_field_def* ~ "}" }
+w_decl_field_def = { var_name ~ ":" ~ value }

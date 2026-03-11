@@ -55,7 +55,7 @@ practice greet (Greeter, Greeted) {
             for: Greeter
             name: "Greet [Greeted]"
             conditions: [
-                Greeter.in.Room and Greeted.in.Room // this is the same room for both parts
+                $Greeter.in.Room and $Greeted.in.Room // this is the same room for both parts
             ]
             outcomes: [
                 print "[Greeter] has greeted [Greeted]"
@@ -73,7 +73,7 @@ practice argue (Actor_1, Actor_2) {
             for: Actor_1
             name: "Argue with [Actor_2]"
             conditions: [
-                turn is Actor_1
+                turn is $Actor_1
             ]
             outcomes: [
                 set Actor_2.annoyed_by.Actor_1.reason to "we argued earlier"
