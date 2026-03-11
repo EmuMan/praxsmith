@@ -8,6 +8,15 @@ pub enum PraxsmthWorldDefinition {
     Declaration(Declaration),
 }
 
+impl Serialize for PraxsmthWorldDefinition {
+    fn serialize(&self) -> String {
+        match self {
+            PraxsmthWorldDefinition::Agent(a) => a.serialize(),
+            PraxsmthWorldDefinition::Declaration(d) => d.serialize(),
+        }
+    }
+}
+
 pub struct Agent {
     pub name: String,
     pub subagents: HashMap<String, Agent>,
@@ -19,7 +28,7 @@ impl Serialize for Agent {
             self.name.clone()
         } else {
             let subagents_str: Vec<_> = self.subagents.iter().map(|(_, a)| a.serialize()).collect();
-            format!("agent {} {{{}}}", self.name, subagents_str.join(", "))
+            format!("{} {{{}}}", self.name, subagents_str.join(", "))
         }
     }
 }

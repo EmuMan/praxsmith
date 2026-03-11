@@ -120,4 +120,4 @@ w_agent_brackets = { "{" ~ w_agent_inner* ~ "}" }
 // Declaration rules
 w_declaration    = { sentence ~ w_decl_brackets? }
 w_decl_brackets  = { "{" ~ w_decl_field_def* ~ "}" }
-w_decl_field_def = { var_name ~ ":" ~ value }
+w_decl_field_def = { var_name ~ ":" ~ const }
