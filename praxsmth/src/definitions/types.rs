@@ -2,7 +2,7 @@ use crate::definitions::{PraxsmthValue, Serialize};
 
 use crate::definitions::{PraxsmthField, Sentence};
 
-pub enum PraxsmthTypes {
+pub enum PraxsmthType {
     Trait(Trait),
     Directional(Directional),
     Reciprocal(Reciprocal),
@@ -11,15 +11,15 @@ pub enum PraxsmthTypes {
     Practice(Practice),
 }
 
-impl Serialize for PraxsmthTypes {
+impl Serialize for PraxsmthType {
     fn serialize(&self) -> String {
         match self {
-            PraxsmthTypes::Trait(t) => t.serialize(),
-            PraxsmthTypes::Directional(d) => d.serialize(),
-            PraxsmthTypes::Reciprocal(r) => r.serialize(),
-            PraxsmthTypes::Evaluation(e) => e.serialize(),
-            PraxsmthTypes::Emotion(em) => em.serialize(),
-            PraxsmthTypes::Practice(p) => p.serialize(),
+            PraxsmthType::Trait(t) => t.serialize(),
+            PraxsmthType::Directional(d) => d.serialize(),
+            PraxsmthType::Reciprocal(r) => r.serialize(),
+            PraxsmthType::Evaluation(e) => e.serialize(),
+            PraxsmthType::Emotion(em) => em.serialize(),
+            PraxsmthType::Practice(p) => p.serialize(),
         }
     }
 }

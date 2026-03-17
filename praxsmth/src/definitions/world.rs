@@ -1,4 +1,4 @@
-use crate::definitions::Serialize;
+use crate::definitions::{Sentence, Serialize};
 use std::collections::HashMap;
 
 use crate::definitions::PraxsmthConstant;
@@ -34,7 +34,7 @@ impl Serialize for Agent {
 }
 
 pub struct Declaration {
-    pub name: String,
+    pub sentence: Sentence,
     pub fields: HashMap<String, PraxsmthConstant>,
 }
 
@@ -45,6 +45,10 @@ impl Serialize for Declaration {
             .iter()
             .map(|(name, value)| format!("{}: {}", name, value.serialize()))
             .collect();
-        format!("declaration {} {{{}}}", self.name, fields_str.join(", "))
+        format!(
+            "declaration {} {{{}}}",
+            self.sentence.serialize(),
+            fields_str.join(", ")
+        )
     }
 }

@@ -7,6 +7,12 @@ pub trait Serialize {
 
 pub type Sentence = Vec<String>;
 
+impl Serialize for Sentence {
+    fn serialize(&self) -> String {
+        self.join(".")
+    }
+}
+
 pub enum PraxsmthConstant {
     Number(i64),
     Variant(String),

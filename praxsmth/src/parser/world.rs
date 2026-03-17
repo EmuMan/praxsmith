@@ -44,7 +44,7 @@ fn parse_declaration(pair: Pair<Rule>) -> Declaration {
     let mut inner = pair.into_inner();
 
     let sentence_pair = inner.next().unwrap();
-    let name = parse_sentence(sentence_pair).join(".");
+    let sentence = parse_sentence(sentence_pair);
 
     let mut fields = HashMap::new();
 
@@ -59,7 +59,7 @@ fn parse_declaration(pair: Pair<Rule>) -> Declaration {
         }
     }
 
-    Declaration { name, fields }
+    Declaration { sentence, fields }
 }
 
 pub fn parse_world(input_str: &str) -> Result<Vec<PraxsmthWorldDefinition>, Error<Rule>> {

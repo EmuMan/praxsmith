@@ -274,7 +274,7 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practice {
     }
 }
 
-pub fn parse_types(input_str: &str) -> Result<Vec<PraxsmthTypes>, Error<Rule>> {
+pub fn parse_types(input_str: &str) -> Result<Vec<PraxsmthType>, Error<Rule>> {
     let pairs = PraxsmthParser::parse(Rule::praxsmth_types, input_str)?;
 
     let practice_pratt = PrattParser::new()
@@ -295,12 +295,12 @@ pub fn parse_types(input_str: &str) -> Result<Vec<PraxsmthTypes>, Error<Rule>> {
             )
         })
         .map(|pair| match pair.as_rule() {
-            Rule::t_trait => PraxsmthTypes::Trait(parse_trait(pair)),
-            Rule::t_directional => PraxsmthTypes::Directional(parse_directional(pair)),
-            Rule::t_reciprocal => PraxsmthTypes::Reciprocal(parse_reciprocal(pair)),
-            Rule::t_evaluation => PraxsmthTypes::Evaluation(parse_evaluation(pair)),
-            Rule::t_emotion => PraxsmthTypes::Emotion(parse_emotion(pair)),
-            Rule::t_practice => PraxsmthTypes::Practice(parse_practice(pair, &practice_pratt)),
+            Rule::t_trait => PraxsmthType::Trait(parse_trait(pair)),
+            Rule::t_directional => PraxsmthType::Directional(parse_directional(pair)),
+            Rule::t_reciprocal => PraxsmthType::Reciprocal(parse_reciprocal(pair)),
+            Rule::t_evaluation => PraxsmthType::Evaluation(parse_evaluation(pair)),
+            Rule::t_emotion => PraxsmthType::Emotion(parse_emotion(pair)),
+            Rule::t_practice => PraxsmthType::Practice(parse_practice(pair, &practice_pratt)),
             _ => unreachable!(),
         })
         .collect();

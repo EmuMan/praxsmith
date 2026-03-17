@@ -70,7 +70,7 @@ fn parse_field(pair: Pair<Rule>) -> PraxsmthField {
 pub fn test_parse() {
     let unparsed_types = fs::read_to_string("types.txt").expect("cannot read file");
 
-    let values: Vec<PraxsmthTypes> =
+    let values: Vec<PraxsmthType> =
         types::parse_types(&unparsed_types).expect("unsuccessful parse");
 
     println!(
