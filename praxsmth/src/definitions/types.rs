@@ -1,6 +1,6 @@
 use crate::definitions::{PraxsmthValue, Serialize};
 
-use crate::definitions::{PraxsmthField, Sentence};
+use crate::definitions::{Sentence, TypeFields};
 
 pub enum PraxsmthType {
     Trait(TraitType),
@@ -24,9 +24,10 @@ impl Serialize for PraxsmthType {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TraitType {
     pub name: String,
-    pub fields: Vec<(String, PraxsmthField)>,
+    pub fields: TypeFields,
 }
 
 impl Serialize for TraitType {
@@ -42,7 +43,7 @@ impl Serialize for TraitType {
 pub struct DirectionalType {
     pub forward_name: String,
     pub backward_name: String,
-    pub fields: Vec<(String, PraxsmthField)>,
+    pub fields: TypeFields,
 }
 
 impl Serialize for DirectionalType {
@@ -57,7 +58,7 @@ impl Serialize for DirectionalType {
 
 pub struct ReciprocalType {
     pub name: String,
-    pub fields: Vec<(String, PraxsmthField)>,
+    pub fields: TypeFields,
 }
 
 impl Serialize for ReciprocalType {
@@ -70,7 +71,7 @@ impl Serialize for ReciprocalType {
 pub struct EvaluationType {
     pub forward_name: String,
     pub backward_name: String,
-    pub fields: Vec<(String, PraxsmthField)>,
+    pub fields: TypeFields,
 }
 
 impl Serialize for EvaluationType {
@@ -85,7 +86,7 @@ impl Serialize for EvaluationType {
 
 pub struct EmotionType {
     pub name: String,
-    pub fields: Vec<(String, PraxsmthField)>,
+    pub fields: TypeFields,
 }
 
 impl Serialize for EmotionType {
@@ -100,7 +101,7 @@ pub struct PracticeType {
     pub params: Vec<String>,
     pub display: Option<String>,
     pub actions: Option<Vec<PracticeAction>>,
-    pub fields: Vec<(String, PraxsmthField)>,
+    pub fields: TypeFields,
 }
 
 pub struct PracticeAction {

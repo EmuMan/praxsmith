@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 pub mod types;
 pub mod world;
 
@@ -13,6 +15,7 @@ impl Serialize for Sentence {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum PraxsmthConstant {
     Number(i64),
     Variant(String),
@@ -47,6 +50,9 @@ impl Serialize for PraxsmthValue {
     }
 }
 
+pub type TypeFields = HashMap<String, PraxsmthField>;
+
+#[derive(Debug, Clone)]
 pub enum PraxsmthField {
     NumberRange(i64, i64),
     VariantList(Vec<String>),
@@ -61,7 +67,7 @@ impl Serialize for PraxsmthField {
     }
 }
 
-impl Serialize for Vec<(String, PraxsmthField)> {
+impl Serialize for TypeFields {
     fn serialize(&self) -> String {
         let fields_str: Vec<_> = self
             .iter()

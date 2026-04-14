@@ -1,12 +1,14 @@
+use std::collections::HashMap;
+
 use pest::Parser;
 use pest::error::Error;
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
-use crate::definitions::{PraxsmthField, types::*};
+use crate::definitions::{TypeFields, types::*};
 use crate::parser::{PraxsmthParser, Rule, parse_field, parse_sentence, parse_string, parse_value};
 
-fn parse_field_brackets(pair: Pair<Rule>) -> Vec<(String, PraxsmthField)> {
+fn parse_field_brackets(pair: Pair<Rule>) -> TypeFields {
     // pair is Rule::field_brackets, contains field_def pairs
     pair.into_inner()
         .map(|field_def| {
@@ -29,7 +31,7 @@ fn parse_trait(pair: Pair<Rule>) -> TraitType {
         // brackets is Rule::field_brackets, contains field_def pairs
         parse_field_brackets(brackets)
     } else {
-        Vec::new()
+        HashMap::new()
     };
 
     TraitType { name, fields }
@@ -46,7 +48,7 @@ fn parse_directional(pair: Pair<Rule>) -> DirectionalType {
         // brackets is Rule::field_brackets, contains field_def pairs
         parse_field_brackets(brackets)
     } else {
-        Vec::new()
+        HashMap::new()
     };
 
     DirectionalType {
@@ -66,7 +68,7 @@ fn parse_reciprocal(pair: Pair<Rule>) -> ReciprocalType {
         // brackets is Rule::field_brackets, contains field_def pairs
         parse_field_brackets(brackets)
     } else {
-        Vec::new()
+        HashMap::new()
     };
 
     ReciprocalType { name, fields }
@@ -83,7 +85,7 @@ fn parse_evaluation(pair: Pair<Rule>) -> EvaluationType {
         // brackets is Rule::field_brackets, contains field_def pairs
         parse_field_brackets(brackets)
     } else {
-        Vec::new()
+        HashMap::new()
     };
 
     EvaluationType {
@@ -103,7 +105,7 @@ fn parse_emotion(pair: Pair<Rule>) -> EmotionType {
         // brackets is Rule::field_brackets, contains field_def pairs
         parse_field_brackets(brackets)
     } else {
-        Vec::new()
+        HashMap::new()
     };
 
     EmotionType { name, fields }
@@ -233,7 +235,7 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PracticeType {
 
     let mut display = None;
     let mut actions = None;
-    let mut fields = Vec::new();
+    let mut fields = HashMap::new();
 
     for field_pair in brackets_pair.into_inner() {
         // field_pair is one of the t_practice_* field rules
@@ -259,7 +261,7 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PracticeType {
                 // var_name ~ ":" ~ field
                 let field_name = field_inner.next().unwrap().as_str().to_string();
                 let field_value = parse_field(field_inner.next().unwrap());
-                fields.push((field_name, field_value));
+                fields.insert(field_name, field_value);
             }
             _ => unreachable!(),
         }
