@@ -7,7 +7,7 @@ use pest::iterators::Pair;
 use crate::definitions::world::*;
 use crate::parser::{PraxsmthParser, Rule, parse_constant, parse_sentence};
 
-fn parse_agent_inner(pair: Pair<Rule>) -> Agent {
+fn parse_agent_inner(pair: Pair<Rule>) -> AgentInfo {
     // pair is Rule::w_agent_inner: var_name ~ ("as" ~ string)? ~ w_agent_brackets?
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -30,10 +30,10 @@ fn parse_agent_inner(pair: Pair<Rule>) -> Agent {
         }
     }
 
-    Agent { name, subagents }
+    AgentInfo { name, subagents }
 }
 
-fn parse_agent(pair: Pair<Rule>) -> Agent {
+fn parse_agent(pair: Pair<Rule>) -> AgentInfo {
     // pair is Rule::w_agent: "agent" ~ w_agent_inner
     let inner = pair.into_inner().next().unwrap();
     parse_agent_inner(inner)
@@ -68,7 +68,7 @@ pub fn parse_world(input_str: &str) -> Result<Vec<PraxsmthWorldDefinition>, Erro
     let values = pairs
         .filter(|pair| matches!(pair.as_rule(), Rule::w_agent | Rule::w_declaration))
         .map(|pair| match pair.as_rule() {
-            Rule::w_agent => PraxsmthWorldDefinition::Agent(parse_agent(pair)),
+            Rule::w_agent => PraxsmthWorldDefinition::AgentInfo(parse_agent(pair)),
             Rule::w_declaration => PraxsmthWorldDefinition::Declaration(parse_declaration(pair)),
             _ => unreachable!(),
         })

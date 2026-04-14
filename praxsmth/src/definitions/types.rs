@@ -3,12 +3,12 @@ use crate::definitions::{PraxsmthValue, Serialize};
 use crate::definitions::{PraxsmthField, Sentence};
 
 pub enum PraxsmthType {
-    Trait(Trait),
-    Directional(Directional),
-    Reciprocal(Reciprocal),
-    Evaluation(Evaluation),
-    Emotion(Emotion),
-    Practice(Practice),
+    Trait(TraitType),
+    Directional(DirectionalType),
+    Reciprocal(ReciprocalType),
+    Evaluation(EvaluationType),
+    Emotion(EmotionType),
+    Practice(PracticeType),
 }
 
 impl Serialize for PraxsmthType {
@@ -24,12 +24,12 @@ impl Serialize for PraxsmthType {
     }
 }
 
-pub struct Trait {
+pub struct TraitType {
     pub name: String,
     pub fields: Vec<(String, PraxsmthField)>,
 }
 
-impl Serialize for Trait {
+impl Serialize for TraitType {
     fn serialize(&self) -> String {
         if self.fields.is_empty() {
             self.name.clone()
@@ -39,13 +39,13 @@ impl Serialize for Trait {
     }
 }
 
-pub struct Directional {
+pub struct DirectionalType {
     pub forward_name: String,
     pub backward_name: String,
     pub fields: Vec<(String, PraxsmthField)>,
 }
 
-impl Serialize for Directional {
+impl Serialize for DirectionalType {
     fn serialize(&self) -> String {
         let fields_str = self.fields.serialize();
         format!(
@@ -55,25 +55,25 @@ impl Serialize for Directional {
     }
 }
 
-pub struct Reciprocal {
+pub struct ReciprocalType {
     pub name: String,
     pub fields: Vec<(String, PraxsmthField)>,
 }
 
-impl Serialize for Reciprocal {
+impl Serialize for ReciprocalType {
     fn serialize(&self) -> String {
         let fields_str = self.fields.serialize();
         format!("reciprocal {} {{{}}}", self.name, fields_str)
     }
 }
 
-pub struct Evaluation {
+pub struct EvaluationType {
     pub forward_name: String,
     pub backward_name: String,
     pub fields: Vec<(String, PraxsmthField)>,
 }
 
-impl Serialize for Evaluation {
+impl Serialize for EvaluationType {
     fn serialize(&self) -> String {
         let fields_str = self.fields.serialize();
         format!(
@@ -83,19 +83,19 @@ impl Serialize for Evaluation {
     }
 }
 
-pub struct Emotion {
+pub struct EmotionType {
     pub name: String,
     pub fields: Vec<(String, PraxsmthField)>,
 }
 
-impl Serialize for Emotion {
+impl Serialize for EmotionType {
     fn serialize(&self) -> String {
         let fields_str = self.fields.serialize();
         format!("emotion {} {{{}}}", self.name, fields_str)
     }
 }
 
-pub struct Practice {
+pub struct PracticeType {
     pub name: String,
     pub params: Vec<String>,
     pub display: Option<String>,
@@ -126,7 +126,7 @@ pub enum PracticeOutcome {
     Cycle(Sentence, i64),
 }
 
-impl Serialize for Practice {
+impl Serialize for PracticeType {
     fn serialize(&self) -> String {
         let params_str = self.params.join(", ");
         let display_str = self

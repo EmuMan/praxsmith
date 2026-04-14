@@ -4,25 +4,25 @@ use std::collections::HashMap;
 use crate::definitions::PraxsmthConstant;
 
 pub enum PraxsmthWorldDefinition {
-    Agent(Agent),
+    AgentInfo(AgentInfo),
     Declaration(Declaration),
 }
 
 impl Serialize for PraxsmthWorldDefinition {
     fn serialize(&self) -> String {
         match self {
-            PraxsmthWorldDefinition::Agent(a) => a.serialize(),
+            PraxsmthWorldDefinition::AgentInfo(a) => a.serialize(),
             PraxsmthWorldDefinition::Declaration(d) => d.serialize(),
         }
     }
 }
 
-pub struct Agent {
+pub struct AgentInfo {
     pub name: String,
-    pub subagents: HashMap<String, Agent>,
+    pub subagents: HashMap<String, AgentInfo>,
 }
 
-impl Serialize for Agent {
+impl Serialize for AgentInfo {
     fn serialize(&self) -> String {
         if self.subagents.is_empty() {
             self.name.clone()

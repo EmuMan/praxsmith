@@ -19,7 +19,7 @@ fn parse_field_brackets(pair: Pair<Rule>) -> Vec<(String, PraxsmthField)> {
         .collect()
 }
 
-fn parse_trait(pair: Pair<Rule>) -> Trait {
+fn parse_trait(pair: Pair<Rule>) -> TraitType {
     // pair is Rule::t_trait: "trait" ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -32,10 +32,10 @@ fn parse_trait(pair: Pair<Rule>) -> Trait {
         Vec::new()
     };
 
-    Trait { name, fields }
+    TraitType { name, fields }
 }
 
-fn parse_directional(pair: Pair<Rule>) -> Directional {
+fn parse_directional(pair: Pair<Rule>) -> DirectionalType {
     // pair is Rule::t_directional: "directional" ~ var_name ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let forward_name = inner.next().unwrap().as_str().to_string();
@@ -49,14 +49,14 @@ fn parse_directional(pair: Pair<Rule>) -> Directional {
         Vec::new()
     };
 
-    Directional {
+    DirectionalType {
         forward_name,
         backward_name,
         fields,
     }
 }
 
-fn parse_reciprocal(pair: Pair<Rule>) -> Reciprocal {
+fn parse_reciprocal(pair: Pair<Rule>) -> ReciprocalType {
     // pair is Rule::t_reciprocal: "reciprocal" ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -69,10 +69,10 @@ fn parse_reciprocal(pair: Pair<Rule>) -> Reciprocal {
         Vec::new()
     };
 
-    Reciprocal { name, fields }
+    ReciprocalType { name, fields }
 }
 
-fn parse_evaluation(pair: Pair<Rule>) -> Evaluation {
+fn parse_evaluation(pair: Pair<Rule>) -> EvaluationType {
     // pair is Rule::t_evaluation: "evaluation" ~ var_name ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let forward_name = inner.next().unwrap().as_str().to_string();
@@ -86,14 +86,14 @@ fn parse_evaluation(pair: Pair<Rule>) -> Evaluation {
         Vec::new()
     };
 
-    Evaluation {
+    EvaluationType {
         forward_name,
         backward_name,
         fields,
     }
 }
 
-fn parse_emotion(pair: Pair<Rule>) -> Emotion {
+fn parse_emotion(pair: Pair<Rule>) -> EmotionType {
     // pair is Rule::t_emotion: "emotion" ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -106,7 +106,7 @@ fn parse_emotion(pair: Pair<Rule>) -> Emotion {
         Vec::new()
     };
 
-    Emotion { name, fields }
+    EmotionType { name, fields }
 }
 
 fn parse_practice_condition(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> PracticeCondition {
@@ -214,7 +214,7 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
     }
 }
 
-fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practice {
+fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PracticeType {
     // pair is Rule::t_practice: "practice" ~ var_name ~ t_practice_params ~ t_practice_brackets
     let mut inner = pair.into_inner();
 
@@ -265,7 +265,7 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practice {
         }
     }
 
-    Practice {
+    PracticeType {
         name,
         params,
         display,
