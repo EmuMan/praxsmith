@@ -32,6 +32,7 @@ impl Serialize for PraxsmthConstant {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum PraxsmthValue {
     Number(i64),
     Variant(String),

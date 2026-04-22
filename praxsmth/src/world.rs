@@ -1,16 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
-    definitions::{PraxsmthConstant, PraxsmthField, Serialize, TypeFields, types::*, world::*},
-    store::{Handle, Store},
+    definitions::{PraxsmthConstant, PraxsmthField, Serialize, TypeFields, world::*},
     types::TypeMapping,
 };
-
-#[derive(Debug, Clone)]
-pub enum Direction {
-    Forward,
-    Backward,
-}
 
 // TODO: verify this works correctly in all cases, and add more detailed error messages
 fn verify_fields(
@@ -61,598 +54,633 @@ fn verify_fields(
     Ok(())
 }
 
-// =============================================================================
-// WorldEdge trait
-// =============================================================================
-
-pub trait WorldEdge: Sized {
-    type Query;
-
-    fn matches(&self, query: &Self::Query) -> bool;
-    fn fields(&self) -> &HashMap<String, PraxsmthConstant>;
-    fn fields_mut(&mut self) -> &mut HashMap<String, PraxsmthConstant>;
-    fn field_types(&self) -> &TypeFields;
-    fn display_name() -> &'static str;
-    fn iter_handles(agent: &Agent) -> impl Iterator<Item = Handle<Self>> + '_;
-    fn remove_handle_at(agent: &mut Agent, pos: usize) -> Handle<Self>;
-}
-
-fn find_handle<E: WorldEdge>(
-    agents: &HashMap<String, Agent>,
-    store: &Store<E>,
-    agent_name: &str,
-    query: &E::Query,
-) -> Result<Handle<E>, String> {
-    let agent = agents
-        .get(agent_name)
-        .ok_or_else(|| format!("Agent {} does not exist", agent_name))?;
-    E::iter_handles(agent)
-        .find(|&h| {
-            store
-                .get(h)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "{} handle list for agent {} contains an invalid handle",
-                        E::display_name(),
-                        agent_name
-                    )
-                })
-                .matches(query)
-        })
-        .ok_or_else(|| format!("Agent {} has no matching {}", agent_name, E::display_name()))
-}
-
-fn remove_edge<E: WorldEdge>(
-    agents: &mut HashMap<String, Agent>,
-    store: &mut Store<E>,
-    agent_name: &str,
-    query: &E::Query,
-) -> Result<(), String> {
-    let pos = {
-        let agent = agents
-            .get(agent_name)
-            .ok_or_else(|| format!("Agent {} does not exist", agent_name))?;
-        E::iter_handles(agent)
-            .position(|h| {
-                store
-                    .get(h)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "{} handle list for agent {} contains an invalid handle",
-                            E::display_name(),
-                            agent_name
-                        )
-                    })
-                    .matches(query)
-            })
-            .ok_or_else(|| format!("Agent {} has no matching {}", agent_name, E::display_name()))?
-    };
-    let handle = E::remove_handle_at(
-        agents
-            .get_mut(agent_name)
-            .expect("agent existence was already verified"),
-        pos,
-    );
-    store.remove(handle).map_err(|e| e.to_string())
-}
-
-fn update_edge<E: WorldEdge>(
-    agents: &HashMap<String, Agent>,
-    store: &mut Store<E>,
-    agent_name: &str,
-    query: &E::Query,
+#[derive(Debug, Clone)]
+struct WorldEdge {
+    type_name: String,
+    from: String,
     fields: HashMap<String, PraxsmthConstant>,
-) -> Result<(), String> {
-    let handle = find_handle(agents, store, agent_name, query)?;
-    let edge = store
-        .get_mut(handle)
-        .expect("handle was just validated by find_handle");
-    verify_fields(&fields, edge.field_types(), false)?;
-    edge.fields_mut().extend(fields);
-    Ok(())
+    data: EdgeData,
 }
 
-// =============================================================================
-// Edge types and query types
-// =============================================================================
+impl WorldEdge {
+    pub fn update_fields(
+        &mut self,
+        new_fields: HashMap<String, PraxsmthConstant>,
+        field_defs: &HashMap<String, PraxsmthField>,
+    ) -> Result<(), String> {
+        verify_fields(&new_fields, &field_defs, false)?;
+        for (field_name, field_value) in new_fields {
+            self.fields.insert(field_name, field_value);
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone)]
-pub struct Trait {
-    pub _type: TraitType,
-    pub fields: HashMap<String, PraxsmthConstant>,
-    pub agent_name: String,
+enum EdgeData {
+    Trait,
+    DirectionalForward {
+        to: String,
+        complement_handle: EdgeHandle,
+    },
+    DirectionalBackward {
+        to: String,
+        complement_handle: EdgeHandle,
+    },
+    Reciprocal {
+        to: String,
+        complement_handle: EdgeHandle,
+    },
+    EvaluationForward {
+        to: String,
+        complement_handle: EdgeHandle,
+        reason: String,
+    },
+    EvaluationBackward {
+        to: String,
+        complement_handle: EdgeHandle,
+        reason: String,
+    },
+    Emotion,
+    Practice {
+        participants: Vec<String>,
+    },
 }
 
-impl Trait {
-    pub fn new(
-        _type: TraitType,
-        fields: HashMap<String, PraxsmthConstant>,
-        agent_name: String,
-    ) -> Result<Self, String> {
-        verify_fields(&fields, &_type.fields, true)?;
-        Ok(Trait {
-            _type,
-            fields,
-            agent_name,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct EdgeHandle {
+    index: u32,
+    generation: u32,
+}
+
+struct EdgeStoreSlot {
+    value: Option<WorldEdge>,
+    generation: u32,
+}
+
+struct EdgeStore {
+    slots: Vec<EdgeStoreSlot>,
+    open_indices: Vec<usize>,
+}
+
+impl EdgeStore {
+    pub fn new() -> Self {
+        EdgeStore {
+            slots: Vec::new(),
+            open_indices: Vec::new(),
+        }
+    }
+
+    pub fn peek_next_two_handles(&self) -> (EdgeHandle, EdgeHandle) {
+        if self.open_indices.is_empty() {
+            let new_index = self.slots.len();
+            (
+                EdgeHandle {
+                    index: new_index as u32,
+                    generation: 0,
+                },
+                EdgeHandle {
+                    index: (new_index + 1) as u32,
+                    generation: 0,
+                },
+            )
+        } else if self.open_indices.len() == 1 {
+            let slot_index = self.open_indices[0];
+            (
+                EdgeHandle {
+                    index: slot_index as u32,
+                    generation: self.slots[slot_index].generation,
+                },
+                EdgeHandle {
+                    index: self.slots.len() as u32,
+                    generation: 0,
+                },
+            )
+        } else {
+            let slot_index1 = self.open_indices[self.open_indices.len() - 1];
+            let slot_index2 = self.open_indices[self.open_indices.len() - 2];
+            (
+                EdgeHandle {
+                    index: slot_index1 as u32,
+                    generation: self.slots[slot_index1].generation,
+                },
+                EdgeHandle {
+                    index: slot_index2 as u32,
+                    generation: self.slots[slot_index2].generation,
+                },
+            )
+        }
+    }
+
+    pub fn add(&mut self, edge: WorldEdge) -> EdgeHandle {
+        if let Some(slot_index) = self.open_indices.pop() {
+            let slot = &mut self.slots[slot_index];
+            slot.value = Some(edge);
+            EdgeHandle {
+                index: slot_index as u32,
+                generation: slot.generation,
+            }
+        } else {
+            let new_index = self.slots.len();
+            self.slots.push(EdgeStoreSlot {
+                value: Some(edge),
+                generation: 0,
+            });
+            EdgeHandle {
+                index: new_index as u32,
+                generation: 0,
+            }
+        }
+    }
+
+    pub fn get(&self, handle: EdgeHandle) -> Option<&WorldEdge> {
+        self.slots.get(handle.index as usize).and_then(|slot| {
+            if slot.generation == handle.generation {
+                slot.value.as_ref()
+            } else {
+                None
+            }
         })
     }
-}
 
-pub struct Directional {
-    pub _type: DirectionalType,
-    pub fields: HashMap<String, PraxsmthConstant>,
-    pub forward_agent_name: String,
-    pub backward_agent_name: String,
-}
-
-pub struct DirectionalQuery {
-    pub edge_name: String,
-    pub forward: String,
-    pub backward: String,
-}
-
-pub struct Reciprocal {
-    pub _type: ReciprocalType,
-    pub fields: HashMap<String, PraxsmthConstant>,
-    pub agents: (String, String),
-}
-
-pub struct ReciprocalQuery {
-    pub name: String,
-    pub agent_a: String,
-    pub agent_b: String,
-}
-
-pub struct Evaluation {
-    pub _type: EvaluationType,
-    pub fields: HashMap<String, PraxsmthConstant>,
-    pub from_agent_name: String,
-    pub to_agent_name: String,
-}
-
-pub struct EvaluationQuery {
-    pub edge_name: String,
-    pub from: String,
-    pub to: String,
-}
-
-pub struct Emotion {
-    pub _type: EmotionType,
-    pub fields: HashMap<String, PraxsmthConstant>,
-    pub agent_name: String,
-}
-
-pub struct Practice {
-    pub _type: PracticeType,
-    pub fields: HashMap<String, PraxsmthConstant>,
-    pub agent_names: Vec<String>,
-}
-
-pub struct PracticeQuery {
-    pub name: String,
-    pub agents: Vec<String>,
-}
-
-// =============================================================================
-// WorldEdge implementations
-// =============================================================================
-
-impl WorldEdge for Trait {
-    type Query = String;
-
-    fn matches(&self, query: &String) -> bool {
-        self._type.name == *query
+    pub fn get_mut(&mut self, handle: EdgeHandle) -> Option<&mut WorldEdge> {
+        self.slots.get_mut(handle.index as usize).and_then(|slot| {
+            if slot.generation == handle.generation {
+                slot.value.as_mut()
+            } else {
+                None
+            }
+        })
     }
-    fn fields(&self) -> &HashMap<String, PraxsmthConstant> {
-        &self.fields
-    }
-    fn fields_mut(&mut self) -> &mut HashMap<String, PraxsmthConstant> {
-        &mut self.fields
-    }
-    fn field_types(&self) -> &TypeFields {
-        &self._type.fields
-    }
-    fn display_name() -> &'static str {
-        "trait"
-    }
-    fn iter_handles(agent: &Agent) -> impl Iterator<Item = Handle<Self>> + '_ {
-        agent.trait_handles.iter().copied()
-    }
-    fn remove_handle_at(agent: &mut Agent, pos: usize) -> Handle<Self> {
-        agent.trait_handles.remove(pos)
+
+    pub fn remove(&mut self, handle: EdgeHandle) -> Result<(), String> {
+        if let Some(slot) = self.slots.get_mut(handle.index as usize) {
+            if slot.generation == handle.generation {
+                slot.value = None;
+                slot.generation += 1;
+                self.open_indices.push(handle.index as usize);
+                Ok(())
+            } else {
+                Err("Invalid handle generation".to_string())
+            }
+        } else {
+            Err("Invalid handle index".to_string())
+        }
     }
 }
-
-impl WorldEdge for Directional {
-    type Query = DirectionalQuery;
-
-    fn matches(&self, query: &DirectionalQuery) -> bool {
-        (self._type.forward_name == query.edge_name
-            || self._type.backward_name == query.edge_name)
-            && self.forward_agent_name == query.forward
-            && self.backward_agent_name == query.backward
-    }
-    fn fields(&self) -> &HashMap<String, PraxsmthConstant> {
-        &self.fields
-    }
-    fn fields_mut(&mut self) -> &mut HashMap<String, PraxsmthConstant> {
-        &mut self.fields
-    }
-    fn field_types(&self) -> &TypeFields {
-        &self._type.fields
-    }
-    fn display_name() -> &'static str {
-        "directional"
-    }
-    fn iter_handles(agent: &Agent) -> impl Iterator<Item = Handle<Self>> + '_ {
-        agent.directional_handles.iter().map(|(h, _)| *h)
-    }
-    fn remove_handle_at(agent: &mut Agent, pos: usize) -> Handle<Self> {
-        agent.directional_handles.remove(pos).0
-    }
-}
-
-impl WorldEdge for Reciprocal {
-    type Query = ReciprocalQuery;
-
-    fn matches(&self, query: &ReciprocalQuery) -> bool {
-        self._type.name == query.name
-            && ((self.agents.0 == query.agent_a && self.agents.1 == query.agent_b)
-                || (self.agents.0 == query.agent_b && self.agents.1 == query.agent_a))
-    }
-    fn fields(&self) -> &HashMap<String, PraxsmthConstant> {
-        &self.fields
-    }
-    fn fields_mut(&mut self) -> &mut HashMap<String, PraxsmthConstant> {
-        &mut self.fields
-    }
-    fn field_types(&self) -> &TypeFields {
-        &self._type.fields
-    }
-    fn display_name() -> &'static str {
-        "reciprocal"
-    }
-    fn iter_handles(agent: &Agent) -> impl Iterator<Item = Handle<Self>> + '_ {
-        agent.reciprocal_handles.iter().copied()
-    }
-    fn remove_handle_at(agent: &mut Agent, pos: usize) -> Handle<Self> {
-        agent.reciprocal_handles.remove(pos)
-    }
-}
-
-impl WorldEdge for Evaluation {
-    type Query = EvaluationQuery;
-
-    fn matches(&self, query: &EvaluationQuery) -> bool {
-        (self._type.forward_name == query.edge_name
-            || self._type.backward_name == query.edge_name)
-            && self.from_agent_name == query.from
-            && self.to_agent_name == query.to
-    }
-    fn fields(&self) -> &HashMap<String, PraxsmthConstant> {
-        &self.fields
-    }
-    fn fields_mut(&mut self) -> &mut HashMap<String, PraxsmthConstant> {
-        &mut self.fields
-    }
-    fn field_types(&self) -> &TypeFields {
-        &self._type.fields
-    }
-    fn display_name() -> &'static str {
-        "evaluation"
-    }
-    fn iter_handles(agent: &Agent) -> impl Iterator<Item = Handle<Self>> + '_ {
-        agent.evaluation_handles.iter().map(|(h, _)| *h)
-    }
-    fn remove_handle_at(agent: &mut Agent, pos: usize) -> Handle<Self> {
-        agent.evaluation_handles.remove(pos).0
-    }
-}
-
-impl WorldEdge for Emotion {
-    type Query = String;
-
-    fn matches(&self, query: &String) -> bool {
-        self._type.name == *query
-    }
-    fn fields(&self) -> &HashMap<String, PraxsmthConstant> {
-        &self.fields
-    }
-    fn fields_mut(&mut self) -> &mut HashMap<String, PraxsmthConstant> {
-        &mut self.fields
-    }
-    fn field_types(&self) -> &TypeFields {
-        &self._type.fields
-    }
-    fn display_name() -> &'static str {
-        "emotion"
-    }
-    fn iter_handles(agent: &Agent) -> impl Iterator<Item = Handle<Self>> + '_ {
-        agent.emotion_handle.iter().copied()
-    }
-    fn remove_handle_at(agent: &mut Agent, pos: usize) -> Handle<Self> {
-        debug_assert_eq!(pos, 0, "emotion has at most one handle");
-        agent
-            .emotion_handle
-            .take()
-            .expect("emotion handle was present when position was found")
-    }
-}
-
-impl WorldEdge for Practice {
-    type Query = PracticeQuery;
-
-    fn matches(&self, query: &PracticeQuery) -> bool {
-        self._type.name == query.name && self.agent_names == query.agents
-    }
-    fn fields(&self) -> &HashMap<String, PraxsmthConstant> {
-        &self.fields
-    }
-    fn fields_mut(&mut self) -> &mut HashMap<String, PraxsmthConstant> {
-        &mut self.fields
-    }
-    fn field_types(&self) -> &TypeFields {
-        &self._type.fields
-    }
-    fn display_name() -> &'static str {
-        "practice"
-    }
-    fn iter_handles(agent: &Agent) -> impl Iterator<Item = Handle<Self>> + '_ {
-        agent.practice_handles.iter().copied()
-    }
-    fn remove_handle_at(agent: &mut Agent, pos: usize) -> Handle<Self> {
-        agent.practice_handles.remove(pos)
-    }
-}
-
-// =============================================================================
-// Agent and World
-// =============================================================================
 
 pub struct Agent {
-    pub info: AgentInfo,
-    pub trait_handles: Vec<Handle<Trait>>,
-    pub directional_handles: Vec<(Handle<Directional>, Direction)>,
-    pub reciprocal_handles: Vec<Handle<Reciprocal>>,
-    pub evaluation_handles: Vec<(Handle<Evaluation>, Direction)>,
-    pub emotion_handle: Option<Handle<Emotion>>,
-    pub practice_handles: Vec<Handle<Practice>>,
+    pub edges: Vec<EdgeHandle>,
 }
 
 impl Agent {
-    pub fn new(info: AgentInfo) -> Self {
-        Agent {
-            info,
-            trait_handles: Vec::new(),
-            directional_handles: Vec::new(),
-            reciprocal_handles: Vec::new(),
-            evaluation_handles: Vec::new(),
-            emotion_handle: None,
-            practice_handles: Vec::new(),
-        }
+    pub fn new(_info: AgentInfo) -> Self {
+        // TODO: better agent construction
+        Agent { edges: Vec::new() }
     }
 }
 
 pub struct World {
     pub agents: HashMap<String, Agent>,
-    pub trait_store: Store<Trait>,
-    pub directional_store: Store<Directional>,
-    pub reciprocal_store: Store<Reciprocal>,
-    pub evaluation_store: Store<Evaluation>,
-    pub emotion_store: Store<Emotion>,
-    pub practice_store: Store<Practice>,
     pub type_mapping: TypeMapping,
+    pub edge_store: EdgeStore,
 }
 
 impl World {
     pub fn new() -> Self {
         World {
             agents: HashMap::new(),
-            trait_store: Store::new(),
-            directional_store: Store::new(),
-            reciprocal_store: Store::new(),
-            evaluation_store: Store::new(),
-            emotion_store: Store::new(),
-            practice_store: Store::new(),
             type_mapping: TypeMapping::new(),
+            edge_store: EdgeStore::new(),
         }
     }
 
-    pub fn add_agent(&mut self, agent: AgentInfo) -> Result<(), String> {
-        if self.agents.contains_key(&agent.name) {
-            Err(format!("Agent {} already exists", agent.name))
+    pub fn iter_edges(&self) -> impl Iterator<Item = (EdgeHandle, &WorldEdge)> {
+        self.edge_store
+            .slots
+            .iter()
+            .enumerate()
+            .filter_map(|(index, slot)| {
+                slot.value.as_ref().map(|edge| {
+                    (
+                        EdgeHandle {
+                            index: index as u32,
+                            generation: slot.generation,
+                        },
+                        edge,
+                    )
+                })
+            })
+    }
+
+    pub fn add_agent(&mut self, info: AgentInfo) -> Result<(), String> {
+        if self.agents.contains_key(&info.name) {
+            return Err(format!("Agent with name {} already exists", info.name));
+        }
+        self.agents.insert(info.name.clone(), Agent::new(info));
+        Ok(())
+    }
+
+    pub fn get_edge(&self, handle: EdgeHandle) -> Option<&WorldEdge> {
+        self.edge_store.get(handle)
+    }
+
+    pub fn add_edge(&mut self, edge: WorldEdge) -> Result<EdgeHandle, String> {
+        if let Some(agent) = self.agents.get_mut(&edge.from) {
+            let handle = self.edge_store.add(edge);
+            agent.edges.push(handle.clone());
+            Ok(handle)
         } else {
-            self.agents.insert(agent.name.clone(), Agent::new(agent));
-            Ok(())
+            Err(format!("Agent with name {} not found", edge.from))
         }
     }
 
-    pub fn get_trait(&self, agent_name: &str, trait_name: &str) -> Option<&Trait> {
-        let handle =
-            find_handle(&self.agents, &self.trait_store, agent_name, &trait_name.to_string())
-                .ok()?;
-        self.trait_store.get(handle)
+    pub fn remove_edge(&mut self, handle: EdgeHandle, propogate: bool) -> Result<(), String> {
+        match self.edge_store.get(handle.clone()) {
+            Some(edge) => {
+                if let Some(agent) = self.agents.get_mut(&edge.from) {
+                    agent.edges.retain(|h| h != &handle);
+                }
+                if propogate {
+                    match &edge.data {
+                        EdgeData::DirectionalForward {
+                            complement_handle, ..
+                        }
+                        | EdgeData::DirectionalBackward {
+                            complement_handle, ..
+                        }
+                        | EdgeData::Reciprocal {
+                            complement_handle, ..
+                        }
+                        | EdgeData::EvaluationForward {
+                            complement_handle, ..
+                        }
+                        | EdgeData::EvaluationBackward {
+                            complement_handle, ..
+                        } => {
+                            self.remove_edge(complement_handle.clone(), false)?;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            None => {
+                return Err(format!("Edge handle {:?} not found", handle));
+            }
+        }
+        self.edge_store.remove(handle)
+    }
+
+    fn validate_type_fields(
+        &self,
+        type_name: &str,
+        fields: &HashMap<String, PraxsmthConstant>,
+    ) -> Result<(), String> {
+        match self.type_mapping.get_type(type_name) {
+            Some(edge_type) => verify_fields(fields, &edge_type.fields, true),
+            None => Err(format!("Type {} not found in type mapping", type_name)),
+        }
+    }
+
+    /// Adds two complementary edges atomically, using peeked handles to wire up
+    /// each edge's complement before either is stored. `make_data(h1, h2)` receives
+    /// the handles in insertion order and must return `(data_for_edge1, data_for_edge2)`.
+    fn add_paired_edges(
+        &mut self,
+        from: &str,
+        to: &str,
+        fields: HashMap<String, PraxsmthConstant>,
+        type_name: &str,
+        make_data: impl FnOnce(EdgeHandle, EdgeHandle) -> (EdgeData, EdgeData),
+    ) -> Result<(EdgeHandle, EdgeHandle), String> {
+        let (handle1, handle2) = self.edge_store.peek_next_two_handles();
+        let (data1, data2) = make_data(handle1.clone(), handle2.clone());
+        let edge1 = WorldEdge {
+            type_name: type_name.to_string(),
+            from: from.to_string(),
+            fields: fields.clone(),
+            data: data1,
+        };
+        let edge2 = WorldEdge {
+            type_name: type_name.to_string(),
+            from: to.to_string(),
+            fields,
+            data: data2,
+        };
+        let new_handle1 = self.add_edge(edge1)?;
+        let new_handle2 = self.add_edge(edge2)?;
+        if new_handle1 != handle1 || new_handle2 != handle2 {
+            panic!(
+                "Edge store peeked handles {:?} and {:?} but returned different handles {:?} and {:?} when adding edges",
+                handle1, handle2, new_handle1, new_handle2
+            );
+        }
+        Ok((new_handle1, new_handle2))
+    }
+
+    /// Updates an edge's fields after `validate_data` confirms the edge variant is correct.
+    /// Used for edges that have no complement (Trait, Emotion).
+    fn update_edge_simple(
+        &mut self,
+        handle: EdgeHandle,
+        new_fields: HashMap<String, PraxsmthConstant>,
+        validate_data: impl FnOnce(&EdgeData) -> Result<(), String>,
+    ) -> Result<(), String> {
+        match self.edge_store.get_mut(handle.clone()) {
+            Some(edge) => {
+                validate_data(&edge.data)?;
+                match self.type_mapping.get_type(&edge.type_name) {
+                    Some(edge_type) => edge.update_fields(new_fields, &edge_type.fields),
+                    None => Err(format!("Type {} not found in type mapping", edge.type_name)),
+                }
+            }
+            None => Err(format!("Edge with handle {:?} not found", handle)),
+        }
+    }
+
+    /// Updates an edge's fields and returns its complement handle. `extract_complement`
+    /// validates the edge variant, optionally mutates extra fields (e.g. `reason`), and
+    /// returns the complement handle. Used for edges that come in pairs.
+    fn update_edge_with_complement(
+        &mut self,
+        handle: EdgeHandle,
+        new_fields: HashMap<String, PraxsmthConstant>,
+        extract_complement: impl FnOnce(&mut EdgeData) -> Result<EdgeHandle, String>,
+    ) -> Result<EdgeHandle, String> {
+        match self.edge_store.get_mut(handle.clone()) {
+            Some(edge) => {
+                let complement_handle = extract_complement(&mut edge.data)?;
+                match self.type_mapping.get_type(&edge.type_name) {
+                    Some(edge_type) => {
+                        edge.update_fields(new_fields, &edge_type.fields)?;
+                        Ok(complement_handle)
+                    }
+                    None => Err(format!("Type {} not found in type mapping", edge.type_name)),
+                }
+            }
+            None => Err(format!("Edge with handle {:?} not found", handle)),
+        }
     }
 
     pub fn add_trait(
         &mut self,
-        trait_def: TraitType,
+        from: &str,
         fields: HashMap<String, PraxsmthConstant>,
-        agent_name: String,
-    ) -> Result<(), String> {
-        if find_handle(&self.agents, &self.trait_store, &agent_name, &trait_def.name).is_ok() {
-            remove_edge(
-                &mut self.agents,
-                &mut self.trait_store,
-                &agent_name,
-                &trait_def.name,
-            )?;
-        }
-        let agent = self
-            .agents
-            .get_mut(&agent_name)
-            .ok_or_else(|| format!("Agent {} does not exist", agent_name))?;
-        let new_trait = Trait::new(trait_def, fields, agent_name.clone())?;
-        let handle = self.trait_store.add(new_trait);
-        agent.trait_handles.push(handle);
-        Ok(())
+        type_name: &str,
+    ) -> Result<EdgeHandle, String> {
+        self.validate_type_fields(type_name, &fields)?;
+        self.add_edge(WorldEdge {
+            type_name: type_name.to_string(),
+            from: from.to_string(),
+            fields,
+            data: EdgeData::Trait,
+        })
     }
 
     pub fn update_trait(
         &mut self,
-        agent_name: &str,
-        trait_name: &str,
-        fields: HashMap<String, PraxsmthConstant>,
+        handle: EdgeHandle,
+        new_fields: HashMap<String, PraxsmthConstant>,
     ) -> Result<(), String> {
-        update_edge(
-            &self.agents,
-            &mut self.trait_store,
-            agent_name,
-            &trait_name.to_string(),
-            fields,
-        )
+        self.update_edge_simple(handle.clone(), new_fields, |data| match data {
+            EdgeData::Trait => Ok(()),
+            _ => Err(format!("Edge with handle {:?} is not a trait edge", handle)),
+        })
     }
 
-    pub fn remove_trait(&mut self, agent_name: &str, trait_name: &str) -> Result<(), String> {
-        remove_edge(
-            &mut self.agents,
-            &mut self.trait_store,
-            agent_name,
-            &trait_name.to_string(),
-        )
+    pub fn add_directional(
+        &mut self,
+        from: &str,
+        to: &str,
+        fields: HashMap<String, PraxsmthConstant>,
+        type_name: &str,
+    ) -> Result<(EdgeHandle, EdgeHandle), String> {
+        self.validate_type_fields(type_name, &fields)?;
+        let to_owned = to.to_string();
+        let from_owned = from.to_string();
+        self.add_paired_edges(from, to, fields, type_name, |h1, h2| {
+            (
+                EdgeData::DirectionalForward {
+                    to: to_owned,
+                    complement_handle: h2,
+                },
+                EdgeData::DirectionalBackward {
+                    to: from_owned,
+                    complement_handle: h1,
+                },
+            )
+        })
     }
 
-    pub fn get_directional(&self, agent_name: &str, query: &DirectionalQuery) -> Option<&Directional> {
-        let handle = find_handle(&self.agents, &self.directional_store, agent_name, query).ok()?;
-        self.directional_store.get(handle)
+    fn update_directional_nonpropagate(
+        &mut self,
+        handle: EdgeHandle,
+        new_fields: HashMap<String, PraxsmthConstant>,
+    ) -> Result<EdgeHandle, String> {
+        self.update_edge_with_complement(handle.clone(), new_fields, |data| match data {
+            EdgeData::DirectionalForward {
+                complement_handle, ..
+            }
+            | EdgeData::DirectionalBackward {
+                complement_handle, ..
+            } => Ok(complement_handle.clone()),
+            _ => Err(format!(
+                "Edge with handle {:?} is not a directional edge",
+                handle
+            )),
+        })
     }
 
     pub fn update_directional(
         &mut self,
-        agent_name: &str,
-        query: &DirectionalQuery,
-        fields: HashMap<String, PraxsmthConstant>,
+        handle: EdgeHandle,
+        new_fields: HashMap<String, PraxsmthConstant>,
     ) -> Result<(), String> {
-        update_edge(&self.agents, &mut self.directional_store, agent_name, query, fields)
+        let complement_handle = self.update_directional_nonpropagate(handle, new_fields.clone())?;
+        self.update_directional_nonpropagate(complement_handle, new_fields)?;
+        Ok(())
     }
 
-    pub fn remove_directional(
+    pub fn add_reciprocal(
         &mut self,
-        agent_name: &str,
-        query: &DirectionalQuery,
-    ) -> Result<(), String> {
-        remove_edge(&mut self.agents, &mut self.directional_store, agent_name, query)
+        from: &str,
+        to: &str,
+        fields: HashMap<String, PraxsmthConstant>,
+        type_name: &str,
+    ) -> Result<(EdgeHandle, EdgeHandle), String> {
+        self.validate_type_fields(type_name, &fields)?;
+        let to_owned = to.to_string();
+        let from_owned = from.to_string();
+        self.add_paired_edges(from, to, fields, type_name, |h1, h2| {
+            (
+                EdgeData::Reciprocal {
+                    to: to_owned,
+                    complement_handle: h2,
+                },
+                EdgeData::Reciprocal {
+                    to: from_owned,
+                    complement_handle: h1,
+                },
+            )
+        })
     }
 
-    pub fn get_reciprocal(&self, agent_name: &str, query: &ReciprocalQuery) -> Option<&Reciprocal> {
-        let handle = find_handle(&self.agents, &self.reciprocal_store, agent_name, query).ok()?;
-        self.reciprocal_store.get(handle)
+    fn update_reciprocal_nonpropagate(
+        &mut self,
+        handle: EdgeHandle,
+        new_fields: HashMap<String, PraxsmthConstant>,
+    ) -> Result<EdgeHandle, String> {
+        self.update_edge_with_complement(handle.clone(), new_fields, |data| match data {
+            EdgeData::Reciprocal {
+                complement_handle, ..
+            } => Ok(complement_handle.clone()),
+            _ => Err(format!(
+                "Edge with handle {:?} is not a reciprocal edge",
+                handle
+            )),
+        })
     }
 
     pub fn update_reciprocal(
         &mut self,
-        agent_name: &str,
-        query: &ReciprocalQuery,
-        fields: HashMap<String, PraxsmthConstant>,
+        handle: EdgeHandle,
+        new_fields: HashMap<String, PraxsmthConstant>,
     ) -> Result<(), String> {
-        update_edge(&self.agents, &mut self.reciprocal_store, agent_name, query, fields)
+        let complement_handle = self.update_reciprocal_nonpropagate(handle, new_fields.clone())?;
+        self.update_reciprocal_nonpropagate(complement_handle, new_fields)?;
+        Ok(())
     }
 
-    pub fn remove_reciprocal(
+    pub fn add_evaluation(
         &mut self,
-        agent_name: &str,
-        query: &ReciprocalQuery,
-    ) -> Result<(), String> {
-        remove_edge(&mut self.agents, &mut self.reciprocal_store, agent_name, query)
+        from: &str,
+        to: &str,
+        fields: HashMap<String, PraxsmthConstant>,
+        type_name: &str,
+        reason: &str,
+    ) -> Result<(EdgeHandle, EdgeHandle), String> {
+        self.validate_type_fields(type_name, &fields)?;
+        let to_owned = to.to_string();
+        let from_owned = from.to_string();
+        let reason_owned = reason.to_string();
+        self.add_paired_edges(from, to, fields, type_name, |h1, h2| {
+            (
+                EdgeData::EvaluationForward {
+                    to: to_owned,
+                    complement_handle: h2,
+                    reason: reason_owned.clone(),
+                },
+                EdgeData::EvaluationBackward {
+                    to: from_owned,
+                    complement_handle: h1,
+                    reason: reason_owned,
+                },
+            )
+        })
     }
 
-    pub fn get_evaluation(&self, agent_name: &str, query: &EvaluationQuery) -> Option<&Evaluation> {
-        let handle = find_handle(&self.agents, &self.evaluation_store, agent_name, query).ok()?;
-        self.evaluation_store.get(handle)
+    fn update_evaluation_nonpropagate(
+        &mut self,
+        handle: EdgeHandle,
+        new_fields: HashMap<String, PraxsmthConstant>,
+        new_reason: &str,
+    ) -> Result<EdgeHandle, String> {
+        let new_reason = new_reason.to_string();
+        self.update_edge_with_complement(handle.clone(), new_fields, |data| match data {
+            EdgeData::EvaluationForward {
+                complement_handle,
+                reason,
+                ..
+            }
+            | EdgeData::EvaluationBackward {
+                complement_handle,
+                reason,
+                ..
+            } => {
+                *reason = new_reason;
+                Ok(complement_handle.clone())
+            }
+            _ => Err(format!(
+                "Edge with handle {:?} is not an evaluation edge",
+                handle
+            )),
+        })
     }
 
     pub fn update_evaluation(
         &mut self,
-        agent_name: &str,
-        query: &EvaluationQuery,
-        fields: HashMap<String, PraxsmthConstant>,
+        handle: EdgeHandle,
+        new_fields: HashMap<String, PraxsmthConstant>,
+        new_reason: &str,
     ) -> Result<(), String> {
-        update_edge(&self.agents, &mut self.evaluation_store, agent_name, query, fields)
+        let complement_handle =
+            self.update_evaluation_nonpropagate(handle, new_fields.clone(), new_reason)?;
+        self.update_evaluation_nonpropagate(complement_handle, new_fields, new_reason)?;
+        Ok(())
     }
 
-    pub fn remove_evaluation(
+    pub fn add_emotion(
         &mut self,
-        agent_name: &str,
-        query: &EvaluationQuery,
-    ) -> Result<(), String> {
-        remove_edge(&mut self.agents, &mut self.evaluation_store, agent_name, query)
-    }
+        from: &str,
+        fields: HashMap<String, PraxsmthConstant>,
+        type_name: &str,
+    ) -> Result<EdgeHandle, String> {
+        self.validate_type_fields(type_name, &fields)?;
 
-    pub fn get_emotion(&self, agent_name: &str, emotion_name: &str) -> Option<&Emotion> {
-        let handle = find_handle(
-            &self.agents,
-            &self.emotion_store,
-            agent_name,
-            &emotion_name.to_string(),
-        )
-        .ok()?;
-        self.emotion_store.get(handle)
+        let edge = WorldEdge {
+            type_name: type_name.to_string(),
+            from: from.to_string(),
+            fields,
+            data: EdgeData::Emotion,
+        };
+
+        // Remove existing emotion edge if it exists
+        if let Some(agent) = self.agents.get(from) {
+            for edge_handle in &agent.edges {
+                if let Some(existing_edge) = self.edge_store.get(edge_handle.clone()) {
+                    if let EdgeData::Emotion = existing_edge.data {
+                        self.remove_edge(edge_handle.clone(), false)?;
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.add_edge(edge)
     }
 
     pub fn update_emotion(
         &mut self,
-        agent_name: &str,
-        emotion_name: &str,
-        fields: HashMap<String, PraxsmthConstant>,
+        handle: EdgeHandle,
+        new_fields: HashMap<String, PraxsmthConstant>,
     ) -> Result<(), String> {
-        update_edge(
-            &self.agents,
-            &mut self.emotion_store,
-            agent_name,
-            &emotion_name.to_string(),
-            fields,
-        )
+        self.update_edge_simple(handle.clone(), new_fields, |data| match data {
+            EdgeData::Emotion => Ok(()),
+            _ => Err(format!(
+                "Edge with handle {:?} is not an emotion edge",
+                handle
+            )),
+        })
     }
 
-    pub fn remove_emotion(&mut self, agent_name: &str, emotion_name: &str) -> Result<(), String> {
-        remove_edge(
-            &mut self.agents,
-            &mut self.emotion_store,
-            agent_name,
-            &emotion_name.to_string(),
-        )
-    }
+    // TODO: add similar functions for practices
 
-    pub fn get_practice(&self, agent_name: &str, query: &PracticeQuery) -> Option<&Practice> {
-        let handle = find_handle(&self.agents, &self.practice_store, agent_name, query).ok()?;
-        self.practice_store.get(handle)
-    }
+    pub fn process_declaration(&mut self, decl: Declaration) -> Result<(), String> {
+        // if decl.sentence.len() < 3 {
+        //     return Err(format!(
+        //         "Declaration sentence must have at least 3 parts: {:?}",
+        //         decl.sentence.serialize()
+        //     ));
+        // }
 
-    pub fn update_practice(
-        &mut self,
-        agent_name: &str,
-        query: &PracticeQuery,
-        fields: HashMap<String, PraxsmthConstant>,
-    ) -> Result<(), String> {
-        update_edge(&self.agents, &mut self.practice_store, agent_name, query, fields)
-    }
-
-    pub fn remove_practice(
-        &mut self,
-        agent_name: &str,
-        query: &PracticeQuery,
-    ) -> Result<(), String> {
-        remove_edge(&mut self.agents, &mut self.practice_store, agent_name, query)
-    }
-
-    pub fn process_declaration(&mut self, decl: &Declaration) -> Result<(), String> {
-        if decl.sentence.len() < 3 {
-            return Err(format!(
-                "Declaration sentence must have at least 3 parts: {:?}",
-                decl.sentence.serialize()
-            ));
-        }
-
-        unimplemented!();
+        // match decl.sentence[1].as_str() {
+        //     "is" => {
+        //         // Trait declaration: "<agent>.is.<trait>"
+        //         let agent_name = &decl.sentence[0];
+        //         let trait_name = &decl.sentence[2];
+        //         self.add_trait(decl.fields, agent_name.clone());
+        //     }
+        // }
+        Ok(())
     }
 }
