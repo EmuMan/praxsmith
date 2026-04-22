@@ -55,7 +55,7 @@ fn verify_fields(
 }
 
 #[derive(Debug, Clone)]
-struct WorldEdge {
+pub struct WorldEdge {
     type_name: String,
     from: String,
     fields: HashMap<String, PraxsmthConstant>,
@@ -77,7 +77,7 @@ impl WorldEdge {
 }
 
 #[derive(Debug, Clone)]
-enum EdgeData {
+pub enum EdgeData {
     Trait,
     DirectionalForward {
         to: String,
@@ -108,7 +108,7 @@ enum EdgeData {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct EdgeHandle {
+pub struct EdgeHandle {
     index: u32,
     generation: u32,
 }
@@ -118,7 +118,7 @@ struct EdgeStoreSlot {
     generation: u32,
 }
 
-struct EdgeStore {
+pub struct EdgeStore {
     slots: Vec<EdgeStoreSlot>,
     open_indices: Vec<usize>,
 }
