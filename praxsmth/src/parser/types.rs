@@ -8,11 +8,6 @@ use pest::pratt_parser::{Assoc, Op, PrattParser};
 use crate::definitions::{TypeFields, types::*};
 use crate::parser::{PraxsmthParser, Rule, parse_field, parse_sentence, parse_string, parse_value};
 
-enum ParsedType {
-    Single(PraxsmthType),
-    Complementary(PraxsmthType, PraxsmthType),
-}
-
 fn parse_field_brackets(pair: Pair<Rule>) -> TypeFields {
     // pair is Rule::field_brackets, contains field_def pairs
     pair.into_inner()
@@ -26,7 +21,7 @@ fn parse_field_brackets(pair: Pair<Rule>) -> TypeFields {
         .collect()
 }
 
-fn parse_trait(pair: Pair<Rule>) -> ParsedType {
+fn parse_trait(pair: Pair<Rule>) -> PraxsmthType {
     // pair is Rule::t_trait: "trait" ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -39,14 +34,14 @@ fn parse_trait(pair: Pair<Rule>) -> ParsedType {
         HashMap::new()
     };
 
-    ParsedType::Single(PraxsmthType {
+    PraxsmthType {
         name,
         fields,
         data: PraxsmthTypeData::Trait,
-    })
+    }
 }
 
-fn parse_directional(pair: Pair<Rule>) -> ParsedType {
+fn parse_directional(pair: Pair<Rule>) -> PraxsmthType {
     // pair is Rule::t_directional: "directional" ~ var_name ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let forward_name = inner.next().unwrap().as_str().to_string();
@@ -60,23 +55,16 @@ fn parse_directional(pair: Pair<Rule>) -> ParsedType {
         HashMap::new()
     };
 
-    ParsedType::Complementary(
-        PraxsmthType {
-            name: forward_name.clone(),
-            fields: fields.clone(),
-            data: PraxsmthTypeData::DirectionalForward {
-                backward_name: backward_name.clone(),
-            },
+    PraxsmthType {
+        name: forward_name.clone(),
+        fields: fields.clone(),
+        data: PraxsmthTypeData::Directional {
+            complement: backward_name.clone(),
         },
-        PraxsmthType {
-            name: backward_name,
-            fields,
-            data: PraxsmthTypeData::DirectionalBackward { forward_name },
-        },
-    )
+    }
 }
 
-fn parse_reciprocal(pair: Pair<Rule>) -> ParsedType {
+fn parse_reciprocal(pair: Pair<Rule>) -> PraxsmthType {
     // pair is Rule::t_reciprocal: "reciprocal" ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -89,14 +77,14 @@ fn parse_reciprocal(pair: Pair<Rule>) -> ParsedType {
         HashMap::new()
     };
 
-    ParsedType::Single(PraxsmthType {
+    PraxsmthType {
         name,
         fields,
         data: PraxsmthTypeData::Reciprocal,
-    })
+    }
 }
 
-fn parse_evaluation(pair: Pair<Rule>) -> ParsedType {
+fn parse_evaluation(pair: Pair<Rule>) -> PraxsmthType {
     // pair is Rule::t_evaluation: "evaluation" ~ var_name ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let forward_name = inner.next().unwrap().as_str().to_string();
@@ -110,23 +98,16 @@ fn parse_evaluation(pair: Pair<Rule>) -> ParsedType {
         HashMap::new()
     };
 
-    ParsedType::Complementary(
-        PraxsmthType {
-            name: forward_name.clone(),
-            fields: fields.clone(),
-            data: PraxsmthTypeData::EvaluationForward {
-                backward_name: backward_name.clone(),
-            },
+    PraxsmthType {
+        name: forward_name.clone(),
+        fields: fields.clone(),
+        data: PraxsmthTypeData::Evaluation {
+            complement: backward_name.clone(),
         },
-        PraxsmthType {
-            name: backward_name,
-            fields,
-            data: PraxsmthTypeData::EvaluationBackward { forward_name },
-        },
-    )
+    }
 }
 
-fn parse_emotion(pair: Pair<Rule>) -> ParsedType {
+fn parse_emotion(pair: Pair<Rule>) -> PraxsmthType {
     // pair is Rule::t_emotion: "emotion" ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -139,11 +120,11 @@ fn parse_emotion(pair: Pair<Rule>) -> ParsedType {
         HashMap::new()
     };
 
-    ParsedType::Single(PraxsmthType {
+    PraxsmthType {
         name,
         fields,
         data: PraxsmthTypeData::Emotion,
-    })
+    }
 }
 
 fn parse_practice_condition(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> PracticeCondition {
@@ -251,7 +232,7 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
     }
 }
 
-fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> ParsedType {
+fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PraxsmthType {
     // pair is Rule::t_practice: "practice" ~ var_name ~ t_practice_params ~ t_practice_brackets
     let mut inner = pair.into_inner();
 
@@ -302,7 +283,7 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> ParsedType {
         }
     }
 
-    ParsedType::Single(PraxsmthType {
+    PraxsmthType {
         name,
         fields,
         data: PraxsmthTypeData::Practice {
@@ -310,7 +291,7 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> ParsedType {
             display,
             actions,
         },
-    })
+    }
 }
 
 pub fn parse_types(input_str: &str) -> Result<Vec<PraxsmthType>, Error<Rule>> {
@@ -341,10 +322,6 @@ pub fn parse_types(input_str: &str) -> Result<Vec<PraxsmthType>, Error<Rule>> {
             Rule::t_emotion => parse_emotion(pair),
             Rule::t_practice => parse_practice(pair, &practice_pratt),
             _ => unreachable!(),
-        })
-        .flat_map(|parsed| match parsed {
-            ParsedType::Single(t) => vec![t],
-            ParsedType::Complementary(t1, t2) => vec![t1, t2],
         })
         .collect();
 

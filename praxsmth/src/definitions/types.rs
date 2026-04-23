@@ -12,18 +12,12 @@ pub struct PraxsmthType {
 #[derive(Debug, Clone)]
 pub enum PraxsmthTypeData {
     Trait,
-    DirectionalForward {
-        backward_name: String,
-    },
-    DirectionalBackward {
-        forward_name: String,
+    Directional {
+        complement: String,
     },
     Reciprocal,
-    EvaluationForward {
-        backward_name: String,
-    },
-    EvaluationBackward {
-        forward_name: String,
+    Evaluation {
+        complement: String,
     },
     Emotion,
     Practice {
@@ -39,24 +33,22 @@ impl Serialize for PraxsmthType {
             PraxsmthTypeData::Trait => {
                 format!("trait {} {{{}}}", self.name, self.fields.serialize())
             }
-            PraxsmthTypeData::DirectionalForward { .. } => format!(
-                "directional f/{} {{{}}}",
+            PraxsmthTypeData::Directional { complement } => format!(
+                "directional {}/{} {{{}}}",
                 self.name,
-                self.fields.serialize()
-            ),
-            PraxsmthTypeData::DirectionalBackward { .. } => format!(
-                "directional b/{} {{{}}}",
-                self.name,
+                complement,
                 self.fields.serialize()
             ),
             PraxsmthTypeData::Reciprocal => {
                 format!("reciprocal {} {{{}}}", self.name, self.fields.serialize())
             }
-            PraxsmthTypeData::EvaluationForward { .. } => {
-                format!("evaluation f/{} {{{}}}", self.name, self.fields.serialize())
-            }
-            PraxsmthTypeData::EvaluationBackward { .. } => {
-                format!("evaluation b/{} {{{}}}", self.name, self.fields.serialize())
+            PraxsmthTypeData::Evaluation { complement } => {
+                format!(
+                    "evaluation {}/{} {{{}}}",
+                    self.name,
+                    complement,
+                    self.fields.serialize()
+                )
             }
             PraxsmthTypeData::Emotion => {
                 format!("emotion {} {{{}}}", self.name, self.fields.serialize())
