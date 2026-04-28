@@ -15,9 +15,10 @@ impl Serialize for Sentence {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PraxsmthConstant {
     Number(i64),
+    Boolean(bool),
     Variant(String),
     String(String),
 }
@@ -26,6 +27,7 @@ impl Serialize for PraxsmthConstant {
     fn serialize(&self) -> String {
         match self {
             PraxsmthConstant::Number(n) => n.to_string(),
+            PraxsmthConstant::Boolean(b) => b.to_string(),
             PraxsmthConstant::Variant(v) => v.clone(),
             PraxsmthConstant::String(s) => format!("\"{}\"", s),
         }
@@ -35,6 +37,7 @@ impl Serialize for PraxsmthConstant {
 #[derive(Debug, Clone)]
 pub enum PraxsmthValue {
     Number(i64),
+    Boolean(bool),
     Variant(String),
     String(String),
     Variable(Sentence),
@@ -44,9 +47,21 @@ impl Serialize for PraxsmthValue {
     fn serialize(&self) -> String {
         match self {
             PraxsmthValue::Number(n) => n.to_string(),
+            PraxsmthValue::Boolean(b) => b.to_string(),
             PraxsmthValue::Variant(v) => v.clone(),
             PraxsmthValue::String(s) => format!("\"{}\"", s),
             PraxsmthValue::Variable(s) => s.join("."),
+        }
+    }
+}
+
+impl From<&PraxsmthConstant> for PraxsmthValue {
+    fn from(constant: &PraxsmthConstant) -> Self {
+        match constant {
+            PraxsmthConstant::Number(n) => PraxsmthValue::Number(*n),
+            PraxsmthConstant::Boolean(b) => PraxsmthValue::Boolean(*b),
+            PraxsmthConstant::Variant(v) => PraxsmthValue::Variant(v.clone()),
+            PraxsmthConstant::String(s) => PraxsmthValue::String(s.clone()),
         }
     }
 }
