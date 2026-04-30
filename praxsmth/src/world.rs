@@ -2,17 +2,20 @@ use std::collections::HashMap;
 
 use crate::{
     definitions::{
-        PraxsmthConstant, PraxsmthField, Serialize, TypeFields, types::PraxsmthTypeData, world::*,
+        FieldTypes, PraxsmthConstant, PraxsmthField, Serialize, types::PraxsmthTypeData, world::*,
     },
     types::TypeMapping,
 };
 
 pub mod interface;
 
+type Fields = HashMap<String, PraxsmthConstant>;
+type Bindings = HashMap<String, String>;
+
 // TODO: verify this works correctly in all cases, and add more detailed error messages
 fn verify_fields(
-    fields: &HashMap<String, PraxsmthConstant>,
-    field_types: &TypeFields,
+    fields: &Fields,
+    field_types: &FieldTypes,
     require_all: bool,
 ) -> Result<(), String> {
     if require_all {
@@ -110,15 +113,15 @@ impl RelationToAgent {
 pub struct Relation {
     type_name: String,
     edges: Vec<RelationToAgent>,
-    fields: HashMap<String, PraxsmthConstant>,
+    fields: Fields,
     data: RelationData,
 }
 
 impl Relation {
     pub fn update_fields(
         &mut self,
-        new_fields: HashMap<String, PraxsmthConstant>,
-        field_defs: &HashMap<String, PraxsmthField>,
+        new_fields: Fields,
+        field_defs: &FieldTypes,
     ) -> Result<(), String> {
         verify_fields(&new_fields, &field_defs, false)?;
         for (field_name, field_value) in new_fields {
@@ -135,7 +138,7 @@ pub enum RelationData {
     Reciprocal,
     Evaluation { reason: String },
     Emotion,
-    Practice,
+    Practice { bindings: HashMap<String, String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -320,6 +323,14 @@ impl World {
         self.agents.get(name)
     }
 
+    pub fn get_agent_with_bindings(&self, name: &str, bindings: &Bindings) -> Option<&Agent> {
+        // bindings should shadow direct agent names
+        match bindings.get(name) {
+            Some(bound_name) => self.agents.get(bound_name),
+            None => self.agents.get(name),
+        }
+    }
+
     pub fn get_relation(&self, handle: RelationHandle) -> Option<&Relation> {
         self.relation_store.get(handle)
     }
@@ -331,7 +342,7 @@ impl World {
     pub fn update_relation(
         &mut self,
         handle: RelationHandle,
-        new_fields: HashMap<String, PraxsmthConstant>,
+        new_fields: Fields,
     ) -> Result<(), String> {
         match self.relation_store.get_mut(handle.clone()) {
             Some(relation) => {
@@ -346,7 +357,7 @@ impl World {
                     | RelationData::Emotion
                     | RelationData::Directional
                     | RelationData::Reciprocal
-                    | RelationData::Practice => {
+                    | RelationData::Practice { .. } => {
                         relation.update_fields(new_fields, &relation_type.fields)
                     }
                     RelationData::Evaluation { reason } => {
@@ -407,11 +418,7 @@ impl World {
         Ok(())
     }
 
-    fn validate_type_fields(
-        &self,
-        type_name: &str,
-        fields: &HashMap<String, PraxsmthConstant>,
-    ) -> Result<(), String> {
+    fn validate_type_fields(&self, type_name: &str, fields: &Fields) -> Result<(), String> {
         match self.type_mapping.get_type(type_name) {
             Some(edge_type) => verify_fields(fields, &edge_type.fields, true),
             None => Err(format!("Type {} not found in type mapping", type_name)),
@@ -422,7 +429,7 @@ impl World {
         &mut self,
         agent: &str,
         type_name: &str,
-        fields: HashMap<String, PraxsmthConstant>,
+        fields: Fields,
     ) -> Result<RelationHandle, String> {
         self.validate_type_fields(type_name, &fields)?;
 
@@ -461,7 +468,7 @@ impl World {
         &mut self,
         agent: &str,
         type_name: &str,
-        fields: HashMap<String, PraxsmthConstant>,
+        fields: Fields,
     ) -> Result<RelationHandle, String> {
         self.validate_type_fields(type_name, &fields)?;
 
@@ -517,7 +524,7 @@ impl World {
         from: &str,
         to: &str,
         type_name: &str,
-        fields: HashMap<String, PraxsmthConstant>,
+        fields: Fields,
     ) -> Result<RelationHandle, String> {
         self.validate_type_fields(type_name, &fields)?;
 
@@ -593,7 +600,7 @@ impl World {
         agent_1: &str,
         agent_2: &str,
         type_name: &str,
-        fields: HashMap<String, PraxsmthConstant>,
+        fields: Fields,
     ) -> Result<RelationHandle, String> {
         self.validate_type_fields(type_name, &fields)?;
 
@@ -654,7 +661,7 @@ impl World {
         from: &str,
         to: &str,
         type_name: &str,
-        fields: HashMap<String, PraxsmthConstant>,
+        fields: Fields,
         reason: &str,
     ) -> Result<RelationHandle, String> {
         self.validate_type_fields(type_name, &fields)?;
@@ -732,12 +739,35 @@ impl World {
         &mut self,
         participants: Vec<String>,
         type_name: &str,
-        fields: HashMap<String, PraxsmthConstant>,
+        fields: Fields,
     ) -> Result<RelationHandle, String> {
         self.validate_type_fields(type_name, &fields)?;
 
         let participant_refs: Vec<&str> = participants.iter().map(|s| s.as_str()).collect();
         self.validate_agents(&participant_refs)?;
+
+        let Some(type_def) = self.type_mapping.get_type(type_name) else {
+            return Err(format!("Type {} not found in type mapping", type_name));
+        };
+
+        let PraxsmthTypeData::Practice { params, .. } = &type_def.data else {
+            return Err(format!("Type {} is not a practice type", type_name));
+        };
+
+        if params.len() != participants.len() {
+            return Err(format!(
+                "Practice type {} expects {} participants, but {} were provided",
+                type_name,
+                params.len(),
+                participants.len()
+            ));
+        }
+
+        let mut bindings = HashMap::new();
+
+        for (param, participant) in params.iter().zip(participants.iter()) {
+            bindings.insert(param.clone(), participant.clone());
+        }
 
         let edges = participants
             .iter()
@@ -748,7 +778,7 @@ impl World {
             type_name: type_name.to_string(),
             edges,
             fields,
-            data: RelationData::Practice,
+            data: RelationData::Practice { bindings },
         });
 
         for participant in participants {
@@ -798,7 +828,7 @@ impl World {
         from: &str,
         to: &str,
         edge_type_name: &str,
-        fields: HashMap<String, PraxsmthConstant>,
+        fields: Fields,
     ) -> Result<RelationHandle, String> {
         match self.type_mapping.get_type(edge_type_name) {
             Some(edge_type) => match edge_type.data {

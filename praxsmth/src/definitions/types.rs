@@ -1,11 +1,11 @@
 use crate::definitions::{PraxsmthValue, Serialize};
 
-use crate::definitions::{Sentence, TypeFields};
+use crate::definitions::{FieldTypes, Sentence};
 
 #[derive(Debug, Clone)]
 pub struct PraxsmthType {
     pub name: String,
-    pub fields: TypeFields,
+    pub fields: FieldTypes,
     pub data: PraxsmthTypeData,
 }
 
@@ -23,7 +23,7 @@ pub enum PraxsmthTypeData {
     Practice {
         params: Vec<String>,
         display: Option<String>,
-        actions: Option<Vec<PracticeAction>>,
+        actions: Vec<PracticeAction>,
     },
 }
 

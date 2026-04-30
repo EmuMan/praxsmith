@@ -5,10 +5,10 @@ use pest::error::Error;
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
-use crate::definitions::{TypeFields, types::*};
+use crate::definitions::{FieldTypes, types::*};
 use crate::parser::{PraxsmthParser, Rule, parse_field, parse_sentence, parse_string, parse_value};
 
-fn parse_field_brackets(pair: Pair<Rule>) -> TypeFields {
+fn parse_field_brackets(pair: Pair<Rule>) -> FieldTypes {
     // pair is Rule::field_brackets, contains field_def pairs
     pair.into_inner()
         .map(|field_def| {
@@ -250,7 +250,7 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PraxsmthType {
     let brackets_pair = inner.next().unwrap(); // Rule::t_practice_brackets
 
     let mut display = None;
-    let mut actions = None;
+    let mut actions = Vec::new();
     let mut fields = HashMap::new();
 
     for field_pair in brackets_pair.into_inner() {
@@ -266,12 +266,10 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PraxsmthType {
             Rule::t_practice_actions_field => {
                 // "actions" ~ ":" ~ t_practice_actions
                 let actions_pair = field_inner.next().unwrap(); // Rule::t_practice_actions
-                actions = Some(
-                    actions_pair
-                        .into_inner()
-                        .map(|action| parse_practice_action(action, pratt))
-                        .collect(),
-                );
+                actions = actions_pair
+                    .into_inner()
+                    .map(|action| parse_practice_action(action, pratt))
+                    .collect();
             }
             Rule::t_practice_generic_field => {
                 // var_name ~ ":" ~ field

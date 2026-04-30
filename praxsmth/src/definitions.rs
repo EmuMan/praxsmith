@@ -66,7 +66,7 @@ impl From<&PraxsmthConstant> for PraxsmthValue {
     }
 }
 
-pub type TypeFields = HashMap<String, PraxsmthField>;
+pub type FieldTypes = HashMap<String, PraxsmthField>;
 
 #[derive(Debug, Clone)]
 pub enum PraxsmthField {
@@ -83,7 +83,7 @@ impl Serialize for PraxsmthField {
     }
 }
 
-impl Serialize for TypeFields {
+impl Serialize for FieldTypes {
     fn serialize(&self) -> String {
         let fields_str: Vec<_> = self
             .iter()
