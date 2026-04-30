@@ -7,7 +7,8 @@ use crate::{
     types::TypeMapping,
 };
 
-pub mod interface;
+pub mod api;
+pub mod simulation;
 
 type Fields = HashMap<String, PraxsmthConstant>;
 type Bindings = HashMap<String, String>;

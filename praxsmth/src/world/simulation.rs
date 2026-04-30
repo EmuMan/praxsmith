@@ -3,12 +3,21 @@ use std::collections::HashMap;
 use crate::{
     definitions::{
         PraxsmthConstant, PraxsmthValue, Sentence,
-        types::{PracticeAction, PracticeCondition, PracticeOutcome, PraxsmthTypeData},
+        types::{PracticeCondition, PracticeOutcome, PraxsmthTypeData},
         world::Declaration,
     },
     world::{AgentToRelation, Bindings, Relation, RelationData, RelationHandle, World},
 };
 
+#[derive(Debug, Clone)]
+pub struct AvailableAction {
+    pub display_name: String,
+    pub overall_index: usize,
+    pub practice_handle: RelationHandle,
+    pub index_within_practice: usize,
+}
+
+#[derive(Debug, Clone)]
 pub enum RelationQuery {
     Trait {
         agent: String,
@@ -366,7 +375,7 @@ impl World {
         }
     }
 
-    pub fn get_available_actions(&self, agent_name: &str) -> Result<Vec<PracticeAction>, String> {
+    pub fn get_available_actions(&self, agent_name: &str) -> Result<Vec<AvailableAction>, String> {
         let agent = self.get_agent(agent_name).ok_or("Agent not found")?;
         let mut available_actions = Vec::new();
 
@@ -386,13 +395,18 @@ impl World {
                     let PraxsmthTypeData::Practice { actions, .. } = &relation_type.data else {
                         return Err("Relation type for practice action is not a practice".into());
                     };
-                    for action in actions {
+                    'action_loop: for (i, action) in actions.iter().enumerate() {
                         for condition in &action.conditions {
                             if !self.check_condition(condition.clone(), bindings)? {
-                                continue;
+                                continue 'action_loop;
                             }
                         }
-                        available_actions.push(action.clone());
+                        available_actions.push(AvailableAction {
+                            display_name: action.name.clone(),
+                            overall_index: available_actions.len(),
+                            practice_handle: handle.clone(),
+                            index_within_practice: i,
+                        });
                     }
                 }
                 _ => {}
@@ -400,5 +414,38 @@ impl World {
         }
 
         Ok(available_actions)
+    }
+
+    pub fn process_available_action(
+        &mut self,
+        available_action: &AvailableAction,
+    ) -> Result<(), String> {
+        let Some(relation) = self.get_relation(available_action.practice_handle.clone()) else {
+            return Err("Relation not found for available action".into());
+        };
+        let RelationData::Practice { bindings } = &relation.data else {
+            return Err("Relation data for available action is not practice".into());
+        };
+        let relation_type = self
+            .type_mapping
+            .get_type(&relation.type_name)
+            .ok_or("Type not found for available action")?;
+        let PraxsmthTypeData::Practice { actions, .. } = &relation_type.data else {
+            return Err("Relation type for available action is not a practice".into());
+        };
+        let action = actions
+            .get(available_action.index_within_practice)
+            .ok_or("Action index out of bounds for available action")?;
+
+        // "no meaningful cost concern here"... says Claude. Not convinced.
+        // TODO: Fix this a better way.
+        let outcomes = action.outcomes.clone();
+        let bindings = bindings.clone();
+
+        for outcome in &outcomes {
+            self.process_outcome(outcome, &bindings)?;
+        }
+
+        Ok(())
     }
 }
