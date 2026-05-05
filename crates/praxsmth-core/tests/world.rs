@@ -47,11 +47,11 @@ fn setup_world() -> Result<World, String> {
 
     let mut world = World::new(type_mapping);
 
-    world.add_agent(AgentInfo {
+    world.add_agent(&AgentInfo {
         name: "jacob".into(),
         subagents: HashMap::new(),
     })?;
-    world.add_agent(AgentInfo {
+    world.add_agent(&AgentInfo {
         name: "alaina".into(),
         subagents: HashMap::new(),
     })?;
@@ -69,7 +69,7 @@ fn test_trait() -> Result<(), String> {
         "chronically_sleep_deprived".into(),
     ];
 
-    world.process_declaration(Declaration {
+    world.process_declaration(&Declaration {
         sentence: sentence.clone(),
         fields: HashMap::new(),
     })?;
@@ -100,12 +100,12 @@ fn test_practice_ok() -> Result<(), String> {
         "chronically_sleep_deprived".into(),
     ];
 
-    world.process_declaration(Declaration {
+    world.process_declaration(&Declaration {
         sentence: emotion_sentence.clone(),
         fields: HashMap::new(),
     })?;
 
-    world.process_declaration(Declaration {
+    world.process_declaration(&Declaration {
         sentence: vec![
             "practice".into(),
             "wake".into(),
@@ -135,7 +135,7 @@ fn test_practice_ok() -> Result<(), String> {
 fn test_practice_condition_fail() -> Result<(), String> {
     let mut world = setup_world()?;
 
-    world.process_declaration(Declaration {
+    world.process_declaration(&Declaration {
         sentence: vec![
             "practice".into(),
             "wake".into(),

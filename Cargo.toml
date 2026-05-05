@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/world-core", "crates/world-wasm"]
+members = ["crates/praxsmth-core", "crates/praxsmth-wasm"]
 resolver = "2"
 
 [profile.release]

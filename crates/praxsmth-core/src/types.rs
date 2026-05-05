@@ -22,6 +22,12 @@ impl TypeMapping {
         }
     }
 
+    pub fn from_types(types: Vec<PraxsmthType>) -> Result<Self, String> {
+        let mut mapping = TypeMapping::new();
+        mapping.add_types(types)?;
+        Ok(mapping)
+    }
+
     pub fn get_type(&self, name: &str) -> Option<&PraxsmthType> {
         match self.types.get(name) {
             Some(TypeMappingEntry::Type(t)) => Some(t),

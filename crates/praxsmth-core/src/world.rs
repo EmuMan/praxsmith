@@ -112,10 +112,10 @@ impl RelationToAgent {
 
 #[derive(Debug, Clone)]
 pub struct Relation {
-    type_name: String,
+    pub type_name: String,
     edges: Vec<RelationToAgent>,
-    fields: Fields,
-    data: RelationData,
+    pub fields: Fields,
+    pub data: RelationData,
 }
 
 impl Relation {
@@ -266,12 +266,17 @@ impl RelationStore {
 
 pub struct Agent {
     pub edges: Vec<AgentToRelation>,
+    // Quick access field for the singular emotion they might have
+    pub emotion: Option<RelationHandle>,
 }
 
 impl Agent {
-    pub fn new(_info: AgentInfo) -> Self {
+    pub fn new(_info: &AgentInfo) -> Self {
         // TODO: better agent construction
-        Agent { edges: Vec::new() }
+        Agent {
+            edges: Vec::new(),
+            emotion: None,
+        }
     }
 
     pub fn remove_edges_to(&mut self, handle: RelationHandle) {
@@ -312,7 +317,7 @@ impl World {
             })
     }
 
-    pub fn add_agent(&mut self, info: AgentInfo) -> Result<(), String> {
+    pub fn add_agent(&mut self, info: &AgentInfo) -> Result<(), String> {
         if self.agents.contains_key(&info.name) {
             return Err(format!("Agent with name {} already exists", info.name));
         }
@@ -482,29 +487,26 @@ impl World {
             data: RelationData::Emotion,
         });
 
-        if let Some(agent_data) = self.agents.get_mut(agent) {
-            // Remove any existing emotion edges for this agent, since an agent can only have one emotion edge at a time
-            let existing_emotions: Vec<RelationHandle> = agent_data
-                .edges
-                .iter()
-                .filter_map(|edge| match edge {
-                    AgentToRelation::Emotion(h) => Some(h.clone()),
-                    _ => None,
-                })
-                .collect();
-            agent_data
-                .edges
-                .push(AgentToRelation::Emotion(handle.clone()));
-            for emotion_handle in existing_emotions {
-                self.remove_relation(emotion_handle)?;
-            }
-            Ok(handle)
-        } else {
-            panic!(
+        let agent_data = self.agents.get_mut(agent).ok_or_else(|| {
+            format!(
                 "Agent with name {} not found when adding emotion edge",
                 agent
-            );
+            )
+        })?;
+
+        let old_emotion_handle = agent_data.emotion.clone();
+
+        agent_data
+            .edges
+            .push(AgentToRelation::Emotion(handle.clone()));
+        agent_data.emotion = Some(handle.clone());
+
+        // Remove the old emotion edge for this agent, since an agent can only have one emotion edge at a time
+        if let Some(old_emotion_handle) = old_emotion_handle {
+            self.remove_relation(old_emotion_handle)?;
         }
+
+        Ok(handle)
     }
 
     pub fn get_emotion(&self, agent: &str, type_name: &str) -> Option<(RelationHandle, &Relation)> {

@@ -1,60 +1,80 @@
+use js_sys::Function;
+use praxsmth as core;
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
-use world_core as core;
 
-#[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
-#[tsify(into_wasm_abi, from_wasm_abi)]
-pub struct Character {
-    pub id: String,
-    pub name: String,
-    pub bio: String,
-    pub emotion: String,
+#[wasm_bindgen]
+pub struct World {
+    inner: core::world::World,
+    on_update: Option<Function>,
+    on_dialog: Option<Function>,
 }
 
-impl From<core::Character> for Character {
-    fn from(c: core::Character) -> Self {
-        Self {
-            id: c.id,
-            name: c.name,
-            bio: c.bio,
-            emotion: c.emotion,
+#[wasm_bindgen]
+impl World {
+    pub fn new(types: String, world: String) -> World {
+        console_error_panic_hook::set_once();
+        let exposed_world = World {
+            inner: core::world::World::from_strings(&types, &world).unwrap(),
+            on_update: None,
+            on_dialog: None,
+        };
+
+        exposed_world
+    }
+
+    #[wasm_bindgen(js_name = setOnUpdate)]
+    pub fn set_on_update(&mut self, cb: Function) {
+        self.on_update = Some(cb);
+    }
+
+    #[wasm_bindgen(js_name = setOnDialog)]
+    pub fn set_on_dialog(&mut self, cb: Function) {
+        self.on_dialog = Some(cb);
+    }
+
+    #[wasm_bindgen(js_name = getCurrentEmotion)]
+    pub fn get_current_emotion(&self, agent: String) -> Option<String> {
+        self.inner
+            .get_current_emotion(&agent)
+            .unwrap()
+            .map(|rh_r| rh_r.1.type_name.clone())
+    }
+
+    #[wasm_bindgen(js_name = getAvailableActionNames)]
+    pub fn get_available_action_names(&self, agent_name: String) -> Vec<String> {
+        self.inner.get_available_action_names(&agent_name).unwrap()
+    }
+
+    #[wasm_bindgen(js_name = applyAction)]
+    pub fn apply_action(&mut self, agent_name: String, action_index: u32) -> JsValue {
+        let dialogs: Vec<Dialog> = self
+            .inner
+            .apply_action(&agent_name, action_index)
+            .unwrap()
+            .into_iter()
+            .map(Dialog::from)
+            .collect();
+        for dialog in &dialogs {
+            self.trigger_on_dialog(dialog);
         }
+        self.trigger_on_update();
+        serde_wasm_bindgen::to_value(&dialogs).unwrap()
     }
 }
 
-#[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
-#[tsify(into_wasm_abi, from_wasm_abi)]
-pub struct Message {
-    pub id: u32,
-    pub sender: String,
-    pub text: String,
-    pub system: bool,
-}
-
-impl From<core::Message> for Message {
-    fn from(m: core::Message) -> Self {
-        Self {
-            id: m.id,
-            sender: m.sender,
-            text: m.text,
-            system: m.system,
+impl World {
+    pub fn trigger_on_update(&self) {
+        if let Some(cb) = &self.on_update {
+            cb.call0(&JsValue::NULL).unwrap();
         }
     }
-}
 
-#[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
-#[tsify(into_wasm_abi, from_wasm_abi)]
-pub struct Action {
-    pub id: String,
-    pub label: String,
-}
-
-impl From<core::Action> for Action {
-    fn from(a: core::Action) -> Self {
-        Self {
-            id: a.id,
-            label: a.label,
+    fn trigger_on_dialog(&self, dialog: &Dialog) {
+        if let Some(cb) = &self.on_dialog {
+            let js_dialog = serde_wasm_bindgen::to_value(dialog).unwrap();
+            cb.call1(&JsValue::NULL, &js_dialog).unwrap();
         }
     }
 }
@@ -62,51 +82,22 @@ impl From<core::Action> for Action {
 #[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct WorldState {
-    pub characters: Vec<Character>,
-    pub messages: Vec<Message>,
-    pub actions: Vec<Action>,
-    pub cycle: u32,
+    pub dummy_str: String,
+    pub dummy_int: u32,
 }
 
-impl From<core::WorldState> for WorldState {
-    fn from(s: core::WorldState) -> Self {
-        Self {
-            characters: s.characters.into_iter().map(Into::into).collect(),
-            messages: s.messages.into_iter().map(Into::into).collect(),
-            actions: s.actions.into_iter().map(Into::into).collect(),
-            cycle: s.cycle,
+#[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct Dialog {
+    speaker: Option<String>,
+    line: String,
+}
+
+impl From<core::world::simulation::Dialog> for Dialog {
+    fn from(dialog: core::world::simulation::Dialog) -> Self {
+        Dialog {
+            speaker: dialog.speaker,
+            line: dialog.line,
         }
-    }
-}
-
-#[wasm_bindgen]
-pub struct World {
-    inner: core::World,
-}
-
-#[wasm_bindgen]
-impl World {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> World {
-        console_error_panic_hook::set_once();
-        World {
-            inner: core::World::new(),
-        }
-    }
-
-    #[wasm_bindgen(js_name = getState)]
-    pub fn get_state(&self) -> WorldState {
-        self.inner.state().clone().into()
-    }
-
-    #[wasm_bindgen(js_name = applyAction)]
-    pub fn apply_action(&mut self, action_id: String) -> Message {
-        self.inner.apply_action(&action_id).into()
-    }
-}
-
-impl Default for World {
-    fn default() -> Self {
-        Self::new()
     }
 }

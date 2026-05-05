@@ -75,6 +75,11 @@ impl RelationQuery {
     }
 }
 
+pub struct Dialog {
+    pub speaker: Option<String>,
+    pub line: String,
+}
+
 impl World {
     /// Parses a sentence into a relation query, returning the query
     /// and any remaining arguments. Verifies the type of the relation
@@ -161,7 +166,7 @@ impl World {
 
     pub fn process_declaration(
         &mut self,
-        declaration: Declaration,
+        declaration: &Declaration,
     ) -> Result<RelationHandle, String> {
         // This query does not have any bindings because declarations are only
         // used to declare things at a high level.
@@ -172,21 +177,23 @@ impl World {
         }
         match query {
             RelationQuery::Trait { agent, trait_name } => {
-                self.add_trait(&agent, &trait_name, declaration.fields)
+                self.add_trait(&agent, &trait_name, declaration.fields.clone())
             }
             RelationQuery::Emotion {
                 agent,
                 emotion_name,
-            } => self.add_emotion(&agent, &emotion_name, declaration.fields),
+            } => self.add_emotion(&agent, &emotion_name, declaration.fields.clone()),
             RelationQuery::Binary {
                 agent_1,
                 agent_2,
                 type_name,
-            } => self.add_binary_relation(&agent_1, &agent_2, &type_name, declaration.fields),
+            } => {
+                self.add_binary_relation(&agent_1, &agent_2, &type_name, declaration.fields.clone())
+            }
             RelationQuery::Practice {
                 participants,
                 type_name,
-            } => self.add_practice(participants, &type_name, declaration.fields),
+            } => self.add_practice(participants, &type_name, declaration.fields.clone()),
         }
     }
 
@@ -360,19 +367,23 @@ impl World {
 
     pub fn process_outcome(
         &mut self,
+        agent_name: &str,
         outcome: &PracticeOutcome,
         bindings: &Bindings,
-    ) -> Result<(), String> {
+    ) -> Result<Option<Dialog>, String> {
         match outcome {
             PracticeOutcome::Print(string) => {
-                println!("{}", string);
-                Ok(())
+                return Ok(Some(Dialog {
+                    speaker: Some(agent_name.into()),
+                    line: string.clone(),
+                }));
             }
             PracticeOutcome::Delete(sentence) => self.process_delete(sentence, bindings),
             PracticeOutcome::Set(sentence, value) => self.process_set(sentence, value, bindings),
             PracticeOutcome::Increase(sentence, amount) => self.process_increase(sentence, *amount),
             PracticeOutcome::Cycle(sentence, amount) => self.process_cycle(sentence, *amount),
-        }
+        }?;
+        Ok(None)
     }
 
     pub fn get_available_actions(&self, agent_name: &str) -> Result<Vec<AvailableAction>, String> {
@@ -419,7 +430,7 @@ impl World {
     pub fn process_available_action(
         &mut self,
         available_action: &AvailableAction,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<Dialog>, String> {
         let Some(relation) = self.get_relation(available_action.practice_handle.clone()) else {
             return Err("Relation not found for available action".into());
         };
@@ -439,13 +450,18 @@ impl World {
 
         // "no meaningful cost concern here"... says Claude. Not convinced.
         // TODO: Fix this a better way.
+        let actor_name = action.for_actor.clone();
         let outcomes = action.outcomes.clone();
         let bindings = bindings.clone();
 
+        let mut dialog: Vec<Dialog> = vec![];
+
         for outcome in &outcomes {
-            self.process_outcome(outcome, &bindings)?;
+            if let Some(new_dialog) = self.process_outcome(&actor_name, outcome, &bindings)? {
+                dialog.push(new_dialog);
+            }
         }
 
-        Ok(())
+        Ok(dialog)
     }
 }
