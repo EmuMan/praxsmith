@@ -265,15 +265,17 @@ impl RelationStore {
 }
 
 pub struct Agent {
+    pub display_name: String,
     pub edges: Vec<AgentToRelation>,
     // Quick access field for the singular emotion they might have
     pub emotion: Option<RelationHandle>,
 }
 
 impl Agent {
-    pub fn new(_info: &AgentInfo) -> Self {
+    pub fn new(info: &AgentInfo) -> Self {
         // TODO: better agent construction
         Agent {
+            display_name: info.name.clone(),
             edges: Vec::new(),
             emotion: None,
         }
@@ -831,7 +833,7 @@ impl World {
         from: &str,
         to: &str,
         edge_type_name: &str,
-        fields: Fields,
+        mut fields: Fields,
     ) -> Result<RelationHandle, String> {
         match self.type_mapping.get_type(edge_type_name) {
             Some(edge_type) => match edge_type.data {
@@ -843,11 +845,12 @@ impl World {
                 }
                 PraxsmthTypeData::Evaluation { .. } => {
                     let reason = fields
-                        .get("reason")
+                        .get_mut("reason")
                         .ok_or_else(|| "Evaluation edges require a 'reason' field".to_string())?;
                     if let PraxsmthConstant::String(reason_str) = reason {
                         // TODO: Definitely some way to avoid this clone...
                         let reason_string = reason_str.clone();
+                        fields.remove("reason");
                         self.add_evaluation(from, to, edge_type_name, fields, &reason_string)
                     } else {
                         return Err("Evaluation edge 'reason' field must be a string".to_string());

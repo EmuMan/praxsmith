@@ -1,0 +1,15 @@
+agent house as "House"
+
+agent jacob as "Jacob"
+agent alaina as "Alaina"
+
+jacob.is_married_to.alaina {
+    since: 2024
+}
+
+jacob.is_in.house
+alaina.is_in.house
+
+jacob.feels.sad
+
+practice.greet.alaina.jacob

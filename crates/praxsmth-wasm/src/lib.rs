@@ -34,6 +34,17 @@ impl World {
         self.on_dialog = Some(cb);
     }
 
+    #[wasm_bindgen(js_name = getAgentNames)]
+    pub fn get_agent_names(&self) -> JsValue {
+        let agent_names: Vec<AgentInfo> = self
+            .inner
+            .agents
+            .iter()
+            .map(|(id, agent)| AgentInfo::new(id.clone(), agent.display_name.clone()))
+            .collect();
+        serde_wasm_bindgen::to_value(&agent_names).unwrap()
+    }
+
     #[wasm_bindgen(js_name = getCurrentEmotion)]
     pub fn get_current_emotion(&self, agent: String) -> Option<String> {
         self.inner
@@ -81,13 +92,6 @@ impl World {
 
 #[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
-pub struct WorldState {
-    pub dummy_str: String,
-    pub dummy_int: u32,
-}
-
-#[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
-#[tsify(into_wasm_abi, from_wasm_abi)]
 pub struct Dialog {
     speaker: Option<String>,
     line: String,
@@ -99,5 +103,18 @@ impl From<core::world::simulation::Dialog> for Dialog {
             speaker: dialog.speaker,
             line: dialog.line,
         }
+    }
+}
+
+#[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct AgentInfo {
+    id: String,
+    name: String,
+}
+
+impl AgentInfo {
+    pub fn new(id: String, name: String) -> Self {
+        AgentInfo { id, name }
     }
 }

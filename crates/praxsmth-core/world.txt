@@ -34,8 +34,8 @@ demetrius.likes.robin {
     strength: 90
 }
 
-robin.is_in.house.living_room.sofa
-demetrius.is_in.house.living_room.sofa
+robin.is_in.house
+demetrius.is_in.house
 
 robin.likes.sebastian {
     strength: 80

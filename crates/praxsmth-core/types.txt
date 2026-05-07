@@ -2,7 +2,7 @@
 
 trait hungry
 
-trait confidence {
+trait confident {
     level: 0..100
 }
 

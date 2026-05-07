@@ -6,7 +6,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
 	plugins: [wasm(), topLevelAwait(), sveltekit()],
 	optimizeDeps: {
-		exclude: ['world']
+		exclude: ['praxsmth']
 	},
 	resolve: {
 		preserveSymlinks: true

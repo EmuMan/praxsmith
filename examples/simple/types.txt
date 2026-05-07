@@ -1,0 +1,19 @@
+emotion sad
+emotion happy
+
+practice greet (Greeter, Greeted) {
+    display: "[Greeter] is greeting [Greeted]"
+    actions: [
+        {
+            for: Greeter
+            name: "Greet [Greeted]"
+            conditions: [
+                $Greeter.in.house and $Greeted.in.house // TODO: support free variables here
+            ]
+            outcomes: [
+                print "[Greeter] has greeted [Greeted]"
+                delete self
+            ]
+        }
+    ]
+}

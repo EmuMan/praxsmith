@@ -1,45 +1,120 @@
 <script lang="ts">
-    import { onMount, tick } from "svelte";
-    import init, {
-        World,
-        type Character,
-        type Message,
-        type Action,
-        type WorldState,
-    } from "world";
+    import { onMount } from "svelte";
+    import init, { World } from "praxsmth";
+    import type { AgentInfo, Dialog, ChatMessage } from "$lib/types";
+    import { DEFAULT_TYPES, DEFAULT_WORLD } from "$lib/defaults";
+    import Editor from "$lib/Editor.svelte";
+    import Cast from "$lib/Cast.svelte";
+    import Chat from "$lib/Chat.svelte";
+    import Actions from "$lib/Actions.svelte";
 
-    let world: World | null = null;
-    let state: WorldState | null = null;
-    let chatEl: HTMLDivElement;
-    let debugOpen = false;
-    let hoveredCharacter: string | null = null;
-    let pending = false;
+    let wasmReady = $state(false);
+    let world: World | null = $state(null);
+
+    let typesSrc = $state(DEFAULT_TYPES);
+    let worldSrc = $state(DEFAULT_WORLD);
+    let buildError: string | null = $state(null);
+    let building = $state(false);
+
+    let agents: AgentInfo[] = $state([]);
+    let emotions: Record<string, string | undefined> = $state({});
+    let selectedId: string | null = $state(null);
+    let availableActions: string[] = $state([]);
+    let messages: ChatMessage[] = $state([]);
+    let pending = $state(false);
 
     onMount(async () => {
         await init();
-        world = new World();
-        state = world.getState();
-        await tick();
-        scrollChatToBottom();
+        wasmReady = true;
     });
 
-    function scrollChatToBottom() {
-        if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+    function refreshFromWorld() {
+        if (!world) return;
+        agents = world.getAgentNames() as AgentInfo[];
+
+        const nextEmotions: Record<string, string | undefined> = {};
+        for (const a of agents) {
+            nextEmotions[a.id] = world.getCurrentEmotion(a.id) ?? undefined;
+        }
+        emotions = nextEmotions;
+
+        if (selectedId && !agents.some((a) => a.id === selectedId)) {
+            selectedId = null;
+        }
+
+        availableActions = selectedId
+            ? world.getAvailableActionNames(selectedId)
+            : [];
     }
 
-    async function choose(action: Action) {
-        if (!world || pending) return;
+    function handleDialog(dialog: Dialog) {
+        if (dialog.speaker) {
+            messages = [
+                ...messages,
+                {
+                    kind: "speech",
+                    speaker: dialog.speaker,
+                    line: dialog.line,
+                },
+            ];
+        } else {
+            messages = [...messages, { kind: "system", line: dialog.line }];
+        }
+    }
+
+    function build() {
+        if (!wasmReady || building) return;
+        building = true;
+        buildError = null;
+        try {
+            const w = World.new(typesSrc, worldSrc);
+            w.setOnUpdate(() => refreshFromWorld());
+            w.setOnDialog((d: Dialog) => handleDialog(d));
+            world = w;
+            selectedId = null;
+            messages = [];
+            refreshFromWorld();
+        } catch (err) {
+            buildError = err instanceof Error ? err.message : String(err);
+            world = null;
+        } finally {
+            building = false;
+        }
+    }
+
+    function selectAgent(id: string) {
+        selectedId = id;
+        if (world) {
+            availableActions = world.getAvailableActionNames(id);
+        }
+    }
+
+    async function chooseAction(index: number) {
+        if (!world || !selectedId || pending) return;
         pending = true;
-        world.applyAction(action.id);
-        state = world.getState();
-        await tick();
-        scrollChatToBottom();
-        pending = false;
+        try {
+            world.applyAction(selectedId, index);
+        } catch (err) {
+            const line = err instanceof Error ? err.message : String(err);
+            messages = [...messages, { kind: "system", line: `error: ${line}` }];
+        } finally {
+            pending = false;
+        }
     }
 
-    $: characters = (state?.characters ?? []) as Character[];
-    $: messages = (state?.messages ?? []) as Message[];
-    $: actions = (state?.actions ?? []) as Action[];
+    function reset() {
+        world = null;
+        agents = [];
+        emotions = {};
+        selectedId = null;
+        availableActions = [];
+        messages = [];
+        buildError = null;
+    }
+
+    let selectedAgentName = $derived(
+        agents.find((a) => a.id === selectedId)?.name ?? null,
+    );
 </script>
 
 <main class="page">
@@ -50,71 +125,38 @@
         </p>
     </header>
 
-    <section class="layout">
-        <aside class="cast">
-            <h2 class="section-title">cast</h2>
-            {#each characters as c (c.id)}
-                <!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
-                <article
-                    class="card"
-                    tabindex="0"
-                    on:mouseenter={() => (hoveredCharacter = c.id)}
-                    on:mouseleave={() => (hoveredCharacter = null)}
-                    on:focus={() => (hoveredCharacter = c.id)}
-                    on:blur={() => (hoveredCharacter = null)}
-                >
-                    <div class="card-head">
-                        <span class="card-name">{c.name}</span>
-                        <span class="card-dot" aria-hidden="true"></span>
-                    </div>
-                    <p class="card-bio">{c.bio}</p>
-                    {#if hoveredCharacter === c.id}
-                        <span class="tag">felt: {c.emotion}</span>
-                    {/if}
-                </article>
-            {/each}
-        </aside>
+    {#if !world}
+        <Editor
+            bind:types={typesSrc}
+            bind:world={worldSrc}
+            error={buildError}
+            pending={building || !wasmReady}
+            onbuild={build}
+        />
+    {:else}
+        <section class="layout">
+            <Cast
+                {agents}
+                {selectedId}
+                {emotions}
+                onselect={selectAgent}
+            />
 
-        <div class="chat-column">
-            <div class="chat" bind:this={chatEl}>
-                {#each messages as m (m.id)}
-                    {#if m.system}
-                        <p class="scene">{m.text}</p>
-                    {:else}
-                        <div class="line">
-                            <span class="speaker">{m.sender}</span>
-                            <span class="em">—</span>
-                            <span class="said">{m.text}</span>
-                        </div>
-                    {/if}
-                {/each}
+            <div class="chat-column">
+                <Chat {messages} />
+                <Actions
+                    actions={availableActions}
+                    actorName={selectedAgentName}
+                    {pending}
+                    onchoose={chooseAction}
+                />
             </div>
+        </section>
 
-            <div class="actions">
-                <span class="actions-label">your move</span>
-                <div class="actions-row">
-                    {#each actions as a (a.id)}
-                        <button
-                            class="action"
-                            disabled={pending}
-                            on:click={() => choose(a)}
-                        >
-                            {a.label}
-                        </button>
-                    {/each}
-                </div>
-            </div>
+        <div class="reset-row">
+            <button class="reset" onclick={reset}>edit world</button>
         </div>
-    </section>
-
-    <div class="debug" class:open={debugOpen}>
-        <button class="debug-toggle" on:click={() => (debugOpen = !debugOpen)}>
-            {debugOpen ? "— debug" : "+ debug"}
-        </button>
-        {#if debugOpen}
-            <pre>{JSON.stringify(state, null, 2)}</pre>
-        {/if}
-    </div>
+    {/if}
 </main>
 
 <style>
@@ -163,81 +205,6 @@
         align-items: start;
     }
 
-    .section-title {
-        font-size: 0.75rem;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        color: #7b7264;
-        font-weight: 500;
-        margin: 0 0 0.9rem;
-        border-bottom: 1px dotted #c9bfae;
-        padding-bottom: 0.4rem;
-    }
-
-    .cast {
-        display: flex;
-        flex-direction: column;
-        gap: 0.9rem;
-    }
-
-    .card {
-        position: relative;
-        border: 1px solid #c9bfae;
-        background: #fbf7ef;
-        padding: 0.85rem 0.95rem;
-        outline: none;
-        transition:
-            border-color 120ms ease,
-            background 120ms ease;
-    }
-
-    .card:hover,
-    .card:focus-visible {
-        border-color: #7b7264;
-        background: #fffbf3;
-    }
-
-    .card-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .card-name {
-        font-size: 1.05rem;
-    }
-
-    .card-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: #8a7f6d;
-        display: inline-block;
-    }
-
-    .card-bio {
-        margin: 0.35rem 0 0;
-        font-size: 0.85rem;
-        color: #5a5247;
-        font-style: italic;
-        line-height: 1.45;
-    }
-
-    .tag {
-        position: absolute;
-        top: -10px;
-        right: -10px;
-        background: #fffbf3;
-        border: 1px solid #8a7f6d;
-        padding: 0.15rem 0.5rem;
-        font-size: 0.72rem;
-        font-family: "Patrick Hand", "Caveat", "Comic Sans MS", cursive;
-        transform: rotate(-2deg);
-        box-shadow: 1px 1px 0 #c9bfae;
-        white-space: nowrap;
-        color: #3c362e;
-    }
-
     .chat-column {
         display: flex;
         flex-direction: column;
@@ -245,132 +212,30 @@
         min-width: 0;
     }
 
-    .chat {
-        border: 1px solid #c9bfae;
-        background: #fbf7ef;
-        padding: 1.5rem 1.75rem;
-        min-height: 380px;
-        max-height: 520px;
-        overflow-y: auto;
-        line-height: 1.7;
-        font-size: 1.02rem;
-    }
-
-    .scene {
-        font-style: italic;
-        color: #6a6155;
-        margin: 0 0 1rem;
-        padding-left: 1rem;
-        border-left: 2px solid #d8cdb8;
-    }
-
-    .line {
-        margin: 0 0 0.55rem;
-    }
-
-    .speaker {
-        font-variant: small-caps;
-        letter-spacing: 0.04em;
-        color: #3c362e;
-        font-weight: 500;
-    }
-
-    .em {
-        color: #a79a82;
-        margin: 0 0.4rem;
-    }
-
-    .said {
-        color: #2a2622;
-    }
-
-    .actions {
-        border-top: 1px dotted #c9bfae;
-        padding-top: 1rem;
-    }
-
-    .actions-label {
-        font-size: 0.72rem;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        color: #7b7264;
-        display: block;
-        margin-bottom: 0.6rem;
-    }
-
-    .actions-row {
+    .reset-row {
+        margin-top: 2rem;
         display: flex;
-        flex-wrap: wrap;
-        gap: 0.6rem;
+        justify-content: flex-end;
     }
 
-    .action {
+    .reset {
         font-family: inherit;
-        font-size: 0.95rem;
-        background: #fbf7ef;
-        border: 1px solid #8a7f6d;
-        color: #2a2622;
-        padding: 0.55rem 0.95rem;
+        font-size: 0.85rem;
+        background: transparent;
+        border: 1px solid #c9bfae;
+        color: #6a6155;
+        padding: 0.4rem 0.85rem;
         cursor: pointer;
+        letter-spacing: 0.04em;
         transition:
             background 120ms ease,
             color 120ms ease;
     }
 
-    .action:hover:not(:disabled) {
+    .reset:hover {
         background: #2a2622;
         color: #fbf7ef;
-    }
-
-    .action:disabled {
-        opacity: 0.5;
-        cursor: default;
-    }
-
-    .debug {
-        position: fixed;
-        bottom: 1rem;
-        right: 1rem;
-        background: #1a1916;
-        color: #c9bfae;
-        font-family: "SF Mono", "Menlo", "Consolas", monospace;
-        font-size: 0.72rem;
-        border: 1px solid #3a352e;
-        opacity: 0.55;
-        transition: opacity 120ms ease;
-        max-width: 420px;
-        max-height: 55vh;
-        overflow: auto;
-    }
-
-    .debug.open {
-        opacity: 0.96;
-    }
-
-    .debug:hover {
-        opacity: 0.96;
-    }
-
-    .debug-toggle {
-        display: block;
-        width: 100%;
-        text-align: left;
-        background: transparent;
-        color: inherit;
-        border: none;
-        border-bottom: 1px solid #3a352e;
-        padding: 0.35rem 0.6rem;
-        font-family: inherit;
-        font-size: 0.7rem;
-        cursor: pointer;
-        letter-spacing: 0.1em;
-    }
-
-    .debug pre {
-        margin: 0;
-        padding: 0.6rem 0.8rem;
-        white-space: pre-wrap;
-        word-break: break-word;
+        border-color: #2a2622;
     }
 
     @media (max-width: 720px) {
