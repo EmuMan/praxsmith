@@ -1,4 +1,6 @@
 <script lang="ts">
+    import ErrorPane from "./ErrorPane.svelte";
+
     interface Props {
         types: string;
         world: string;
@@ -45,9 +47,7 @@
         </div>
     </div>
 
-    {#if error}
-        <pre class="error">{error}</pre>
-    {/if}
+    <ErrorPane message={error} />
 </section>
 
 <style>
@@ -137,19 +137,6 @@
     .code:focus {
         border-color: #7b7264;
         background: #fffbf3;
-    }
-
-    .error {
-        font-family:
-            "JetBrains Mono", "Fira Code", "SF Mono", "Menlo", "Consolas",
-            monospace;
-        font-size: 0.8rem;
-        color: #6a2222;
-        background: #fbecec;
-        border: 1px solid #c9a0a0;
-        padding: 0.6rem 0.8rem;
-        margin: 0;
-        white-space: pre-wrap;
     }
 
     @media (max-width: 720px) {

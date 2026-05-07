@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use anyhow::{Context, Result, bail};
+
 use crate::{
     definitions::{
         PraxsmthConstant, PraxsmthValue, Sentence,
@@ -85,17 +87,15 @@ impl World {
     /// and any remaining arguments. Verifies the type of the relation
     /// and the number of parameters, but does not verify the agents
     /// involved.
-    pub fn build_query(
-        &self,
-        sentence: &Sentence,
-    ) -> Result<(RelationQuery, Box<[String]>), &'static str> {
+    pub fn build_query(&self, sentence: &Sentence) -> Result<(RelationQuery, Box<[String]>)> {
         match sentence.as_slice() {
             [agent, verb, trait_name, rest @ ..] if verb == "is" => {
-                let Some(relation_type) = self.type_mapping.get_type(trait_name) else {
-                    return Err("Relation type not found");
-                };
+                let relation_type = self
+                    .type_mapping
+                    .get_type(trait_name)
+                    .with_context(|| format!("looking up trait type {}", trait_name))?;
                 let PraxsmthTypeData::Trait { .. } = &relation_type.data else {
-                    return Err("Relation type is not a trait");
+                    bail!("type {} is not a trait", trait_name);
                 };
                 Ok((
                     RelationQuery::Trait {
@@ -106,11 +106,12 @@ impl World {
                 ))
             }
             [agent, verb, emotion_name, rest @ ..] if verb == "feels" => {
-                let Some(relation_type) = self.type_mapping.get_type(emotion_name) else {
-                    return Err("Relation type not found");
-                };
+                let relation_type = self
+                    .type_mapping
+                    .get_type(emotion_name)
+                    .with_context(|| format!("looking up emotion type {}", emotion_name))?;
                 let PraxsmthTypeData::Emotion { .. } = &relation_type.data else {
-                    return Err("Relation type is not an emotion");
+                    bail!("type {} is not an emotion", emotion_name);
                 };
                 Ok((
                     RelationQuery::Emotion {
@@ -121,16 +122,21 @@ impl World {
                 ))
             }
             [practice, practice_name, rest @ ..] if practice == "practice" => {
-                // for this one we have to look up the type to see how many parameters it takes
-                let Some(relation_type) = self.type_mapping.get_type(practice_name) else {
-                    return Err("Relation type not found");
-                };
+                let relation_type = self
+                    .type_mapping
+                    .get_type(practice_name)
+                    .with_context(|| format!("looking up practice type {}", practice_name))?;
                 let PraxsmthTypeData::Practice { params, .. } = &relation_type.data else {
-                    return Err("Relation type is not a practice");
+                    bail!("type {} is not a practice", practice_name);
                 };
                 let participants_count = params.len();
                 if rest.len() < participants_count {
-                    return Err("Not enough parameters for practice relation");
+                    bail!(
+                        "practice {} expects {} participants, got {}",
+                        practice_name,
+                        participants_count,
+                        rest.len()
+                    );
                 }
                 let participants = rest[..participants_count].iter().cloned().collect();
                 Ok((
@@ -142,14 +148,15 @@ impl World {
                 ))
             }
             [agent_1, relation_name, agent_2, rest @ ..] => {
-                let Some(relation_type) = self.type_mapping.get_type(relation_name) else {
-                    return Err("Relation type not found");
-                };
+                let relation_type =
+                    self.type_mapping.get_type(relation_name).with_context(|| {
+                        format!("looking up binary relation type {}", relation_name)
+                    })?;
                 match &relation_type.data {
                     PraxsmthTypeData::Directional { .. } => {}
                     PraxsmthTypeData::Reciprocal { .. } => {}
                     PraxsmthTypeData::Evaluation { .. } => {}
-                    _ => return Err("Relation type is not a binary relation"),
+                    _ => bail!("type {} is not a binary relation", relation_name),
                 }
                 Ok((
                     RelationQuery::Binary {
@@ -160,20 +167,20 @@ impl World {
                     rest.into(),
                 ))
             }
-            _ => Err("Could not parse sentence into a relation query"),
+            _ => bail!(
+                "could not parse sentence {:?} into a relation query",
+                sentence
+            ),
         }
     }
 
-    pub fn process_declaration(
-        &mut self,
-        declaration: &Declaration,
-    ) -> Result<RelationHandle, String> {
-        // This query does not have any bindings because declarations are only
-        // used to declare things at a high level.
-        let (query, args) = self.build_query(&declaration.sentence)?;
+    pub fn process_declaration(&mut self, declaration: &Declaration) -> Result<RelationHandle> {
+        let (query, args) = self
+            .build_query(&declaration.sentence)
+            .with_context(|| format!("processing declaration {:?}", declaration.sentence))?;
         // TODO: relations with one parameter should be initializable this way!
         if !args.is_empty() {
-            return Err("Extra parameters in declaration".into());
+            bail!("extra parameters in declaration {:?}", declaration.sentence);
         }
         match query {
             RelationQuery::Trait { agent, trait_name } => {
@@ -220,8 +227,10 @@ impl World {
         &self,
         sentence: &Sentence,
         bindings: &Bindings,
-    ) -> Result<PraxsmthConstant, String> {
-        let (query, args) = self.build_query(&sentence)?;
+    ) -> Result<PraxsmthConstant> {
+        let (query, args) = self
+            .build_query(&sentence)
+            .with_context(|| format!("resolving variable {:?}", sentence))?;
         let query = query.apply_bindings(bindings);
 
         let Some((_, relation)) = self.lookup_relation(query) else {
@@ -236,23 +245,23 @@ impl World {
         }
 
         if args.len() > 1 {
-            return Err("Too many parameters specified in variable".into());
+            bail!("too many parameters specified in variable {:?}", sentence);
         }
 
         // An argument was specified, so pull it from the relation's fields
         let arg_name = &args[0];
-        if let Some(constant) = relation.fields.get(arg_name) {
-            Ok(constant.clone())
-        } else {
-            Err(format!("Parameter '{}' not found in relation", arg_name))
-        }
+        relation
+            .fields
+            .get(arg_name)
+            .cloned()
+            .with_context(|| format!("parameter '{}' not found in relation", arg_name))
     }
 
     fn check_condition_helper(
         &self,
         condition: PracticeCondition,
         bindings: &Bindings,
-    ) -> Result<PraxsmthConstant, String> {
+    ) -> Result<PraxsmthConstant> {
         match condition {
             PracticeCondition::Value(value) => match value {
                 PraxsmthValue::Number(n) => Ok(PraxsmthConstant::Number(n)),
@@ -269,8 +278,11 @@ impl World {
                     (PraxsmthConstant::Boolean(b1), PraxsmthConstant::Boolean(b2)) => {
                         Ok(PraxsmthConstant::Boolean(b1 && b2))
                     }
-                    // TODO: better error description
-                    _ => Err("Conditions must evaluate to boolean".into()),
+                    (a, b) => bail!(
+                        "And conditions must evaluate to boolean, got {:?} and {:?}",
+                        a,
+                        b
+                    ),
                 }
             }
 
@@ -281,7 +293,11 @@ impl World {
                     (PraxsmthConstant::Boolean(b1), PraxsmthConstant::Boolean(b2)) => {
                         Ok(PraxsmthConstant::Boolean(b1 || b2))
                     }
-                    _ => Err("Conditions must evaluate to boolean".into()),
+                    (a, b) => bail!(
+                        "Or conditions must evaluate to boolean, got {:?} and {:?}",
+                        a,
+                        b
+                    ),
                 }
             }
 
@@ -295,7 +311,7 @@ impl World {
                 let res = self.check_condition_helper(*cond, bindings)?;
                 match res {
                     PraxsmthConstant::Boolean(b) => Ok(PraxsmthConstant::Boolean(!b)),
-                    _ => Err("Condition must evaluate to boolean".into()),
+                    other => bail!("Not condition must evaluate to boolean, got {:?}", other),
                 }
             }
         }
@@ -305,24 +321,27 @@ impl World {
         &self,
         condition: PracticeCondition,
         bindings: &Bindings,
-    ) -> Result<bool, String> {
+    ) -> Result<bool> {
         match self.check_condition_helper(condition, bindings)? {
             PraxsmthConstant::Boolean(b) => Ok(b),
-            _ => Err("Condition must evaluate to boolean".into()),
+            other => bail!("condition must evaluate to boolean, got {:?}", other),
         }
     }
 
-    fn process_delete(&mut self, sentence: &Sentence, bindings: &Bindings) -> Result<(), String> {
-        let (query, args) = self.build_query(sentence)?;
+    fn process_delete(&mut self, sentence: &Sentence, bindings: &Bindings) -> Result<()> {
+        let (query, args) = self
+            .build_query(sentence)
+            .with_context(|| format!("processing delete outcome {:?}", sentence))?;
         let query = query.apply_bindings(bindings);
         if !args.is_empty() {
-            return Err("Extra parameters in delete outcome".into());
+            bail!("extra parameters in delete outcome {:?}", sentence);
         }
 
-        match self.lookup_relation(query) {
-            Some((handle, _)) => self.remove_relation(handle),
-            None => return Err("Relation not found in delete outcome".into()),
-        }
+        let (handle, _) = self
+            .lookup_relation(query)
+            .with_context(|| format!("relation not found in delete outcome {:?}", sentence))?;
+        self.remove_relation(handle)
+            .with_context(|| format!("removing relation in delete outcome {:?}", sentence))
     }
 
     fn process_set(
@@ -330,38 +349,47 @@ impl World {
         sentence: &Sentence,
         value: &PraxsmthValue,
         bindings: &Bindings,
-    ) -> Result<(), String> {
-        let (query, args) = self.build_query(sentence)?;
+    ) -> Result<()> {
+        let (query, args) = self
+            .build_query(sentence)
+            .with_context(|| format!("processing set outcome {:?}", sentence))?;
         let query = query.apply_bindings(bindings);
         if args.len() != 1 {
             // TODO: Support bracket syntax so this is actually usable!!!
             // (Currently you can't initialize anything with >1 fields)
             // Just needs to be added to parser and the logic flow here,
             // the update functions should already support it.
-            return Err("Exactly one parameter must be specified in set outcome".into());
+            bail!(
+                "exactly one parameter must be specified in set outcome {:?}, got {}",
+                sentence,
+                args.len()
+            );
         }
         let arg_name = &args[0];
 
         let (handle, _) = self
             .lookup_relation(query)
-            .ok_or("Relation not found in set outcome")?;
+            .with_context(|| format!("relation not found in set outcome {:?}", sentence))?;
 
         let constant_value = match value {
             PraxsmthValue::Number(n) => PraxsmthConstant::Number(*n),
             PraxsmthValue::Boolean(b) => PraxsmthConstant::Boolean(*b),
             PraxsmthValue::Variant(v) => PraxsmthConstant::Variant(v.clone()),
             PraxsmthValue::String(s) => PraxsmthConstant::String(s.clone()),
-            PraxsmthValue::Variable(sentence) => self.resolve_variable(sentence, bindings)?,
+            PraxsmthValue::Variable(sentence) => self
+                .resolve_variable(sentence, bindings)
+                .context("resolving variable for set outcome")?,
         };
 
         self.update_relation(handle, HashMap::from([(arg_name.clone(), constant_value)]))
+            .with_context(|| format!("applying set outcome {:?}", sentence))
     }
 
-    fn process_increase(&mut self, sentence: &Sentence, amount: i64) -> Result<(), String> {
+    fn process_increase(&mut self, _sentence: &Sentence, _amount: i64) -> Result<()> {
         unimplemented!()
     }
 
-    fn process_cycle(&mut self, sentence: &Sentence, amount: i64) -> Result<(), String> {
+    fn process_cycle(&mut self, _sentence: &Sentence, _amount: i64) -> Result<()> {
         unimplemented!()
     }
 
@@ -370,7 +398,7 @@ impl World {
         agent_name: &str,
         outcome: &PracticeOutcome,
         bindings: &Bindings,
-    ) -> Result<Option<Dialog>, String> {
+    ) -> Result<Option<Dialog>> {
         match outcome {
             PracticeOutcome::Print(string) => {
                 return Ok(Some(Dialog {
@@ -386,29 +414,48 @@ impl World {
         Ok(None)
     }
 
-    pub fn get_available_actions(&self, agent_name: &str) -> Result<Vec<AvailableAction>, String> {
-        let agent = self.get_agent(agent_name).ok_or("Agent not found")?;
+    pub fn get_available_actions(&self, agent_name: &str) -> Result<Vec<AvailableAction>> {
+        let agent = self
+            .get_agent(agent_name)
+            .with_context(|| format!("agent {} not found", agent_name))?;
         let mut available_actions = Vec::new();
 
         for edge in agent.edges.iter() {
             match edge {
                 AgentToRelation::Practice(handle) => {
-                    let relation = self
-                        .get_relation(handle.clone())
-                        .ok_or("Relation not found for practice action")?;
+                    let relation = self.get_relation(handle.clone()).with_context(|| {
+                        format!("relation {:?} not found for practice action", handle)
+                    })?;
                     let relation_type = self
                         .type_mapping
                         .get_type(&relation.type_name)
-                        .ok_or("Type not found for practice action")?;
+                        .with_context(|| {
+                            format!("type {} not found for practice action", relation.type_name)
+                        })?;
                     let RelationData::Practice { bindings } = &relation.data else {
-                        return Err("Relation data for practice action is not practice".into());
+                        bail!(
+                            "relation {:?} data is not practice (was {:?})",
+                            handle,
+                            relation.data
+                        );
                     };
                     let PraxsmthTypeData::Practice { actions, .. } = &relation_type.data else {
-                        return Err("Relation type for practice action is not a practice".into());
+                        bail!(
+                            "type {} data is not practice for action lookup",
+                            relation.type_name
+                        );
                     };
                     'action_loop: for (i, action) in actions.iter().enumerate() {
                         for condition in &action.conditions {
-                            if !self.check_condition(condition.clone(), bindings)? {
+                            if !self
+                                .check_condition(condition.clone(), bindings)
+                                .with_context(|| {
+                                    format!(
+                                        "checking conditions for action {} of practice {:?}",
+                                        action.name, handle
+                                    )
+                                })?
+                            {
                                 continue 'action_loop;
                             }
                         }
@@ -430,34 +477,55 @@ impl World {
     pub fn process_available_action(
         &mut self,
         available_action: &AvailableAction,
-    ) -> Result<Vec<Dialog>, String> {
-        let Some(relation) = self.get_relation(available_action.practice_handle.clone()) else {
-            return Err("Relation not found for available action".into());
-        };
+    ) -> Result<Vec<Dialog>> {
+        let relation = self
+            .get_relation(available_action.practice_handle.clone())
+            .with_context(|| {
+                format!(
+                    "relation {:?} not found for available action",
+                    available_action.practice_handle
+                )
+            })?;
         let RelationData::Practice { bindings } = &relation.data else {
-            return Err("Relation data for available action is not practice".into());
+            bail!(
+                "relation {:?} data is not practice for available action",
+                available_action.practice_handle
+            );
         };
         let relation_type = self
             .type_mapping
             .get_type(&relation.type_name)
-            .ok_or("Type not found for available action")?;
+            .with_context(|| {
+                format!("type {} not found for available action", relation.type_name)
+            })?;
         let PraxsmthTypeData::Practice { actions, .. } = &relation_type.data else {
-            return Err("Relation type for available action is not a practice".into());
+            bail!(
+                "type {} is not a practice for available action",
+                relation.type_name
+            );
         };
         let action = actions
             .get(available_action.index_within_practice)
-            .ok_or("Action index out of bounds for available action")?;
+            .with_context(|| {
+                format!(
+                    "action index {} out of bounds for practice {:?}",
+                    available_action.index_within_practice, available_action.practice_handle
+                )
+            })?;
 
-        // "no meaningful cost concern here"... says Claude. Not convinced.
         // TODO: Fix this a better way.
         let actor_name = action.for_actor.clone();
         let outcomes = action.outcomes.clone();
+        let action_name = action.name.clone();
         let bindings = bindings.clone();
 
         let mut dialog: Vec<Dialog> = vec![];
 
         for outcome in &outcomes {
-            if let Some(new_dialog) = self.process_outcome(&actor_name, outcome, &bindings)? {
+            if let Some(new_dialog) = self
+                .process_outcome(&actor_name, outcome, &bindings)
+                .with_context(|| format!("processing outcome of action {}", action_name))?
+            {
                 dialog.push(new_dialog);
             }
         }

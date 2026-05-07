@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use anyhow::{Context, Result, bail};
+
 use crate::{
     definitions::{
         FieldTypes, PraxsmthConstant, PraxsmthField, Serialize, types::PraxsmthTypeData, world::*,
@@ -14,15 +16,11 @@ type Fields = HashMap<String, PraxsmthConstant>;
 type Bindings = HashMap<String, String>;
 
 // TODO: verify this works correctly in all cases, and add more detailed error messages
-fn verify_fields(
-    fields: &Fields,
-    field_types: &FieldTypes,
-    require_all: bool,
-) -> Result<(), String> {
+fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -> Result<()> {
     if require_all {
         for field_name in field_types.keys() {
             if !fields.contains_key(field_name) {
-                return Err(format!("Field {} is required but not present", field_name));
+                bail!("field {} is required but not present", field_name);
             }
         }
     }
@@ -31,31 +29,36 @@ fn verify_fields(
             Some(expected_type) => match (expected_type, field_value) {
                 (PraxsmthField::NumberRange(start, end), PraxsmthConstant::Number(n)) => {
                     if n < start || n > end {
-                        return Err(format!(
-                            "Field {} value {} is out of range {}..{}",
-                            field_name, n, start, end
-                        ));
+                        bail!(
+                            "field {} value {} is out of range {}..{}",
+                            field_name,
+                            n,
+                            start,
+                            end
+                        );
                     }
                 }
                 (PraxsmthField::VariantList(variants), PraxsmthConstant::Variant(v)) => {
                     if !variants.contains(v) {
-                        return Err(format!(
-                            "Field {} value {} is not in variant list {:?}",
-                            field_name, v, variants
-                        ));
+                        bail!(
+                            "field {} value {} is not in variant list {:?}",
+                            field_name,
+                            v,
+                            variants
+                        );
                     }
                 }
                 _ => {
-                    return Err(format!(
-                        "Field {} has type mismatch: expected {}, got {}",
+                    bail!(
+                        "field {} has type mismatch: expected {}, got {}",
                         field_name,
                         expected_type.serialize(),
                         field_value.serialize()
-                    ));
+                    );
                 }
             },
             None => {
-                return Err(format!("Field {} is not defined in type", field_name));
+                bail!("field {} is not defined in type", field_name);
             }
         }
     }
@@ -119,12 +122,9 @@ pub struct Relation {
 }
 
 impl Relation {
-    pub fn update_fields(
-        &mut self,
-        new_fields: Fields,
-        field_defs: &FieldTypes,
-    ) -> Result<(), String> {
-        verify_fields(&new_fields, &field_defs, false)?;
+    pub fn update_fields(&mut self, new_fields: Fields, field_defs: &FieldTypes) -> Result<()> {
+        verify_fields(&new_fields, &field_defs, false)
+            .context("verifying new fields against existing type definition")?;
         for (field_name, field_value) in new_fields {
             self.fields.insert(field_name, field_value);
         }
@@ -248,7 +248,7 @@ impl RelationStore {
         })
     }
 
-    pub fn remove(&mut self, handle: RelationHandle) -> Result<(), String> {
+    pub fn remove(&mut self, handle: RelationHandle) -> Result<()> {
         if let Some(slot) = self.slots.get_mut(handle.index as usize) {
             if slot.generation == handle.generation {
                 slot.value = None;
@@ -256,10 +256,14 @@ impl RelationStore {
                 self.open_indices.push(handle.index as usize);
                 Ok(())
             } else {
-                Err("Invalid handle generation".to_string())
+                bail!(
+                    "invalid handle generation (handle gen {}, slot gen {})",
+                    handle.generation,
+                    slot.generation
+                );
             }
         } else {
-            Err("Invalid handle index".to_string())
+            bail!("invalid handle index {}", handle.index);
         }
     }
 }
@@ -319,9 +323,9 @@ impl World {
             })
     }
 
-    pub fn add_agent(&mut self, info: &AgentInfo) -> Result<(), String> {
+    pub fn add_agent(&mut self, info: &AgentInfo) -> Result<()> {
         if self.agents.contains_key(&info.name) {
-            return Err(format!("Agent with name {} already exists", info.name));
+            bail!("agent with name {} already exists", info.name);
         }
         self.agents.insert(info.name.clone(), Agent::new(info));
         Ok(())
@@ -347,90 +351,86 @@ impl World {
         self.relation_store.add(edge)
     }
 
-    pub fn update_relation(
-        &mut self,
-        handle: RelationHandle,
-        new_fields: Fields,
-    ) -> Result<(), String> {
-        match self.relation_store.get_mut(handle.clone()) {
-            Some(relation) => {
-                let Some(relation_type) = self.type_mapping.get_type(&relation.type_name) else {
-                    return Err(format!(
-                        "Type {} not found in type mapping for relation with handle {:?}",
-                        relation.type_name, handle
-                    ));
-                };
-                match &mut relation.data {
-                    RelationData::Trait
-                    | RelationData::Emotion
-                    | RelationData::Directional
-                    | RelationData::Reciprocal
-                    | RelationData::Practice { .. } => {
-                        relation.update_fields(new_fields, &relation_type.fields)
-                    }
-                    RelationData::Evaluation { reason } => {
-                        if let Some(new_reason) = new_fields.get("reason") {
-                            if let PraxsmthConstant::String(reason_str) = new_reason {
-                                *reason = reason_str.clone();
-                            } else {
-                                return Err(
-                                    "Evaluation edge 'reason' field must be a string".to_string()
-                                );
-                            }
-                        }
-                        relation.update_fields(new_fields, &relation_type.fields)
-                    }
+    pub fn update_relation(&mut self, handle: RelationHandle, new_fields: Fields) -> Result<()> {
+        let relation = self
+            .relation_store
+            .get_mut(handle.clone())
+            .with_context(|| format!("looking up relation {:?} for update", handle))?;
+        let relation_type = self
+            .type_mapping
+            .get_type(&relation.type_name)
+            .with_context(|| {
+                format!(
+                    "looking up type {} for relation {:?}",
+                    relation.type_name, handle
+                )
+            })?;
+        match &mut relation.data {
+            RelationData::Trait
+            | RelationData::Emotion
+            | RelationData::Directional
+            | RelationData::Reciprocal
+            | RelationData::Practice { .. } => relation
+                .update_fields(new_fields, &relation_type.fields)
+                .with_context(|| format!("updating fields on relation {:?}", handle)),
+            RelationData::Evaluation { reason } => {
+                if let Some(new_reason) = new_fields.get("reason") {
+                    let PraxsmthConstant::String(reason_str) = new_reason else {
+                        bail!("evaluation edge 'reason' field must be a string");
+                    };
+                    *reason = reason_str.clone();
                 }
+                relation
+                    .update_fields(new_fields, &relation_type.fields)
+                    .with_context(|| format!("updating fields on evaluation relation {:?}", handle))
             }
-            None => Err(format!(
-                "Relation with handle {:?} not found for update",
-                handle
-            )),
         }
     }
 
-    pub fn remove_relation(&mut self, handle: RelationHandle) -> Result<(), String> {
-        match self.relation_store.get(handle.clone()) {
-            Some(relation) => {
-                relation.edges.iter().for_each(|edge_to_agent| {
-                    let agent_name = edge_to_agent.agent();
-                    if let Some(agent) = self.agents.get_mut(agent_name) {
-                        agent.remove_edges_to(handle.clone());
-                    } else {
-                        panic!(
-                            "Agent with name {} not found when removing relation with handle {:?}",
-                            agent_name, handle
-                        );
-                    }
-                });
+    pub fn remove_relation(&mut self, handle: RelationHandle) -> Result<()> {
+        let relation = self
+            .relation_store
+            .get(handle.clone())
+            .with_context(|| format!("looking up relation {:?} for removal", handle))?;
+        relation.edges.iter().for_each(|edge_to_agent| {
+            let agent_name = edge_to_agent.agent();
+            if let Some(agent) = self.agents.get_mut(agent_name) {
+                agent.remove_edges_to(handle.clone());
+            } else {
+                panic!(
+                    "agent with name {} not found when removing relation with handle {:?}",
+                    agent_name, handle
+                );
             }
-            None => {
-                return Err(format!("Relation handle {:?} not found", handle));
-            }
-        }
-        self.relation_store.remove(handle)
+        });
+        self.relation_store
+            .remove(handle.clone())
+            .with_context(|| format!("removing relation {:?} from store", handle))
     }
 
-    fn validate_agent(&self, name: &str) -> Result<(), String> {
+    fn validate_agent(&self, name: &str) -> Result<()> {
         if self.agents.contains_key(name) {
             Ok(())
         } else {
-            Err(format!("Agent with name {} not found", name))
+            bail!("agent with name {} not found", name);
         }
     }
 
-    fn validate_agents(&self, names: &[&str]) -> Result<(), String> {
+    fn validate_agents(&self, names: &[&str]) -> Result<()> {
         for name in names {
-            self.validate_agent(name)?;
+            self.validate_agent(name)
+                .with_context(|| format!("validating agent {:?}", name))?;
         }
         Ok(())
     }
 
-    fn validate_type_fields(&self, type_name: &str, fields: &Fields) -> Result<(), String> {
-        match self.type_mapping.get_type(type_name) {
-            Some(edge_type) => verify_fields(fields, &edge_type.fields, true),
-            None => Err(format!("Type {} not found in type mapping", type_name)),
-        }
+    fn validate_type_fields(&self, type_name: &str, fields: &Fields) -> Result<()> {
+        let edge_type = self
+            .type_mapping
+            .get_type(type_name)
+            .with_context(|| format!("looking up type {} in type mapping", type_name))?;
+        verify_fields(fields, &edge_type.fields, true)
+            .with_context(|| format!("verifying fields against type {}", type_name))
     }
 
     pub fn add_trait(
@@ -438,10 +438,11 @@ impl World {
         agent: &str,
         type_name: &str,
         fields: Fields,
-    ) -> Result<RelationHandle, String> {
-        self.validate_type_fields(type_name, &fields)?;
-
-        self.validate_agent(agent)?;
+    ) -> Result<RelationHandle> {
+        self.validate_type_fields(type_name, &fields)
+            .with_context(|| format!("adding trait {} to agent {}", type_name, agent))?;
+        self.validate_agent(agent)
+            .with_context(|| format!("adding trait {} to agent {}", type_name, agent))?;
 
         let handle = self.add_relation(Relation {
             type_name: type_name.to_string(),
@@ -477,10 +478,11 @@ impl World {
         agent: &str,
         type_name: &str,
         fields: Fields,
-    ) -> Result<RelationHandle, String> {
-        self.validate_type_fields(type_name, &fields)?;
-
-        self.validate_agent(agent)?;
+    ) -> Result<RelationHandle> {
+        self.validate_type_fields(type_name, &fields)
+            .with_context(|| format!("adding emotion {} to agent {}", type_name, agent))?;
+        self.validate_agent(agent)
+            .with_context(|| format!("adding emotion {} to agent {}", type_name, agent))?;
 
         let handle = self.add_relation(Relation {
             type_name: type_name.to_string(),
@@ -489,9 +491,9 @@ impl World {
             data: RelationData::Emotion,
         });
 
-        let agent_data = self.agents.get_mut(agent).ok_or_else(|| {
+        let agent_data = self.agents.get_mut(agent).with_context(|| {
             format!(
-                "Agent with name {} not found when adding emotion edge",
+                "agent {} disappeared between validation and emotion edge insertion",
                 agent
             )
         })?;
@@ -505,7 +507,8 @@ impl World {
 
         // Remove the old emotion edge for this agent, since an agent can only have one emotion edge at a time
         if let Some(old_emotion_handle) = old_emotion_handle {
-            self.remove_relation(old_emotion_handle)?;
+            self.remove_relation(old_emotion_handle)
+                .with_context(|| format!("replacing prior emotion edge on agent {}", agent))?;
         }
 
         Ok(handle)
@@ -530,10 +533,11 @@ impl World {
         to: &str,
         type_name: &str,
         fields: Fields,
-    ) -> Result<RelationHandle, String> {
-        self.validate_type_fields(type_name, &fields)?;
-
-        self.validate_agents(&[from, to])?;
+    ) -> Result<RelationHandle> {
+        self.validate_type_fields(type_name, &fields)
+            .with_context(|| format!("adding directional {} from {} to {}", type_name, from, to))?;
+        self.validate_agents(&[from, to])
+            .with_context(|| format!("adding directional {} from {} to {}", type_name, from, to))?;
 
         let handle = self.add_relation(Relation {
             type_name: type_name.to_string(),
@@ -606,10 +610,20 @@ impl World {
         agent_2: &str,
         type_name: &str,
         fields: Fields,
-    ) -> Result<RelationHandle, String> {
-        self.validate_type_fields(type_name, &fields)?;
-
-        self.validate_agents(&[agent_1, agent_2])?;
+    ) -> Result<RelationHandle> {
+        self.validate_type_fields(type_name, &fields)
+            .with_context(|| {
+                format!(
+                    "adding reciprocal {} between {} and {}",
+                    type_name, agent_1, agent_2
+                )
+            })?;
+        self.validate_agents(&[agent_1, agent_2]).with_context(|| {
+            format!(
+                "adding reciprocal {} between {} and {}",
+                type_name, agent_1, agent_2
+            )
+        })?;
 
         let handle = self.add_relation(Relation {
             type_name: type_name.to_string(),
@@ -668,10 +682,11 @@ impl World {
         type_name: &str,
         fields: Fields,
         reason: &str,
-    ) -> Result<RelationHandle, String> {
-        self.validate_type_fields(type_name, &fields)?;
-
-        self.validate_agents(&[from, to])?;
+    ) -> Result<RelationHandle> {
+        self.validate_type_fields(type_name, &fields)
+            .with_context(|| format!("adding evaluation {} from {} to {}", type_name, from, to))?;
+        self.validate_agents(&[from, to])
+            .with_context(|| format!("adding evaluation {} from {} to {}", type_name, from, to))?;
 
         let handle = self.add_relation(Relation {
             type_name: type_name.to_string(),
@@ -745,27 +760,37 @@ impl World {
         participants: Vec<String>,
         type_name: &str,
         fields: Fields,
-    ) -> Result<RelationHandle, String> {
-        self.validate_type_fields(type_name, &fields)?;
-
-        let participant_refs: Vec<&str> = participants.iter().map(|s| s.as_str()).collect();
-        self.validate_agents(&participant_refs)?;
-
-        let Some(type_def) = self.type_mapping.get_type(type_name) else {
-            return Err(format!("Type {} not found in type mapping", type_name));
+    ) -> Result<RelationHandle> {
+        let practice_ctx = || {
+            format!(
+                "adding practice {} with participants {:?}",
+                type_name, participants
+            )
         };
 
+        self.validate_type_fields(type_name, &fields)
+            .with_context(practice_ctx)?;
+
+        let participant_refs: Vec<&str> = participants.iter().map(|s| s.as_str()).collect();
+        self.validate_agents(&participant_refs)
+            .with_context(practice_ctx)?;
+
+        let type_def = self
+            .type_mapping
+            .get_type(type_name)
+            .with_context(practice_ctx)?;
+
         let PraxsmthTypeData::Practice { params, .. } = &type_def.data else {
-            return Err(format!("Type {} is not a practice type", type_name));
+            bail!("type {} is not a practice type", type_name);
         };
 
         if params.len() != participants.len() {
-            return Err(format!(
-                "Practice type {} expects {} participants, but {} were provided",
+            bail!(
+                "practice type {} expects {} participants, but {} were provided",
                 type_name,
                 params.len(),
                 participants.len()
-            ));
+            );
         }
 
         let mut bindings = HashMap::new();
@@ -834,37 +859,38 @@ impl World {
         to: &str,
         edge_type_name: &str,
         mut fields: Fields,
-    ) -> Result<RelationHandle, String> {
-        match self.type_mapping.get_type(edge_type_name) {
-            Some(edge_type) => match edge_type.data {
-                PraxsmthTypeData::Directional { .. } => {
-                    self.add_directional(from, to, edge_type_name, fields)
-                }
-                PraxsmthTypeData::Reciprocal => {
-                    self.add_reciprocal(from, to, edge_type_name, fields)
-                }
-                PraxsmthTypeData::Evaluation { .. } => {
-                    let reason = fields
-                        .get_mut("reason")
-                        .ok_or_else(|| "Evaluation edges require a 'reason' field".to_string())?;
-                    if let PraxsmthConstant::String(reason_str) = reason {
-                        // TODO: Definitely some way to avoid this clone...
-                        let reason_string = reason_str.clone();
-                        fields.remove("reason");
-                        self.add_evaluation(from, to, edge_type_name, fields, &reason_string)
-                    } else {
-                        return Err("Evaluation edge 'reason' field must be a string".to_string());
-                    }
-                }
-                _ => Err(format!(
-                    "Edge type {} has unsupported variant {:?} for bidirectional declaration",
-                    edge_type_name, edge_type.data
-                )),
-            },
-            None => Err(format!(
-                "Edge type {} not found in type mapping for declaration",
-                edge_type_name
-            )),
+    ) -> Result<RelationHandle> {
+        let edge_type = self
+            .type_mapping
+            .get_type(edge_type_name)
+            .with_context(|| {
+                format!(
+                    "looking up edge type {} for binary relation {} -> {}",
+                    edge_type_name, from, to
+                )
+            })?;
+        match edge_type.data {
+            PraxsmthTypeData::Directional { .. } => {
+                self.add_directional(from, to, edge_type_name, fields)
+            }
+            PraxsmthTypeData::Reciprocal => self.add_reciprocal(from, to, edge_type_name, fields),
+            PraxsmthTypeData::Evaluation { .. } => {
+                let reason = fields
+                    .get_mut("reason")
+                    .context("evaluation edges require a 'reason' field")?;
+                let PraxsmthConstant::String(reason_str) = reason else {
+                    bail!("evaluation edge 'reason' field must be a string");
+                };
+                // TODO: Definitely some way to avoid this clone...
+                let reason_string = reason_str.clone();
+                fields.remove("reason");
+                self.add_evaluation(from, to, edge_type_name, fields, &reason_string)
+            }
+            _ => bail!(
+                "edge type {} has unsupported variant {:?} for bidirectional declaration",
+                edge_type_name,
+                edge_type.data
+            ),
         }
     }
 

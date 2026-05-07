@@ -4,6 +4,23 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
+/// Convert any `anyhow::Error` (or other `std::error::Error`) into a JS `Error`
+/// whose `.message` contains the full anyhow cause chain.
+///
+/// `anyhow::Error`'s `Debug` impl prints the chain like:
+///
+///     parsing world
+///
+///     Caused by:
+///         0: agent disappeared between validation and emotion edge insertion
+///         1: agent with name jacob already exists
+///
+/// That whole block ends up as the JS `Error.message`, which the frontend already
+/// surfaces via `err.message` in its try/catch.
+fn js_err<E: std::fmt::Debug>(err: E) -> JsError {
+    JsError::new(&format!("{err:?}"))
+}
+
 #[wasm_bindgen]
 pub struct World {
     inner: core::world::World,
@@ -13,15 +30,15 @@ pub struct World {
 
 #[wasm_bindgen]
 impl World {
-    pub fn new(types: String, world: String) -> World {
+    #[wasm_bindgen(constructor)]
+    pub fn new(types: String, world: String) -> Result<World, JsError> {
         console_error_panic_hook::set_once();
-        let exposed_world = World {
-            inner: core::world::World::from_strings(&types, &world).unwrap(),
+        let inner = core::world::World::from_strings(&types, &world).map_err(js_err)?;
+        Ok(World {
+            inner,
             on_update: None,
             on_dialog: None,
-        };
-
-        exposed_world
+        })
     }
 
     #[wasm_bindgen(js_name = setOnUpdate)]
@@ -35,58 +52,69 @@ impl World {
     }
 
     #[wasm_bindgen(js_name = getAgentNames)]
-    pub fn get_agent_names(&self) -> JsValue {
+    pub fn get_agent_names(&self) -> Result<JsValue, JsError> {
         let agent_names: Vec<AgentInfo> = self
             .inner
             .agents
             .iter()
             .map(|(id, agent)| AgentInfo::new(id.clone(), agent.display_name.clone()))
             .collect();
-        serde_wasm_bindgen::to_value(&agent_names).unwrap()
+        serde_wasm_bindgen::to_value(&agent_names).map_err(js_err)
     }
 
     #[wasm_bindgen(js_name = getCurrentEmotion)]
-    pub fn get_current_emotion(&self, agent: String) -> Option<String> {
-        self.inner
+    pub fn get_current_emotion(&self, agent: String) -> Result<Option<String>, JsError> {
+        Ok(self
+            .inner
             .get_current_emotion(&agent)
-            .unwrap()
-            .map(|rh_r| rh_r.1.type_name.clone())
+            .map_err(js_err)?
+            .map(|(_, relation)| relation.type_name.clone()))
     }
 
     #[wasm_bindgen(js_name = getAvailableActionNames)]
-    pub fn get_available_action_names(&self, agent_name: String) -> Vec<String> {
-        self.inner.get_available_action_names(&agent_name).unwrap()
+    pub fn get_available_action_names(&self, agent_name: String) -> Result<Vec<String>, JsError> {
+        self.inner
+            .get_available_action_names(&agent_name)
+            .map_err(js_err)
     }
 
     #[wasm_bindgen(js_name = applyAction)]
-    pub fn apply_action(&mut self, agent_name: String, action_index: u32) -> JsValue {
+    pub fn apply_action(
+        &mut self,
+        agent_name: String,
+        action_index: u32,
+    ) -> Result<JsValue, JsError> {
         let dialogs: Vec<Dialog> = self
             .inner
             .apply_action(&agent_name, action_index)
-            .unwrap()
+            .map_err(js_err)?
             .into_iter()
             .map(Dialog::from)
             .collect();
         for dialog in &dialogs {
-            self.trigger_on_dialog(dialog);
+            self.trigger_on_dialog(dialog)?;
         }
-        self.trigger_on_update();
-        serde_wasm_bindgen::to_value(&dialogs).unwrap()
+        self.trigger_on_update()?;
+        serde_wasm_bindgen::to_value(&dialogs).map_err(js_err)
     }
 }
 
 impl World {
-    pub fn trigger_on_update(&self) {
+    fn trigger_on_update(&self) -> Result<(), JsError> {
         if let Some(cb) = &self.on_update {
-            cb.call0(&JsValue::NULL).unwrap();
+            cb.call0(&JsValue::NULL)
+                .map_err(|e| JsError::new(&format!("on_update callback threw: {e:?}")))?;
         }
+        Ok(())
     }
 
-    fn trigger_on_dialog(&self, dialog: &Dialog) {
+    fn trigger_on_dialog(&self, dialog: &Dialog) -> Result<(), JsError> {
         if let Some(cb) = &self.on_dialog {
-            let js_dialog = serde_wasm_bindgen::to_value(dialog).unwrap();
-            cb.call1(&JsValue::NULL, &js_dialog).unwrap();
+            let js_dialog = serde_wasm_bindgen::to_value(dialog).map_err(js_err)?;
+            cb.call1(&JsValue::NULL, &js_dialog)
+                .map_err(|e| JsError::new(&format!("on_dialog callback threw: {e:?}")))?;
         }
+        Ok(())
     }
 }
 

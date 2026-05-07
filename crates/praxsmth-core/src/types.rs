@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use anyhow::{Context, Result, bail};
+
 use crate::definitions::types::*;
 
 pub enum TypeMappingEntry {
@@ -22,9 +24,11 @@ impl TypeMapping {
         }
     }
 
-    pub fn from_types(types: Vec<PraxsmthType>) -> Result<Self, String> {
+    pub fn from_types(types: Vec<PraxsmthType>) -> Result<Self> {
         let mut mapping = TypeMapping::new();
-        mapping.add_types(types)?;
+        mapping
+            .add_types(types)
+            .context("building type mapping from types list")?;
         Ok(mapping)
     }
 
@@ -36,36 +40,41 @@ impl TypeMapping {
         }
     }
 
-    pub fn validate_new_name(&self, name: &str) -> Result<(), String> {
+    pub fn validate_new_name(&self, name: &str) -> Result<()> {
         if let Some(existing) = self.get_type(name) {
-            Err(format!(
-                "Some type with name {} already exists: {:?}",
-                name, existing
-            ))
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn add_types(&mut self, types: Vec<PraxsmthType>) -> Result<(), String> {
-        for t in types {
-            self.add_type(t)?;
+            bail!(
+                "some type with name {} already exists: {:?}",
+                name,
+                existing
+            );
         }
         Ok(())
     }
 
-    pub fn add_type(&mut self, t: PraxsmthType) -> Result<(), String> {
-        self.validate_new_name(&t.name)?;
+    pub fn add_types(&mut self, types: Vec<PraxsmthType>) -> Result<()> {
+        for t in types {
+            let name = t.name.clone();
+            self.add_type(t)
+                .with_context(|| format!("adding type {}", name))?;
+        }
+        Ok(())
+    }
+
+    pub fn add_type(&mut self, t: PraxsmthType) -> Result<()> {
+        self.validate_new_name(&t.name)
+            .with_context(|| format!("validating new type name {}", t.name))?;
         match &t.data {
             PraxsmthTypeData::Directional { complement } => {
-                self.validate_new_name(complement)?;
+                self.validate_new_name(complement)
+                    .with_context(|| format!("validating complement name {}", complement))?;
                 self.types.insert(
                     complement.clone(),
                     TypeMappingEntry::Complement(t.name.clone()),
                 );
             }
             PraxsmthTypeData::Evaluation { complement } => {
-                self.validate_new_name(complement)?;
+                self.validate_new_name(complement)
+                    .with_context(|| format!("validating complement name {}", complement))?;
                 self.types.insert(
                     complement.clone(),
                     TypeMappingEntry::Complement(t.name.clone()),

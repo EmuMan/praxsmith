@@ -7,6 +7,7 @@
     import Cast from "$lib/Cast.svelte";
     import Chat from "$lib/Chat.svelte";
     import Actions from "$lib/Actions.svelte";
+    import ErrorPane from "$lib/ErrorPane.svelte";
 
     let wasmReady = $state(false);
     let world: World | null = $state(null);
@@ -21,6 +22,7 @@
     let selectedId: string | null = $state(null);
     let availableActions: string[] = $state([]);
     let messages: ChatMessage[] = $state([]);
+    let runtimeError: string | null = $state(null);
     let pending = $state(false);
 
     onMount(async () => {
@@ -28,23 +30,32 @@
         wasmReady = true;
     });
 
+    function reportRuntimeError(err: unknown, where: string) {
+        const line = err instanceof Error ? err.message : String(err);
+        runtimeError = `error in ${where}:\n${line}`;
+    }
+
     function refreshFromWorld() {
         if (!world) return;
-        agents = world.getAgentNames() as AgentInfo[];
+        try {
+            agents = world.getAgentNames() as AgentInfo[];
 
-        const nextEmotions: Record<string, string | undefined> = {};
-        for (const a of agents) {
-            nextEmotions[a.id] = world.getCurrentEmotion(a.id) ?? undefined;
+            const nextEmotions: Record<string, string | undefined> = {};
+            for (const a of agents) {
+                nextEmotions[a.id] = world.getCurrentEmotion(a.id) ?? undefined;
+            }
+            emotions = nextEmotions;
+
+            if (selectedId && !agents.some((a) => a.id === selectedId)) {
+                selectedId = null;
+            }
+
+            availableActions = selectedId
+                ? world.getAvailableActionNames(selectedId)
+                : [];
+        } catch (err) {
+            reportRuntimeError(err, "refreshFromWorld");
         }
-        emotions = nextEmotions;
-
-        if (selectedId && !agents.some((a) => a.id === selectedId)) {
-            selectedId = null;
-        }
-
-        availableActions = selectedId
-            ? world.getAvailableActionNames(selectedId)
-            : [];
     }
 
     function handleDialog(dialog: Dialog) {
@@ -67,7 +78,7 @@
         building = true;
         buildError = null;
         try {
-            const w = World.new(typesSrc, worldSrc);
+            const w = new World(typesSrc, worldSrc);
             w.setOnUpdate(() => refreshFromWorld());
             w.setOnDialog((d: Dialog) => handleDialog(d));
             world = w;
@@ -85,7 +96,12 @@
     function selectAgent(id: string) {
         selectedId = id;
         if (world) {
-            availableActions = world.getAvailableActionNames(id);
+            try {
+                availableActions = world.getAvailableActionNames(id);
+            } catch (err) {
+                reportRuntimeError(err, "selectAgent");
+                availableActions = [];
+            }
         }
     }
 
@@ -95,8 +111,7 @@
         try {
             world.applyAction(selectedId, index);
         } catch (err) {
-            const line = err instanceof Error ? err.message : String(err);
-            messages = [...messages, { kind: "system", line: `error: ${line}` }];
+            reportRuntimeError(err, "applyAction");
         } finally {
             pending = false;
         }
@@ -110,6 +125,7 @@
         availableActions = [];
         messages = [];
         buildError = null;
+        runtimeError = null;
     }
 
     let selectedAgentName = $derived(
@@ -135,12 +151,7 @@
         />
     {:else}
         <section class="layout">
-            <Cast
-                {agents}
-                {selectedId}
-                {emotions}
-                onselect={selectAgent}
-            />
+            <Cast {agents} {selectedId} {emotions} onselect={selectAgent} />
 
             <div class="chat-column">
                 <Chat {messages} />
@@ -152,6 +163,13 @@
                 />
             </div>
         </section>
+
+        <div class="runtime-error-slot">
+            <ErrorPane
+                message={runtimeError}
+                ondismiss={() => (runtimeError = null)}
+            />
+        </div>
 
         <div class="reset-row">
             <button class="reset" onclick={reset}>edit world</button>
@@ -210,6 +228,10 @@
         flex-direction: column;
         gap: 1.25rem;
         min-width: 0;
+    }
+
+    .runtime-error-slot:not(:empty) {
+        margin-top: 1.5rem;
     }
 
     .reset-row {

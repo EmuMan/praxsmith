@@ -1,6 +1,48 @@
 // Hardcoded defaults that auto-fill the editor on load.
 // Leave these as empty strings unless you want a built-in starter scenario.
 
-export const DEFAULT_TYPES = ``;
+export const DEFAULT_TYPES = `
+emotion sad
+emotion happy
 
-export const DEFAULT_WORLD = ``;
+directional is_in contains
+
+reciprocal is_married_to {
+    since: 0..3000
+}
+
+practice greet (Greeter, Greeted) {
+    display: "[Greeter] is greeting [Greeted]"
+    actions: [
+        {
+            for: Greeter
+            name: "Greet [Greeted]"
+            conditions: [
+                $Greeter.in.house and $Greeted.in.house // TODO: support free variables here
+            ]
+            outcomes: [
+                print "[Greeter] has greeted [Greeted]"
+                delete self
+            ]
+        }
+    ]
+}
+`;
+
+export const DEFAULT_WORLD = `
+agent house as "House"
+
+agent jacob as "Jacob"
+agent alaina as "Alaina"
+
+jacob.is_married_to.alaina {
+    since: 2024
+}
+
+jacob.is_in.house
+alaina.is_in.house
+
+jacob.feels.sad
+
+practice.greet.alaina.jacob
+`;

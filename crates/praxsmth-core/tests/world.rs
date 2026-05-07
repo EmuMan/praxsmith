@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::{Context, Result, bail};
 use praxsmth::definitions::PraxsmthValue;
 use praxsmth::definitions::types::{
     PracticeAction, PracticeCondition, PracticeOutcome, PraxsmthType, PraxsmthTypeData,
@@ -8,16 +9,14 @@ use praxsmth::definitions::world::{AgentInfo, Declaration};
 use praxsmth::types::TypeMapping;
 use praxsmth::world::World;
 
-fn setup_world() -> Result<World, String> {
+fn setup_world() -> Result<World> {
     let mut type_mapping = TypeMapping::new();
 
-    type_mapping
-        .add_type(PraxsmthType {
-            name: "chronically_sleep_deprived".into(),
-            fields: HashMap::new(),
-            data: PraxsmthTypeData::Emotion,
-        })
-        .unwrap();
+    type_mapping.add_type(PraxsmthType {
+        name: "chronically_sleep_deprived".into(),
+        fields: HashMap::new(),
+        data: PraxsmthTypeData::Emotion,
+    })?;
 
     type_mapping.add_type(PraxsmthType {
         name: "wake".into(),
@@ -60,7 +59,7 @@ fn setup_world() -> Result<World, String> {
 }
 
 #[test]
-fn test_trait() -> Result<(), String> {
+fn test_trait() -> Result<()> {
     let mut world = setup_world()?;
 
     let sentence = vec![
@@ -74,24 +73,24 @@ fn test_trait() -> Result<(), String> {
         fields: HashMap::new(),
     })?;
 
-    let jacob = world.get_agent("jacob").ok_or("could not find jacob")?;
-    let new_edge_handle = jacob.edges.get(0).ok_or("jacob has no edges")?;
+    let jacob = world.get_agent("jacob").context("could not find jacob")?;
+    let new_edge_handle = jacob.edges.get(0).context("jacob has no edges")?;
     world
         .get_relation(new_edge_handle.handle())
-        .ok_or("could not find edge")?;
+        .context("could not find edge")?;
 
     if !world.check_condition(
         PracticeCondition::Value(PraxsmthValue::Variable(sentence)),
         &HashMap::new(),
     )? {
-        return Err("jacob should be chronically sleep deprived".into());
+        bail!("jacob should be chronically sleep deprived");
     }
 
     Ok(())
 }
 
 #[test]
-fn test_practice_ok() -> Result<(), String> {
+fn test_practice_ok() -> Result<()> {
     let mut world = setup_world()?;
 
     let emotion_sentence = vec![
@@ -117,22 +116,22 @@ fn test_practice_ok() -> Result<(), String> {
 
     world.apply_action("alaina", 0)?;
 
-    let jacob = world.get_agent("jacob").ok_or("could not find jacob")?;
+    let jacob = world.get_agent("jacob").context("could not find jacob")?;
     if world.check_condition(
         PracticeCondition::Value(PraxsmthValue::Variable(emotion_sentence)),
         &HashMap::new(),
     )? {
-        return Err("jacob should no longer be chronically sleep deprived".into());
+        bail!("jacob should no longer be chronically sleep deprived");
     }
     if jacob.edges.len() != 1 {
-        return Err("jacob should have one edge".into());
+        bail!("jacob should have one edge, has {}", jacob.edges.len());
     }
 
     Ok(())
 }
 
 #[test]
-fn test_practice_condition_fail() -> Result<(), String> {
+fn test_practice_condition_fail() -> Result<()> {
     let mut world = setup_world()?;
 
     world.process_declaration(&Declaration {
@@ -146,7 +145,7 @@ fn test_practice_condition_fail() -> Result<(), String> {
     })?;
 
     if !world.get_available_actions("alaina")?.is_empty() {
-        return Err("alaina should have no available actions".into());
+        bail!("alaina should have no available actions");
     }
 
     Ok(())

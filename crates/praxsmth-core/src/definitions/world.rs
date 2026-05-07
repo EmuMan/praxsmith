@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::definitions::PraxsmthConstant;
 
+#[derive(Debug, Clone)]
 pub enum PraxsmthWorldDefinition {
     AgentInfo(AgentInfo),
     Declaration(Declaration),
@@ -17,6 +18,7 @@ impl Serialize for PraxsmthWorldDefinition {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct AgentInfo {
     pub name: String,
     pub subagents: HashMap<String, AgentInfo>,
@@ -33,6 +35,7 @@ impl Serialize for AgentInfo {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Declaration {
     pub sentence: Sentence,
     pub fields: HashMap<String, PraxsmthConstant>,

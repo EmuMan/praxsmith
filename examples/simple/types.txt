@@ -1,6 +1,12 @@
 emotion sad
 emotion happy
 
+directional is_in contains
+
+reciprocal is_married_to {
+    since: 0..3000
+}
+
 practice greet (Greeter, Greeted) {
     display: "[Greeter] is greeting [Greeted]"
     actions: [

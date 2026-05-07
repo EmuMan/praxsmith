@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use anyhow::{Result, bail};
+
 #[derive(Debug)]
 pub struct Handle<T> {
     index: u32,
@@ -112,17 +114,20 @@ impl<T> Store<T> {
         }
     }
 
-    pub fn remove(&mut self, handle: Handle<T>) -> Result<(), &'static str> {
+    pub fn remove(&mut self, handle: Handle<T>) -> Result<()> {
         let entry = self
             .entries
             .get_mut(handle.index as usize)
-            .ok_or("entry not found at index")?;
+            .ok_or_else(|| anyhow::anyhow!("entry not found at index {}", handle.index))?;
         if handle.generation != entry.current_generation {
-            Err("entry generation does not match")
-        } else {
-            entry.item = None;
-            self.open_indices.push(handle.index as usize);
-            Ok(())
+            bail!(
+                "entry generation does not match (handle gen {}, entry gen {})",
+                handle.generation,
+                entry.current_generation
+            );
         }
+        entry.item = None;
+        self.open_indices.push(handle.index as usize);
+        Ok(())
     }
 }
