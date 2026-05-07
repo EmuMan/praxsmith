@@ -328,6 +328,13 @@ impl World {
         }
     }
 
+    fn process_print(&self, speaker: Option<&str>, string: &str, bindings: &Bindings) -> Dialog {
+        Dialog {
+            speaker: speaker.map(|s| s.to_string()),
+            line: Self::format_string(string, bindings),
+        }
+    }
+
     fn process_delete(&mut self, sentence: &Sentence, bindings: &Bindings) -> Result<()> {
         let (query, args) = self
             .build_query(sentence)
@@ -401,10 +408,7 @@ impl World {
     ) -> Result<Option<Dialog>> {
         match outcome {
             PracticeOutcome::Print(string) => {
-                return Ok(Some(Dialog {
-                    speaker: Some(agent_name.into()),
-                    line: string.clone(),
-                }));
+                return Ok(Some(self.process_print(Some(agent_name), string, bindings)));
             }
             PracticeOutcome::Delete(sentence) => self.process_delete(sentence, bindings),
             PracticeOutcome::Set(sentence, value) => self.process_set(sentence, value, bindings),
@@ -446,6 +450,10 @@ impl World {
                         );
                     };
                     'action_loop: for (i, action) in actions.iter().enumerate() {
+                        let action_for = Self::resolve_binding_or_same(&action.for_actor, bindings);
+                        if action_for != agent_name {
+                            continue;
+                        }
                         for condition in &action.conditions {
                             if !self
                                 .check_condition(condition.clone(), bindings)
@@ -459,8 +467,9 @@ impl World {
                                 continue 'action_loop;
                             }
                         }
+
                         available_actions.push(AvailableAction {
-                            display_name: action.name.clone(),
+                            display_name: Self::format_string(&action.name, bindings),
                             overall_index: available_actions.len(),
                             practice_handle: handle.clone(),
                             index_within_practice: i,
@@ -514,7 +523,7 @@ impl World {
             })?;
 
         // TODO: Fix this a better way.
-        let actor_name = action.for_actor.clone();
+        let actor_name = Self::resolve_binding_or_same(&action.for_actor, &bindings);
         let outcomes = action.outcomes.clone();
         let action_name = action.name.clone();
         let bindings = bindings.clone();

@@ -18,11 +18,11 @@ practice greet (Greeter, Greeted) {
             for: Greeter
             name: "Greet [Greeted]"
             conditions: [
-                $Greeter.in.house and $Greeted.in.house // TODO: support free variables here
+                $Greeter.is_in.house and $Greeted.is_in.house // TODO: support free variables here
             ]
             outcomes: [
                 print "[Greeter] has greeted [Greeted]"
-                delete self
+                // delete self // TODO: make work
             ]
         }
     ]

@@ -1,0 +1,6 @@
+- Only show active agents in UI
+- Goals
+- References to "self" in practice outcomes
+- Remove display name of actions
+- Agent name is used instead of ID for displays
+- Allow practice outcomes to declare new relations, not just modify existing ones

@@ -323,6 +323,22 @@ impl World {
             })
     }
 
+    fn format_string(string: &str, bindings: &Bindings) -> String {
+        let mut result = string.to_string();
+        for (var, value) in bindings {
+            let placeholder = format!("[{}]", var);
+            result = result.replace(&placeholder, &value.to_string());
+        }
+        result
+    }
+
+    fn resolve_binding_or_same(string: &str, bindings: &Bindings) -> String {
+        bindings
+            .get(string)
+            .cloned()
+            .unwrap_or_else(|| string.to_string())
+    }
+
     pub fn add_agent(&mut self, info: &AgentInfo) -> Result<()> {
         if self.agents.contains_key(&info.name) {
             bail!("agent with name {} already exists", info.name);
@@ -333,14 +349,6 @@ impl World {
 
     pub fn get_agent(&self, name: &str) -> Option<&Agent> {
         self.agents.get(name)
-    }
-
-    pub fn get_agent_with_bindings(&self, name: &str, bindings: &Bindings) -> Option<&Agent> {
-        // bindings should shadow direct agent names
-        match bindings.get(name) {
-            Some(bound_name) => self.agents.get(bound_name),
-            None => self.agents.get(name),
-        }
     }
 
     pub fn get_relation(&self, handle: RelationHandle) -> Option<&Relation> {

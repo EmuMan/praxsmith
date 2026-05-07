@@ -31,7 +31,9 @@ fn parse_value(pair: Pair<Rule>) -> PraxsmthValue {
         Rule::number => PraxsmthValue::Number(pair.as_str().parse().unwrap()),
         Rule::string => PraxsmthValue::String(parse_string(pair)),
         Rule::var_name => PraxsmthValue::Variant(pair.as_str().to_string()),
-        Rule::variable => PraxsmthValue::Variable(parse_sentence(pair)),
+        Rule::variable => {
+            PraxsmthValue::Variable(parse_sentence(pair.into_inner().next().unwrap()))
+        }
         _ => unreachable!(),
     }
 }

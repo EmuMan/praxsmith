@@ -102,17 +102,35 @@ impl World {
 impl World {
     fn trigger_on_update(&self) -> Result<(), JsError> {
         if let Some(cb) = &self.on_update {
-            cb.call0(&JsValue::NULL)
-                .map_err(|e| JsError::new(&format!("on_update callback threw: {e:?}")))?;
+            let cb = cb.clone();
+            let closure = wasm_bindgen::closure::Closure::once_into_js(move || {
+                let _ = cb.call0(&JsValue::NULL);
+            });
+            web_sys::window()
+                .ok_or_else(|| JsError::new("no window"))?
+                .set_timeout_with_callback_and_timeout_and_arguments_0(
+                    closure.unchecked_ref(),
+                    0,
+                )
+                .map_err(|e| JsError::new(&format!("setTimeout failed: {e:?}")))?;
         }
         Ok(())
     }
 
     fn trigger_on_dialog(&self, dialog: &Dialog) -> Result<(), JsError> {
         if let Some(cb) = &self.on_dialog {
+            let cb = cb.clone();
             let js_dialog = serde_wasm_bindgen::to_value(dialog).map_err(js_err)?;
-            cb.call1(&JsValue::NULL, &js_dialog)
-                .map_err(|e| JsError::new(&format!("on_dialog callback threw: {e:?}")))?;
+            let closure = wasm_bindgen::closure::Closure::once_into_js(move || {
+                let _ = cb.call1(&JsValue::NULL, &js_dialog);
+            });
+            web_sys::window()
+                .ok_or_else(|| JsError::new("no window"))?
+                .set_timeout_with_callback_and_timeout_and_arguments_0(
+                    closure.unchecked_ref(),
+                    0,
+                )
+                .map_err(|e| JsError::new(&format!("setTimeout failed: {e:?}")))?;
         }
         Ok(())
     }
