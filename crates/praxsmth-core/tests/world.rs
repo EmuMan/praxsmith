@@ -7,7 +7,7 @@ use praxsmth::definitions::types::{
 };
 use praxsmth::definitions::world::{AgentInfo, Declaration};
 use praxsmth::types::TypeMapping;
-use praxsmth::world::World;
+use praxsmth::world::{Bindings, World};
 
 fn setup_world() -> Result<World> {
     let mut type_mapping = TypeMapping::new();
@@ -74,7 +74,7 @@ fn test_trait() -> Result<()> {
             sentence: sentence.clone(),
             fields: HashMap::new(),
         },
-        &HashMap::new(),
+        &Bindings::default(),
     )?;
 
     let jacob = world.get_agent("jacob").context("could not find jacob")?;
@@ -85,7 +85,7 @@ fn test_trait() -> Result<()> {
 
     if !world.check_condition(
         PracticeCondition::Value(PraxsmthValue::Variable(sentence)),
-        &HashMap::new(),
+        &Bindings::default(),
     )? {
         bail!("jacob should be chronically sleep deprived");
     }
@@ -108,7 +108,7 @@ fn test_practice_ok() -> Result<()> {
             sentence: emotion_sentence.clone(),
             fields: HashMap::new(),
         },
-        &HashMap::new(),
+        &Bindings::default(),
     )?;
 
     world.process_declaration(
@@ -121,7 +121,7 @@ fn test_practice_ok() -> Result<()> {
             ],
             fields: HashMap::new(),
         },
-        &HashMap::new(),
+        &Bindings::default(),
     )?;
 
     world.apply_action("alaina", 0)?;
@@ -129,7 +129,7 @@ fn test_practice_ok() -> Result<()> {
     let jacob = world.get_agent("jacob").context("could not find jacob")?;
     if world.check_condition(
         PracticeCondition::Value(PraxsmthValue::Variable(emotion_sentence)),
-        &HashMap::new(),
+        &Bindings::default(),
     )? {
         bail!("jacob should no longer be chronically sleep deprived");
     }
@@ -154,7 +154,7 @@ fn test_practice_condition_fail() -> Result<()> {
             ],
             fields: HashMap::new(),
         },
-        &HashMap::new(),
+        &Bindings::default(),
     )?;
 
     if !world.get_available_actions("alaina")?.is_empty() {

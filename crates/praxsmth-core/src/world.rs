@@ -4,7 +4,8 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     definitions::{
-        FieldTypes, PraxsmthConstant, PraxsmthField, Serialize, types::PraxsmthTypeData, world::*,
+        FieldTypes, PraxsmthConstant, PraxsmthField, Sentence, Serialize, types::PraxsmthTypeData,
+        world::*,
     },
     types::TypeMapping,
 };
@@ -13,7 +14,6 @@ pub mod api;
 pub mod simulation;
 
 type Fields = HashMap<String, PraxsmthConstant>;
-type Bindings = HashMap<String, String>;
 
 // TODO: verify this works correctly in all cases, and add more detailed error messages
 fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -> Result<()> {
@@ -63,6 +63,44 @@ fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct Bindings {
+    variables: HashMap<String, String>,
+    self_id: Option<Sentence>,
+}
+
+impl Bindings {
+    pub fn new(variables: HashMap<String, String>, self_id: Option<Sentence>) -> Self {
+        Bindings { variables, self_id }
+    }
+
+    pub fn get(&self, var: &str) -> Option<&String> {
+        self.variables.get(var)
+    }
+
+    pub fn insert(&mut self, var: String, value: String) {
+        self.variables.insert(var, value);
+    }
+}
+
+impl Default for Bindings {
+    fn default() -> Self {
+        Bindings {
+            variables: HashMap::new(),
+            self_id: None,
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a Bindings {
+    type Item = (&'a String, &'a String);
+    type IntoIter = std::collections::hash_map::Iter<'a, String, String>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.variables.iter()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -139,7 +177,7 @@ pub enum RelationData {
     Reciprocal,
     Evaluation { reason: String },
     Emotion,
-    Practice { bindings: HashMap<String, String> },
+    Practice { bindings: Bindings },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -804,11 +842,15 @@ impl World {
             );
         }
 
-        let mut bindings = HashMap::new();
-
-        for (param, participant) in params.iter().zip(participants.iter()) {
-            bindings.insert(param.clone(), participant.clone());
-        }
+        let variables: HashMap<String, String> = params
+            .iter()
+            .cloned()
+            .zip(participants.iter().cloned())
+            .collect();
+        let mut self_id = vec!["practice".to_string()];
+        self_id.push(type_name.to_string());
+        self_id.extend(participants.iter().cloned());
+        let bindings = Bindings::new(variables, Some(self_id));
 
         let edges = participants
             .iter()

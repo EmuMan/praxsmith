@@ -1,4 +1,3 @@
 - Only show active agents in UI
 - Goals
 - References to "self" in practice outcomes
-- Agent name is used instead of ID for displays

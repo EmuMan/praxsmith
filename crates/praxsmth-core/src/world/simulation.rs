@@ -87,8 +87,25 @@ impl World {
     /// and any remaining arguments. Verifies the type of the relation
     /// and the number of parameters, but does not verify the agents
     /// involved.
-    pub fn build_query(&self, sentence: &Sentence) -> Result<(RelationQuery, Box<[String]>)> {
+    pub fn build_query(
+        &self,
+        sentence: &Sentence,
+        self_id: Option<&Sentence>,
+    ) -> Result<(RelationQuery, Box<[String]>)> {
         match sentence.as_slice() {
+            [self_keyword, rest @ ..] if self_keyword == "self" => {
+                let self_sentence =
+                    self_id.with_context(|| "sentence starting with 'self' has no self context")?;
+                // Can't simply recurse because we would lose rest, so just recurse to
+                // build the query for the self context and then re-attach the rest.
+                let (query, _) = self.build_query(self_sentence, None).with_context(|| {
+                    format!(
+                        "parsing sentence starting with 'self' using self context {:?}",
+                        self_sentence
+                    )
+                })?;
+                Ok((query, rest.into()))
+            }
             [agent, verb, trait_name, rest @ ..] if verb == "is" => {
                 let relation_type = self
                     .type_mapping
@@ -179,7 +196,7 @@ impl World {
         sentence: &Sentence,
         bindings: &Bindings,
     ) -> Result<(RelationQuery, Box<[String]>)> {
-        let (query, args) = self.build_query(sentence)?;
+        let (query, args) = self.build_query(sentence, bindings.self_id.as_ref())?;
         Ok((query.apply_bindings(bindings), args))
     }
 

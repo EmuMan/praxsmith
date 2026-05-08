@@ -1,12 +1,10 @@
-use std::collections::HashMap;
-
 use anyhow::{Context, Result};
 
 use crate::{
     definitions::world::PraxsmthWorldDefinition,
     parser::{types::parse_types, world::parse_world},
     types::TypeMapping,
-    world::{Relation, RelationHandle, World, simulation::Dialog},
+    world::{Bindings, Relation, RelationHandle, World, simulation::Dialog},
 };
 
 impl World {
@@ -19,7 +17,7 @@ impl World {
             TypeMapping::from_types(type_defs).context("constructing type mapping")?;
         let mut world = World::new(type_mapping);
 
-        let empty_bindings = HashMap::new();
+        let empty_bindings = Bindings::default();
 
         for world_def in &world_defs {
             match world_def {
