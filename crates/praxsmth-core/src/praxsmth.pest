@@ -94,9 +94,21 @@ pc_primary = _{ value }
 
 t_practice_outcomes = { "[" ~ t_practice_outcome* ~ "]" }
 
-t_practice_outcome = _{ outcome_broadcast | outcome_say | outcome_delete | outcome_set | outcome_update | outcome_increase | outcome_cycle }
+t_practice_outcome = _{
+    outcome_broadcast
+  | outcome_say
+  | outcome_activate
+  | outcome_deactivate
+  | outcome_delete
+  | outcome_set
+  | outcome_update
+  | outcome_increase
+  | outcome_cycle
+}
 outcome_broadcast  =  { "broadcast" ~ string }
 outcome_say        =  { "say" ~ string }
+outcome_activate   =  { "activate" ~ var_name }
+outcome_deactivate =  { "deactivate" ~ var_name }
 outcome_delete     =  { "delete" ~ sentence }
 outcome_set        =  { "set" ~ w_declaration }
 outcome_update     =  { "update" ~ sentence ~ "to" ~ value }
@@ -115,7 +127,8 @@ world_definition = _{
 // Agent rules
 w_agent = { "agent" ~ w_agent_inner }
 
-w_agent_inner    = { var_name ~ ("as" ~ string)? ~ w_agent_brackets? }
+w_agent_inner    = { var_name ~ ("as" ~ string)? ~ w_agent_inactive? ~ w_agent_brackets? }
+w_agent_inactive = { "inactive" }
 w_agent_brackets = { "{" ~ w_agent_inner* ~ "}" }
 
 // Declaration rules

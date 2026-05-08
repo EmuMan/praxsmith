@@ -8,11 +8,11 @@ use crate::definitions::world::*;
 use crate::parser::{PraxsmthParser, Rule, parse_constant, parse_sentence};
 
 fn parse_agent_inner(pair: Pair<Rule>) -> AgentInfo {
-    // pair is Rule::w_agent_inner: var_name ~ ("as" ~ string)? ~ w_agent_brackets?
+    // pair is Rule::w_agent_inner: var_name ~ ("as" ~ string)? ~ w_agent_inactive? ~ w_agent_brackets?
     let mut inner = pair.into_inner();
     let id = inner.next().unwrap().as_str().to_string();
     let mut name = id.clone();
-
+    let mut active = true;
     let mut subagents = HashMap::new();
 
     for next in inner {
@@ -20,6 +20,9 @@ fn parse_agent_inner(pair: Pair<Rule>) -> AgentInfo {
             Rule::string => {
                 // "as" ~ string
                 name = next.into_inner().next().unwrap().as_str().to_string();
+            }
+            Rule::w_agent_inactive => {
+                active = false;
             }
             Rule::w_agent_brackets => {
                 // "{" ~ w_agent_inner* ~ "}"
@@ -35,6 +38,7 @@ fn parse_agent_inner(pair: Pair<Rule>) -> AgentInfo {
     AgentInfo {
         id,
         name,
+        active,
         subagents,
     }
 }

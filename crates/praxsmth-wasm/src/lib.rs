@@ -51,13 +51,13 @@ impl World {
         self.on_dialog = Some(cb);
     }
 
-    #[wasm_bindgen(js_name = getAgentNames)]
-    pub fn get_agent_names(&self) -> Result<JsValue, JsError> {
+    #[wasm_bindgen(js_name = getAgentInfo)]
+    pub fn get_agent_info(&self) -> Result<JsValue, JsError> {
         let agent_names: Vec<AgentInfo> = self
             .inner
             .agents
             .iter()
-            .map(|(id, agent)| AgentInfo::new(id.clone(), agent.name.clone()))
+            .map(|(id, agent)| AgentInfo::new(id.clone(), agent.name.clone(), agent.is_active))
             .collect();
         serde_wasm_bindgen::to_value(&agent_names).map_err(js_err)
     }
@@ -151,10 +151,11 @@ impl From<core::world::simulation::Dialog> for Dialog {
 pub struct AgentInfo {
     id: String,
     name: String,
+    active: bool,
 }
 
 impl AgentInfo {
-    pub fn new(id: String, name: String) -> Self {
-        AgentInfo { id, name }
+    pub fn new(id: String, name: String, active: bool) -> Self {
+        AgentInfo { id, name, active }
     }
 }

@@ -454,6 +454,12 @@ impl World {
                     bindings,
                 )?));
             }
+            PracticeOutcome::Activate(agent_id) => {
+                self.set_agent_active(&bindings.get_or_same(agent_id), true)
+            }
+            PracticeOutcome::Deactivate(agent_id) => {
+                self.set_agent_active(&bindings.get_or_same(agent_id), false)
+            }
             PracticeOutcome::Delete(sentence) => self.process_delete(sentence, bindings),
             PracticeOutcome::Set(declaration) => {
                 self.process_declaration(declaration, bindings).map(|_| ())

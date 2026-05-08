@@ -31,7 +31,7 @@ practice greet (Greeter, Greeted) {
 `;
 
 export const DEFAULT_WORLD = `
-agent house as "House"
+agent house as "House" inactive
 
 agent jacob as "Jacob"
 agent alaina as "Alaina"

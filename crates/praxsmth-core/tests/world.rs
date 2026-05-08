@@ -48,11 +48,13 @@ fn setup_world() -> Result<World> {
     world.add_agent(&AgentInfo {
         id: "jacob".into(),
         name: "Jacob".into(),
+        active: true,
         subagents: HashMap::new(),
     })?;
     world.add_agent(&AgentInfo {
         id: "alaina".into(),
         name: "Alaina".into(),
+        active: true,
         subagents: HashMap::new(),
     })?;
 

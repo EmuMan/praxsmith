@@ -80,6 +80,11 @@ impl Bindings {
         self.variables.get(var)
     }
 
+    // TODO: cow?
+    pub fn get_or_same(&self, var: &str) -> String {
+        self.get(var).cloned().unwrap_or_else(|| var.to_string())
+    }
+
     pub fn insert(&mut self, var: String, value: String) {
         self.variables.insert(var, value);
     }
@@ -311,15 +316,16 @@ pub struct Agent {
     pub edges: Vec<AgentToRelation>,
     // Quick access field for the singular emotion they might have
     pub emotion: Option<RelationHandle>,
+    pub is_active: bool,
 }
 
 impl Agent {
     pub fn new(info: &AgentInfo) -> Self {
-        // TODO: better agent construction
         Agent {
             name: info.name.clone(),
             edges: Vec::new(),
             emotion: None,
+            is_active: info.active,
         }
     }
 
@@ -390,6 +396,15 @@ impl World {
 
     pub fn get_agent(&self, name: &str) -> Option<&Agent> {
         self.agents.get(name)
+    }
+
+    pub fn set_agent_active(&mut self, name: &str, active: bool) -> Result<()> {
+        let agent = self
+            .agents
+            .get_mut(name)
+            .with_context(|| format!("looking up agent {} for activation", name))?;
+        agent.is_active = active;
+        Ok(())
     }
 
     pub fn get_relation(&self, handle: RelationHandle) -> Option<&Relation> {

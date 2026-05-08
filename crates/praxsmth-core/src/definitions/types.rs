@@ -87,6 +87,8 @@ pub enum PracticeCondition {
 pub enum PracticeOutcome {
     Broadcast(String),
     Say(String),
+    Activate(String),
+    Deactivate(String),
     Delete(Sentence),
     Set(Declaration),
     Update(Sentence, PraxsmthValue),

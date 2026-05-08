@@ -38,7 +38,7 @@
     function refreshFromWorld() {
         if (!world) return;
         try {
-            agents = world.getAgentNames() as AgentInfo[];
+            agents = world.getAgentInfo() as AgentInfo[];
 
             const nextEmotions: Record<string, string | undefined> = {};
             for (const a of agents) {
@@ -131,6 +131,8 @@
     let selectedAgentName = $derived(
         agents.find((a) => a.id === selectedId)?.name ?? null,
     );
+
+    let visibleAgents = $derived(agents.filter((a) => a.active));
 </script>
 
 <main class="page">
@@ -151,7 +153,12 @@
         />
     {:else}
         <section class="layout">
-            <Cast {agents} {selectedId} {emotions} onselect={selectAgent} />
+            <Cast
+                agents={visibleAgents}
+                {selectedId}
+                {emotions}
+                onselect={selectAgent}
+            />
 
             <div class="chat-column">
                 <Chat {messages} />

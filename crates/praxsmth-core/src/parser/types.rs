@@ -159,6 +159,16 @@ fn parse_practice_outcome(pair: Pair<Rule>) -> PracticeOutcome {
             let string_pair = inner.next().unwrap();
             PracticeOutcome::Say(parse_string(string_pair))
         }
+        Rule::outcome_activate => {
+            // "activate" ~ var_name
+            let var_pair = inner.next().unwrap();
+            PracticeOutcome::Activate(var_pair.as_str().to_string())
+        }
+        Rule::outcome_deactivate => {
+            // "deactivate" ~ var_name
+            let var_pair = inner.next().unwrap();
+            PracticeOutcome::Deactivate(var_pair.as_str().to_string())
+        }
         Rule::outcome_delete => {
             // "delete" ~ sentence
             let sentence_pair = inner.next().unwrap();
