@@ -20,6 +20,7 @@ impl Serialize for PraxsmthWorldDefinition {
 
 #[derive(Debug, Clone)]
 pub struct AgentInfo {
+    pub id: String,
     pub name: String,
     pub subagents: HashMap<String, AgentInfo>,
 }

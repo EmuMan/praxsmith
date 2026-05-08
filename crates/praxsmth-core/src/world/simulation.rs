@@ -340,11 +340,21 @@ impl World {
         }
     }
 
-    fn process_print(&self, speaker: Option<&str>, string: &str, bindings: &Bindings) -> Dialog {
-        Dialog {
+    fn process_print(
+        &self,
+        speaker: Option<&str>,
+        string: &str,
+        bindings: &Bindings,
+    ) -> Result<Dialog> {
+        Ok(Dialog {
             speaker: speaker.map(|s| s.to_string()),
-            line: Self::format_string(string, bindings),
-        }
+            line: self.format_string(string, bindings).with_context(|| {
+                format!(
+                    "formatting string for print outcome with speaker {:?}: {}",
+                    speaker, string
+                )
+            })?,
+        })
     }
 
     fn process_delete(&mut self, sentence: &Sentence, bindings: &Bindings) -> Result<()> {
@@ -418,10 +428,14 @@ impl World {
     ) -> Result<Option<Dialog>> {
         match outcome {
             PracticeOutcome::Broadcast(string) => {
-                return Ok(Some(self.process_print(None, string, bindings)));
+                return Ok(Some(self.process_print(None, string, bindings)?));
             }
             PracticeOutcome::Say(string) => {
-                return Ok(Some(self.process_print(Some(agent_name), string, bindings)));
+                return Ok(Some(self.process_print(
+                    Some(agent_name),
+                    string,
+                    bindings,
+                )?));
             }
             PracticeOutcome::Delete(sentence) => self.process_delete(sentence, bindings),
             PracticeOutcome::Set(declaration) => {
@@ -487,7 +501,14 @@ impl World {
                         }
 
                         available_actions.push(AvailableAction {
-                            display_name: Self::format_string(&action.name, bindings),
+                            display_name: self.format_string(&action.name, bindings).with_context(
+                                || {
+                                    format!(
+                                        "formatting display name for action {} of practice {:?}",
+                                        action.name, handle
+                                    )
+                                },
+                            )?,
                             overall_index: available_actions.len(),
                             practice_handle: handle.clone(),
                             index_within_practice: i,

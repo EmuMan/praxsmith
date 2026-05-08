@@ -46,11 +46,13 @@ fn setup_world() -> Result<World> {
     let mut world = World::new(type_mapping);
 
     world.add_agent(&AgentInfo {
-        name: "jacob".into(),
+        id: "jacob".into(),
+        name: "Jacob".into(),
         subagents: HashMap::new(),
     })?;
     world.add_agent(&AgentInfo {
-        name: "alaina".into(),
+        id: "alaina".into(),
+        name: "Alaina".into(),
         subagents: HashMap::new(),
     })?;
 

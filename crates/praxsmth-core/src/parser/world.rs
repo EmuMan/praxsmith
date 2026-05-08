@@ -10,14 +10,16 @@ use crate::parser::{PraxsmthParser, Rule, parse_constant, parse_sentence};
 fn parse_agent_inner(pair: Pair<Rule>) -> AgentInfo {
     // pair is Rule::w_agent_inner: var_name ~ ("as" ~ string)? ~ w_agent_brackets?
     let mut inner = pair.into_inner();
-    let name = inner.next().unwrap().as_str().to_string();
+    let id = inner.next().unwrap().as_str().to_string();
+    let mut name = id.clone();
 
     let mut subagents = HashMap::new();
 
     for next in inner {
         match next.as_rule() {
             Rule::string => {
-                // "as" alias — not stored in Agent struct, ignored
+                // "as" ~ string
+                name = next.into_inner().next().unwrap().as_str().to_string();
             }
             Rule::w_agent_brackets => {
                 // "{" ~ w_agent_inner* ~ "}"
@@ -30,7 +32,11 @@ fn parse_agent_inner(pair: Pair<Rule>) -> AgentInfo {
         }
     }
 
-    AgentInfo { name, subagents }
+    AgentInfo {
+        id,
+        name,
+        subagents,
+    }
 }
 
 fn parse_agent(pair: Pair<Rule>) -> AgentInfo {

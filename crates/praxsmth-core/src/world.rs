@@ -269,7 +269,7 @@ impl RelationStore {
 }
 
 pub struct Agent {
-    pub display_name: String,
+    pub name: String,
     pub edges: Vec<AgentToRelation>,
     // Quick access field for the singular emotion they might have
     pub emotion: Option<RelationHandle>,
@@ -279,7 +279,7 @@ impl Agent {
     pub fn new(info: &AgentInfo) -> Self {
         // TODO: better agent construction
         Agent {
-            display_name: info.name.clone(),
+            name: info.name.clone(),
             edges: Vec::new(),
             emotion: None,
         }
@@ -323,13 +323,16 @@ impl World {
             })
     }
 
-    fn format_string(string: &str, bindings: &Bindings) -> String {
+    fn format_string(&self, string: &str, bindings: &Bindings) -> Result<String> {
         let mut result = string.to_string();
         for (var, value) in bindings {
+            let agent = self
+                .get_agent(value)
+                .with_context(|| format!("looking up agent {} for string formatting", value))?;
             let placeholder = format!("[{}]", var);
-            result = result.replace(&placeholder, &value.to_string());
+            result = result.replace(&placeholder, &agent.name);
         }
-        result
+        Ok(result)
     }
 
     fn resolve_binding_or_same(string: &str, bindings: &Bindings) -> String {
@@ -340,10 +343,10 @@ impl World {
     }
 
     pub fn add_agent(&mut self, info: &AgentInfo) -> Result<()> {
-        if self.agents.contains_key(&info.name) {
-            bail!("agent with name {} already exists", info.name);
+        if self.agents.contains_key(&info.id) {
+            bail!("agent with id {} already exists", info.id);
         }
-        self.agents.insert(info.name.clone(), Agent::new(info));
+        self.agents.insert(info.id.clone(), Agent::new(info));
         Ok(())
     }
 

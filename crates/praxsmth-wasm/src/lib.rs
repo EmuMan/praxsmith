@@ -57,7 +57,7 @@ impl World {
             .inner
             .agents
             .iter()
-            .map(|(id, agent)| AgentInfo::new(id.clone(), agent.display_name.clone()))
+            .map(|(id, agent)| AgentInfo::new(id.clone(), agent.name.clone()))
             .collect();
         serde_wasm_bindgen::to_value(&agent_names).map_err(js_err)
     }
@@ -108,10 +108,7 @@ impl World {
             });
             web_sys::window()
                 .ok_or_else(|| JsError::new("no window"))?
-                .set_timeout_with_callback_and_timeout_and_arguments_0(
-                    closure.unchecked_ref(),
-                    0,
-                )
+                .set_timeout_with_callback_and_timeout_and_arguments_0(closure.unchecked_ref(), 0)
                 .map_err(|e| JsError::new(&format!("setTimeout failed: {e:?}")))?;
         }
         Ok(())
@@ -126,10 +123,7 @@ impl World {
             });
             web_sys::window()
                 .ok_or_else(|| JsError::new("no window"))?
-                .set_timeout_with_callback_and_timeout_and_arguments_0(
-                    closure.unchecked_ref(),
-                    0,
-                )
+                .set_timeout_with_callback_and_timeout_and_arguments_0(closure.unchecked_ref(), 0)
                 .map_err(|e| JsError::new(&format!("setTimeout failed: {e:?}")))?;
         }
         Ok(())
