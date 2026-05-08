@@ -95,10 +95,12 @@ pc_primary = _{ value }
 
 t_practice_outcomes = { "[" ~ t_practice_outcome* ~ "]" }
 
-t_practice_outcome = _{ outcome_print | outcome_delete | outcome_set | outcome_increase | outcome_cycle }
-outcome_print      =  { "print" ~ string }
+t_practice_outcome = _{ outcome_broadcast | outcome_say | outcome_delete | outcome_set | outcome_update | outcome_increase | outcome_cycle }
+outcome_broadcast  =  { "broadcast" ~ string }
+outcome_say        =  { "say" ~ string }
 outcome_delete     =  { "delete" ~ sentence }
-outcome_set        =  { "set" ~ sentence ~ "to" ~ value }
+outcome_set        =  { "set" ~ w_declaration }
+outcome_update     =  { "update" ~ sentence ~ "to" ~ value }
 outcome_increase   =  { "increase" ~ sentence ~ "by" ~ number }
 outcome_cycle      =  { "cycle" ~ sentence ~ "by" ~ number }
 

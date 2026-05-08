@@ -1,3 +1,4 @@
+use crate::definitions::world::Declaration;
 use crate::definitions::{PraxsmthValue, Serialize};
 
 use crate::definitions::{FieldTypes, Sentence};
@@ -92,9 +93,11 @@ pub enum PracticeCondition {
 
 #[derive(Debug, Clone)]
 pub enum PracticeOutcome {
-    Print(String),
+    Broadcast(String),
+    Say(String),
     Delete(Sentence),
-    Set(Sentence, PraxsmthValue),
+    Set(Declaration),
+    Update(Sentence, PraxsmthValue),
     Increase(Sentence, i64),
     Cycle(Sentence, i64),
 }

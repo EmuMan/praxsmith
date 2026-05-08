@@ -174,9 +174,22 @@ impl World {
         }
     }
 
-    pub fn process_declaration(&mut self, declaration: &Declaration) -> Result<RelationHandle> {
+    fn build_query_with_bindings(
+        &self,
+        sentence: &Sentence,
+        bindings: &Bindings,
+    ) -> Result<(RelationQuery, Box<[String]>)> {
+        let (query, args) = self.build_query(sentence)?;
+        Ok((query.apply_bindings(bindings), args))
+    }
+
+    pub fn process_declaration(
+        &mut self,
+        declaration: &Declaration,
+        bindings: &Bindings,
+    ) -> Result<RelationHandle> {
         let (query, args) = self
-            .build_query(&declaration.sentence)
+            .build_query_with_bindings(&declaration.sentence, bindings)
             .with_context(|| format!("processing declaration {:?}", declaration.sentence))?;
         // TODO: relations with one parameter should be initializable this way!
         if !args.is_empty() {
@@ -229,9 +242,8 @@ impl World {
         bindings: &Bindings,
     ) -> Result<PraxsmthConstant> {
         let (query, args) = self
-            .build_query(&sentence)
+            .build_query_with_bindings(&sentence, bindings)
             .with_context(|| format!("resolving variable {:?}", sentence))?;
-        let query = query.apply_bindings(bindings);
 
         let Some((_, relation)) = self.lookup_relation(query) else {
             // No relation found, so this evaluates to false
@@ -337,9 +349,8 @@ impl World {
 
     fn process_delete(&mut self, sentence: &Sentence, bindings: &Bindings) -> Result<()> {
         let (query, args) = self
-            .build_query(sentence)
+            .build_query_with_bindings(sentence, bindings)
             .with_context(|| format!("processing delete outcome {:?}", sentence))?;
-        let query = query.apply_bindings(bindings);
         if !args.is_empty() {
             bail!("extra parameters in delete outcome {:?}", sentence);
         }
@@ -351,16 +362,15 @@ impl World {
             .with_context(|| format!("removing relation in delete outcome {:?}", sentence))
     }
 
-    fn process_set(
+    fn process_update(
         &mut self,
         sentence: &Sentence,
         value: &PraxsmthValue,
         bindings: &Bindings,
     ) -> Result<()> {
         let (query, args) = self
-            .build_query(sentence)
+            .build_query_with_bindings(sentence, bindings)
             .with_context(|| format!("processing set outcome {:?}", sentence))?;
-        let query = query.apply_bindings(bindings);
         if args.len() != 1 {
             // TODO: Support bracket syntax so this is actually usable!!!
             // (Currently you can't initialize anything with >1 fields)
@@ -407,11 +417,19 @@ impl World {
         bindings: &Bindings,
     ) -> Result<Option<Dialog>> {
         match outcome {
-            PracticeOutcome::Print(string) => {
+            PracticeOutcome::Broadcast(string) => {
+                return Ok(Some(self.process_print(None, string, bindings)));
+            }
+            PracticeOutcome::Say(string) => {
                 return Ok(Some(self.process_print(Some(agent_name), string, bindings)));
             }
             PracticeOutcome::Delete(sentence) => self.process_delete(sentence, bindings),
-            PracticeOutcome::Set(sentence, value) => self.process_set(sentence, value, bindings),
+            PracticeOutcome::Set(declaration) => {
+                self.process_declaration(declaration, bindings).map(|_| ())
+            }
+            PracticeOutcome::Update(sentence, value) => {
+                self.process_update(sentence, value, bindings)
+            }
             PracticeOutcome::Increase(sentence, amount) => self.process_increase(sentence, *amount),
             PracticeOutcome::Cycle(sentence, amount) => self.process_cycle(sentence, *amount),
         }?;

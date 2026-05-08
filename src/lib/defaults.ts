@@ -21,7 +21,9 @@ practice greet (Greeter, Greeted) {
                 $Greeter.is_in.house and $Greeted.is_in.house // TODO: support free variables here
             ]
             outcomes: [
-                print "[Greeter] has greeted [Greeted]"
+                say "Hello, [Greeted]!"
+                set Greeted.feels.happy
+                broadcast "[Greeter]'s greeting has made [Greeted] happy!"
                 // delete self // TODO: make work
             ]
         }

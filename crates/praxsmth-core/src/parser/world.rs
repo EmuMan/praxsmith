@@ -39,7 +39,7 @@ fn parse_agent(pair: Pair<Rule>) -> AgentInfo {
     parse_agent_inner(inner)
 }
 
-fn parse_declaration(pair: Pair<Rule>) -> Declaration {
+pub fn parse_declaration(pair: Pair<Rule>) -> Declaration {
     // pair is Rule::w_declaration: sentence ~ w_decl_brackets?
     let mut inner = pair.into_inner();
 

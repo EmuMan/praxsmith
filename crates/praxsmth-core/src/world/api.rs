@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 
 use crate::{
@@ -17,6 +19,8 @@ impl World {
             TypeMapping::from_types(type_defs).context("constructing type mapping")?;
         let mut world = World::new(type_mapping);
 
+        let empty_bindings = HashMap::new();
+
         for world_def in &world_defs {
             match world_def {
                 PraxsmthWorldDefinition::AgentInfo(agent_info) => {
@@ -25,9 +29,11 @@ impl World {
                         .with_context(|| format!("adding agent {}", agent_info.name))?;
                 }
                 PraxsmthWorldDefinition::Declaration(declaration) => {
-                    world.process_declaration(declaration).with_context(|| {
-                        format!("processing declaration {:?}", declaration.sentence)
-                    })?;
+                    world
+                        .process_declaration(declaration, &empty_bindings)
+                        .with_context(|| {
+                            format!("processing declaration {:?}", declaration.sentence)
+                        })?;
                 }
             }
         }

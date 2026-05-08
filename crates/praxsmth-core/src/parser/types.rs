@@ -6,6 +6,7 @@ use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
 use crate::definitions::{FieldTypes, types::*};
+use crate::parser::world::parse_declaration;
 use crate::parser::{PraxsmthParser, Rule, parse_field, parse_sentence, parse_string, parse_value};
 
 fn parse_field_brackets(pair: Pair<Rule>) -> FieldTypes {
@@ -148,10 +149,15 @@ fn parse_practice_outcome(pair: Pair<Rule>) -> PracticeOutcome {
     let mut inner = pair.clone().into_inner();
 
     match pair.as_rule() {
-        Rule::outcome_print => {
-            // "print" ~ string
+        Rule::outcome_broadcast => {
+            // "broadcast" ~ string
             let string_pair = inner.next().unwrap();
-            PracticeOutcome::Print(parse_string(string_pair))
+            PracticeOutcome::Broadcast(parse_string(string_pair))
+        }
+        Rule::outcome_say => {
+            // "say" ~ string
+            let string_pair = inner.next().unwrap();
+            PracticeOutcome::Say(parse_string(string_pair))
         }
         Rule::outcome_delete => {
             // "delete" ~ sentence
@@ -159,10 +165,15 @@ fn parse_practice_outcome(pair: Pair<Rule>) -> PracticeOutcome {
             PracticeOutcome::Delete(parse_sentence(sentence_pair))
         }
         Rule::outcome_set => {
-            // "set" ~ sentence ~ "to" ~ value
+            // "set" ~ w_declaration
+            let decl_pair = inner.next().unwrap();
+            PracticeOutcome::Set(parse_declaration(decl_pair))
+        }
+        Rule::outcome_update => {
+            // "update" ~ sentence ~ "to" ~ value
             let sentence_pair = inner.next().unwrap();
             let value_pair = inner.next().unwrap();
-            PracticeOutcome::Set(parse_sentence(sentence_pair), parse_value(value_pair))
+            PracticeOutcome::Update(parse_sentence(sentence_pair), parse_value(value_pair))
         }
         Rule::outcome_increase => {
             // "increase" ~ sentence ~ "by" ~ number

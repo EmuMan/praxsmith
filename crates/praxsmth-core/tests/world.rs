@@ -33,7 +33,7 @@ fn setup_world() -> Result<World> {
                     "chronically_sleep_deprived".into(),
                 ]))],
                 outcomes: vec![
-                    PracticeOutcome::Print("AWOKEN".into()),
+                    PracticeOutcome::Say("AWOKEN".into()),
                     PracticeOutcome::Delete(vec![
                         "woken".into(),
                         "feels".into(),
@@ -68,10 +68,13 @@ fn test_trait() -> Result<()> {
         "chronically_sleep_deprived".into(),
     ];
 
-    world.process_declaration(&Declaration {
-        sentence: sentence.clone(),
-        fields: HashMap::new(),
-    })?;
+    world.process_declaration(
+        &Declaration {
+            sentence: sentence.clone(),
+            fields: HashMap::new(),
+        },
+        &HashMap::new(),
+    )?;
 
     let jacob = world.get_agent("jacob").context("could not find jacob")?;
     let new_edge_handle = jacob.edges.get(0).context("jacob has no edges")?;
@@ -99,20 +102,26 @@ fn test_practice_ok() -> Result<()> {
         "chronically_sleep_deprived".into(),
     ];
 
-    world.process_declaration(&Declaration {
-        sentence: emotion_sentence.clone(),
-        fields: HashMap::new(),
-    })?;
+    world.process_declaration(
+        &Declaration {
+            sentence: emotion_sentence.clone(),
+            fields: HashMap::new(),
+        },
+        &HashMap::new(),
+    )?;
 
-    world.process_declaration(&Declaration {
-        sentence: vec![
-            "practice".into(),
-            "wake".into(),
-            "alaina".into(),
-            "jacob".into(),
-        ],
-        fields: HashMap::new(),
-    })?;
+    world.process_declaration(
+        &Declaration {
+            sentence: vec![
+                "practice".into(),
+                "wake".into(),
+                "alaina".into(),
+                "jacob".into(),
+            ],
+            fields: HashMap::new(),
+        },
+        &HashMap::new(),
+    )?;
 
     world.apply_action("alaina", 0)?;
 
@@ -134,15 +143,18 @@ fn test_practice_ok() -> Result<()> {
 fn test_practice_condition_fail() -> Result<()> {
     let mut world = setup_world()?;
 
-    world.process_declaration(&Declaration {
-        sentence: vec![
-            "practice".into(),
-            "wake".into(),
-            "alaina".into(),
-            "jacob".into(),
-        ],
-        fields: HashMap::new(),
-    })?;
+    world.process_declaration(
+        &Declaration {
+            sentence: vec![
+                "practice".into(),
+                "wake".into(),
+                "alaina".into(),
+                "jacob".into(),
+            ],
+            fields: HashMap::new(),
+        },
+        &HashMap::new(),
+    )?;
 
     if !world.get_available_actions("alaina")?.is_empty() {
         bail!("alaina should have no available actions");
