@@ -61,8 +61,7 @@ t_practice          = { "practice" ~ var_name ~ t_practice_params ~ t_practice_b
 t_practice_params   = { "(" ~ var_name ~ ("," ~ var_name)* ~ ")" }
 t_practice_brackets = { "{" ~ t_practice_field_def* ~ "}" }
 
-t_practice_field_def     = _{ t_practice_display | t_practice_actions_field | t_practice_generic_field }
-t_practice_display       =  { "display" ~ ":" ~ string }
+t_practice_field_def     = _{ t_practice_actions_field | t_practice_generic_field }
 t_practice_actions_field =  { "actions" ~ ":" ~ t_practice_actions }
 t_practice_generic_field =  { var_name ~ ":" ~ field }
 

@@ -23,7 +23,6 @@ pub enum PraxsmthTypeData {
     Emotion,
     Practice {
         params: Vec<String>,
-        display: Option<String>,
         actions: Vec<PracticeAction>,
     },
 }
@@ -54,19 +53,12 @@ impl Serialize for PraxsmthType {
             PraxsmthTypeData::Emotion => {
                 format!("emotion {} {{{}}}", self.name, self.fields.serialize())
             }
-            PraxsmthTypeData::Practice {
-                params, display, ..
-            } => {
+            PraxsmthTypeData::Practice { params, .. } => {
                 let params_str = params.join(", ");
-                let display_str = display
-                    .as_ref()
-                    .map(|d| format!(" display \"{}\"", d))
-                    .unwrap_or_default();
                 format!(
-                    "practice {}({}){} {{{}}}",
+                    "practice {}({}) {{{}}}",
                     self.name,
                     params_str,
-                    display_str,
                     self.fields.serialize()
                 )
             }

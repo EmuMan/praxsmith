@@ -12,7 +12,6 @@ reciprocal is_married_to {
 }
 
 practice greet (Greeter, Greeted) {
-    display: "[Greeter] is greeting [Greeted]"
     actions: [
         {
             for: Greeter

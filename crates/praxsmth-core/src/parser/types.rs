@@ -260,7 +260,6 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PraxsmthType {
     // Get practice brackets (fields)
     let brackets_pair = inner.next().unwrap(); // Rule::t_practice_brackets
 
-    let mut display = None;
     let mut actions = Vec::new();
     let mut fields = HashMap::new();
 
@@ -269,11 +268,6 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PraxsmthType {
         let mut field_inner = field_pair.clone().into_inner();
 
         match field_pair.as_rule() {
-            Rule::t_practice_display => {
-                // "display" ~ ":" ~ string
-                let string_pair = field_inner.next().unwrap();
-                display = Some(parse_string(string_pair));
-            }
             Rule::t_practice_actions_field => {
                 // "actions" ~ ":" ~ t_practice_actions
                 let actions_pair = field_inner.next().unwrap(); // Rule::t_practice_actions
@@ -295,11 +289,7 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PraxsmthType {
     PraxsmthType {
         name,
         fields,
-        data: PraxsmthTypeData::Practice {
-            params,
-            display,
-            actions,
-        },
+        data: PraxsmthTypeData::Practice { params, actions },
     }
 }
 

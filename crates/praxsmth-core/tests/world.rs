@@ -23,7 +23,6 @@ fn setup_world() -> Result<World> {
         fields: HashMap::new(),
         data: PraxsmthTypeData::Practice {
             params: vec!["waker".into(), "woken".into()],
-            display: Some("Wake".into()),
             actions: vec![PracticeAction {
                 for_actor: "waker".into(),
                 name: "Wake".into(),
