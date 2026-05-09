@@ -15,6 +15,7 @@ pub enum PraxsmthTypeData {
     Trait,
     Directional {
         complement: String,
+        exclusive: bool,
     },
     Reciprocal,
     Evaluation {
@@ -33,8 +34,9 @@ impl Serialize for PraxsmthType {
             PraxsmthTypeData::Trait => {
                 format!("trait {} {{{}}}", self.name, self.fields.serialize())
             }
-            PraxsmthTypeData::Directional { complement } => format!(
-                "directional {}/{} {{{}}}",
+            PraxsmthTypeData::Directional { complement, exclusive } => format!(
+                "{}directional {}/{} {{{}}}",
+                if *exclusive { "exclusive " } else { "" },
                 self.name,
                 complement,
                 self.fields.serialize()

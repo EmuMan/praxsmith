@@ -603,6 +603,39 @@ impl World {
         self.validate_agents(&[from, to])
             .with_context(|| format!("adding directional {} from {} to {}", type_name, from, to))?;
 
+        let exclusive = matches!(
+            self.type_mapping.get_type(type_name),
+            Some(t) if matches!(&t.data, PraxsmthTypeData::Directional { exclusive: true, .. })
+        );
+
+        if exclusive {
+            let existing = self
+                .agents
+                .get(from)
+                .into_iter()
+                .flat_map(|a| a.edges.iter())
+                .find_map(|edge| {
+                    if let AgentToRelation::DirectionalForward(h) = edge {
+                        if self
+                            .relation_store
+                            .get(h.clone())
+                            .is_some_and(|r| r.type_name == type_name)
+                        {
+                            return Some(h.clone());
+                        }
+                    }
+                    None
+                });
+            if let Some(old_handle) = existing {
+                self.remove_relation(old_handle).with_context(|| {
+                    format!(
+                        "removing existing exclusive directional {} from {}",
+                        type_name, from
+                    )
+                })?;
+            }
+        }
+
         let handle = self.add_relation(Relation {
             type_name: type_name.to_string(),
             edges: vec![

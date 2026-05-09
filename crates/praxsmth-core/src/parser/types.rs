@@ -43,24 +43,29 @@ fn parse_trait(pair: Pair<Rule>) -> PraxsmthType {
 }
 
 fn parse_directional(pair: Pair<Rule>) -> PraxsmthType {
-    // pair is Rule::t_directional: "directional" ~ var_name ~ var_name ~ field_brackets?
+    // pair is Rule::t_directional: t_exclusive? ~ "directional" ~ var_name ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
-    let forward_name = inner.next().unwrap().as_str().to_string();
+
+    let first = inner.next().unwrap();
+    let (exclusive, forward_name) = if first.as_rule() == Rule::t_exclusive {
+        (true, inner.next().unwrap().as_str().to_string())
+    } else {
+        (false, first.as_str().to_string())
+    };
     let backward_name = inner.next().unwrap().as_str().to_string();
 
-    // Check if there's a field_brackets
     let fields = if let Some(brackets) = inner.next() {
-        // brackets is Rule::field_brackets, contains field_def pairs
         parse_field_brackets(brackets)
     } else {
         HashMap::new()
     };
 
     PraxsmthType {
-        name: forward_name.clone(),
-        fields: fields.clone(),
+        name: forward_name,
+        fields,
         data: PraxsmthTypeData::Directional {
-            complement: backward_name.clone(),
+            complement: backward_name,
+            exclusive,
         },
     }
 }

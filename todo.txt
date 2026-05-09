@@ -1,3 +1,6 @@
 - Goals
-- Exclusive relationships (e.g. is_in)
+- Free variables in conditions
 - Better code editor
+- Comments
+- Documentation
+- Tests

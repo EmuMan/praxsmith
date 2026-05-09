@@ -1,7 +1,7 @@
 emotion sad
 emotion happy
 
-directional is_in contains
+exclusive directional is_in / contains
 
 reciprocal is_married_to {
     since: 0..3000
@@ -20,6 +20,22 @@ practice greet (Greeter, Greeted) {
                 set Greeted.feels.happy
                 broadcast "[Greeter]'s greeting has made [Greeted] happy!"
                 delete self
+            ]
+        }
+    ]
+}
+
+practice move (Agent, From, To) {
+    actions: [
+        {
+            for: Agent
+            name: "Move from [From] to [To]"
+            conditions: [
+                $Agent.is_in.From
+            ]
+            outcomes: [
+                set Agent.is_in.To
+                broadcast "[Agent] moves from [From] to [To]."
             ]
         }
     ]

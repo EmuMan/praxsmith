@@ -64,7 +64,7 @@ impl TypeMapping {
         self.validate_new_name(&t.name)
             .with_context(|| format!("validating new type name {}", t.name))?;
         match &t.data {
-            PraxsmthTypeData::Directional { complement } => {
+            PraxsmthTypeData::Directional { complement, .. } => {
                 self.validate_new_name(complement)
                     .with_context(|| format!("validating complement name {}", complement))?;
                 self.types.insert(
