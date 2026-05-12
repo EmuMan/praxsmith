@@ -133,17 +133,17 @@ fn parse_emotion(pair: Pair<Rule>) -> PraxsmthType {
     }
 }
 
-fn parse_practice_condition(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> PracticeCondition {
+fn parse_condition(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Condition {
     pratt
-        .map_primary(|primary| PracticeCondition::Value(parse_value(primary)))
+        .map_primary(|primary| Condition::Value(parse_value(primary)))
         .map_prefix(|op, rhs| match op.as_rule() {
-            Rule::not => PracticeCondition::Not(Box::new(rhs)),
+            Rule::not => Condition::Not(Box::new(rhs)),
             _ => unreachable!(),
         })
         .map_infix(|lhs, op, rhs| match op.as_rule() {
-            Rule::and => PracticeCondition::And(Box::new(lhs), Box::new(rhs)),
-            Rule::or => PracticeCondition::Or(Box::new(lhs), Box::new(rhs)),
-            Rule::is => PracticeCondition::Is(Box::new(lhs), Box::new(rhs)),
+            Rule::and => Condition::And(Box::new(lhs), Box::new(rhs)),
+            Rule::or => Condition::Or(Box::new(lhs), Box::new(rhs)),
+            Rule::is => Condition::Is(Box::new(lhs), Box::new(rhs)),
             _ => unreachable!(),
         })
         .parse(pairs.into_inner())
@@ -231,11 +231,11 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
                 name = parse_string(string_pair);
             }
             Rule::t_practice_conditions_field => {
-                // "conditions" ~ ":" ~ t_practice_conditions
-                let conditions_pair = inner.next().unwrap(); // Rule::practice_conditions
+                // "conditions" ~ ":" ~ t_practice_conditions_field
+                let conditions_pair = inner.next().unwrap(); // Rule::t_condition_list
                 conditions = conditions_pair
                     .into_inner()
-                    .map(|cond| parse_practice_condition(cond, pratt))
+                    .map(|cond| parse_condition(cond, pratt))
                     .collect();
             }
             Rule::t_practice_outcomes_field => {

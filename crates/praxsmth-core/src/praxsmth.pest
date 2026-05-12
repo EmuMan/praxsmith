@@ -75,13 +75,13 @@ t_practice_action = {
 t_practice_action_field_def = _{ t_practice_for | t_practice_name | t_practice_conditions_field | t_practice_outcomes_field }
 t_practice_for              =  { "for" ~ ":" ~ var_name }
 t_practice_name             =  { "name" ~ ":" ~ string }
-t_practice_conditions_field =  { "conditions" ~ ":" ~ t_practice_conditions }
+t_practice_conditions_field =  { "conditions" ~ ":" ~ t_condition_list }
 t_practice_outcomes_field   =  { "outcomes" ~ ":" ~ t_practice_outcomes }
 
-t_practice_conditions = { "[" ~ t_practice_condition* ~ "]" }
+t_condition_list = { "[" ~ t_condition* ~ "]" }
 
 // Pratt parsing, following Pest's example
-t_practice_condition = {
+t_condition = {
     pc_prefix? ~ pc_primary ~ (pc_infix ~ pc_prefix? ~ pc_primary)*
 }
 

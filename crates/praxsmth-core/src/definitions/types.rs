@@ -34,7 +34,10 @@ impl Serialize for PraxsmthType {
             PraxsmthTypeData::Trait => {
                 format!("trait {} {{{}}}", self.name, self.fields.serialize())
             }
-            PraxsmthTypeData::Directional { complement, exclusive } => format!(
+            PraxsmthTypeData::Directional {
+                complement,
+                exclusive,
+            } => format!(
                 "{}directional {}/{} {{{}}}",
                 if *exclusive { "exclusive " } else { "" },
                 self.name,
@@ -72,17 +75,17 @@ impl Serialize for PraxsmthType {
 pub struct PracticeAction {
     pub for_actor: String,
     pub name: String,
-    pub conditions: Vec<PracticeCondition>,
+    pub conditions: Vec<Condition>,
     pub outcomes: Vec<PracticeOutcome>,
 }
 
 #[derive(Debug, Clone)]
-pub enum PracticeCondition {
+pub enum Condition {
     Value(PraxsmthValue),
-    And(Box<PracticeCondition>, Box<PracticeCondition>),
-    Or(Box<PracticeCondition>, Box<PracticeCondition>),
-    Is(Box<PracticeCondition>, Box<PracticeCondition>),
-    Not(Box<PracticeCondition>),
+    And(Box<Condition>, Box<Condition>),
+    Or(Box<Condition>, Box<Condition>),
+    Is(Box<Condition>, Box<Condition>),
+    Not(Box<Condition>),
 }
 
 #[derive(Debug, Clone)]

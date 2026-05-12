@@ -854,7 +854,7 @@ impl World {
 
     pub fn add_practice(
         &mut self,
-        participants: Vec<String>,
+        participants: Vec<&str>,
         type_name: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
@@ -868,8 +868,7 @@ impl World {
         self.validate_type_fields(type_name, &fields)
             .with_context(practice_ctx)?;
 
-        let participant_refs: Vec<&str> = participants.iter().map(|s| s.as_str()).collect();
-        self.validate_agents(&participant_refs)
+        self.validate_agents(&participants)
             .with_context(practice_ctx)?;
 
         let type_def = self
@@ -893,16 +892,17 @@ impl World {
         let variables: HashMap<String, String> = params
             .iter()
             .cloned()
-            .zip(participants.iter().cloned())
+            .zip(participants.iter().cloned().map(String::from))
             .collect();
         let mut self_id = vec!["practice".to_string()];
         self_id.push(type_name.to_string());
-        self_id.extend(participants.iter().cloned());
+        self_id.extend(participants.iter().cloned().map(String::from));
         let bindings = Bindings::new(variables, Some(self_id));
 
         let edges = participants
             .iter()
-            .map(|p| RelationToAgent::Ordered(p.clone()))
+            .cloned()
+            .map(|p| RelationToAgent::Ordered(p.into()))
             .collect();
 
         let handle = self.add_relation(Relation {
@@ -914,7 +914,7 @@ impl World {
 
         for participant in participants {
             self.agents
-                .get_mut(&participant)
+                .get_mut(participant)
                 .unwrap()
                 .edges
                 .push(AgentToRelation::Practice(handle.clone()));
@@ -925,11 +925,11 @@ impl World {
 
     pub fn get_practice(
         &self,
-        participants: Vec<String>,
+        participants: Vec<&str>,
         type_name: &str,
     ) -> Option<(RelationHandle, &Relation)> {
         self.agents
-            .get(&participants[0])?
+            .get(participants[0])?
             .edges
             .iter()
             .find_map(|edge| {
@@ -942,7 +942,7 @@ impl World {
                                 .iter()
                                 // Assume all edges are ordered
                                 .map(|e| e.agent())
-                                .eq(participants.iter())
+                                .eq(participants.iter().cloned())
                             {
                                 return Some((handle.clone(), relation));
                             }

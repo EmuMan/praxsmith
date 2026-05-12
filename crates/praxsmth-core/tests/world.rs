@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result, bail};
 use praxsmth::definitions::PraxsmthValue;
 use praxsmth::definitions::types::{
-    PracticeAction, PracticeCondition, PracticeOutcome, PraxsmthType, PraxsmthTypeData,
+    PracticeAction, Condition, PracticeOutcome, PraxsmthType, PraxsmthTypeData,
 };
 use praxsmth::definitions::world::{AgentInfo, Declaration};
 use praxsmth::types::TypeMapping;
@@ -26,7 +26,7 @@ fn setup_world() -> Result<World> {
             actions: vec![PracticeAction {
                 for_actor: "waker".into(),
                 name: "Wake".into(),
-                conditions: vec![PracticeCondition::Value(PraxsmthValue::Variable(vec![
+                conditions: vec![Condition::Value(PraxsmthValue::Variable(vec![
                     "woken".into(),
                     "feels".into(),
                     "chronically_sleep_deprived".into(),
@@ -86,7 +86,7 @@ fn test_trait() -> Result<()> {
         .context("could not find edge")?;
 
     if !world.check_condition(
-        PracticeCondition::Value(PraxsmthValue::Variable(sentence)),
+        Condition::Value(PraxsmthValue::Variable(sentence)),
         &Bindings::default(),
     )? {
         bail!("jacob should be chronically sleep deprived");
@@ -130,7 +130,7 @@ fn test_practice_ok() -> Result<()> {
 
     let jacob = world.get_agent("jacob").context("could not find jacob")?;
     if world.check_condition(
-        PracticeCondition::Value(PraxsmthValue::Variable(emotion_sentence)),
+        Condition::Value(PraxsmthValue::Variable(emotion_sentence)),
         &Bindings::default(),
     )? {
         bail!("jacob should no longer be chronically sleep deprived");
