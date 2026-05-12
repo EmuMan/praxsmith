@@ -5,7 +5,7 @@ use anyhow::{Context, Result, bail};
 use crate::{
     definitions::{
         PraxsmthConstant, PraxsmthValue, Sentence,
-        types::{Condition, PracticeOutcome, PraxsmthTypeData},
+        types::{Expression, PracticeOutcome, PraxsmthTypeData},
         world::Declaration,
     },
     world::{AgentToRelation, Bindings, Relation, RelationData, RelationHandle, World},
@@ -81,10 +81,15 @@ pub struct Dialog {
 }
 
 impl World {
-    /// Parses a sentence into a relation query, returning the query
-    /// and any remaining arguments. Verifies the type of the relation
-    /// and the number of parameters, but does not verify the agents
-    /// involved.
+    /// Parses a sentence into a relation query, returning the query and any
+    /// remaining arguments. Verifies the type of the relation and the number
+    /// of parameters, but does not verify the agents involved.
+    ///
+    /// If the sentence is just ["self"], recurses on `bindings.self_id` if it
+    /// exists.
+    ///
+    /// Returns the relation query, plus any extra arguments at the end of the
+    /// sentence.
     pub fn build_query(
         &self,
         sentence: &Sentence,
@@ -194,6 +199,10 @@ impl World {
         }
     }
 
+    /// Adds the information contained within a declaration to the world state.
+    ///
+    /// The sentence within the declaration must match a query. An error will
+    /// be raised if there are any free variables within this query.
     pub fn process_declaration(
         &mut self,
         declaration: &Declaration,
@@ -242,6 +251,8 @@ impl World {
         }
     }
 
+    /// Uses a relation query to retrieve the associated relation. Will return
+    /// an error if there is a free variable in the query.
     pub fn lookup_relation(&self, query: RelationQuery) -> Result<(RelationHandle, &Relation)> {
         match query {
             RelationQuery::Trait { agent, trait_name } => {
@@ -298,6 +309,14 @@ impl World {
         }
     }
 
+    /// Turns a variable (sentence defining a world query) into a constant
+    /// value. If the relation specified within the variable does not exist,
+    /// evaluates to `PraxsmthConstant::Boolean(false)`. If there is no field
+    /// specified but the relationship does exist, evaluates to
+    /// `PraxsmthConstant::Boolean(true)`.
+    ///
+    /// Returns an error if there are any free variables in the sentence. All
+    /// variables must be defined within `bindings`.
     pub fn resolve_variable(
         &self,
         sentence: &Sentence,
@@ -331,13 +350,110 @@ impl World {
             .with_context(|| format!("parameter '{}' not found in relation", arg_name))
     }
 
-    fn check_condition_helper(
+    /// Finds all extensions of `bindings` that allow for the valid processing
+    /// of `sentence`. Used as a helper function for variables found within
+    /// `World::solve_for_free_vars`.
+    ///
+    /// If all specified actors within `sentence` are already bound, this will
+    /// return a list with a single value, which will be a clone of `bindings`.
+    ///
+    /// If there are free symbols, all possible assignments of these free
+    /// symbols, given the existing assignments defined in `bindings`, are
+    /// effectively enumerated. Any valid set of assignments is returned with
+    /// the vector.
+    pub fn find_all_valid_bindings(
         &self,
-        condition: Condition,
+        sentence: &Sentence,
+        bindings: &Bindings,
+    ) -> Result<Vec<Bindings>> {
+        unimplemented!()
+    }
+
+    /// Calculates for all possible extensions of `bindings` that allow for
+    /// valid processings of `expression`.
+    ///
+    /// If no free variables (variables with free actor components) exist in
+    /// the expression tree, this will return a list with a single value, which
+    /// will be a clone of `bindings`.
+    ///
+    /// If there are free variables, all possible assignments of these free
+    /// variables, given the existing assignments defined in `bindings`, are
+    /// effectively enumerated. Any valid set of assignments is returned with
+    /// the vector.
+    ///
+    /// Note that this does not evaluate the expression, it simply finds
+    /// bindings that allow for it to be evaluated. Any one of the returned
+    /// binding sets can be used with `World::evaluate_expression(...)` for a
+    /// proper evaluation.
+    pub fn solve_for_free_vars(
+        &self,
+        expression: &Expression,
+        bindings: &Bindings,
+    ) -> Result<Vec<Bindings>> {
+        // This is similar to a wave function collapse algorithm, where all
+        // possible bindings are generated for free variables (variables with
+        // free actor components), and then these bindings are combined in
+        // various ways based on the operations between them.
+        match expression {
+            Expression::Value(PraxsmthValue::Variable(s)) => {
+                // This is the main part where bindings get added.
+                self.find_all_valid_bindings(s, bindings)
+            }
+            Expression::Value(_) => {
+                // Constant values carry no additional bindings with them; they
+                // have already been resolved.
+                Ok(vec![])
+            }
+            Expression::And(x, y) => {
+                // Symbols on either side are implied to be bound to the same
+                // value. This means that the only bindings that work are ones
+                // that are shared between `x` and `y`. This is just an
+                // intersection!
+                let x_bindings = self.solve_for_free_vars(x, bindings);
+                let y_bindings = self.solve_for_free_vars(y, bindings);
+                // TODO: figure out how to do intersection
+                unimplemented!()
+            }
+            Expression::Or(x, y) => {
+                // Interestingly, the same shared bindings principle applies
+                // here. The "and" vs. "or" distinction is not important, it's
+                // that both sides must have equivalent bindings.
+                let x_bindings = self.solve_for_free_vars(x, bindings);
+                let y_bindings = self.solve_for_free_vars(y, bindings);
+                // TODO: figure out how to do intersection
+                unimplemented!()
+            }
+            Expression::Not(e) => {
+                // Similar to the above notes, the only thing that matters is
+                // that whatever is inside the "not" must be bound with the
+                // same bindings as all other expressions. So the bindings can
+                // just be passed through here.
+                self.solve_for_free_vars(e, bindings)
+            }
+            Expression::Is(x, y) => {
+                // Again, this is just a binary operation. Same as "and" and
+                // "or".
+                let x_bindings = self.solve_for_free_vars(x, bindings);
+                let y_bindings = self.solve_for_free_vars(y, bindings);
+                // TODO: figure out how to do intersection
+                unimplemented!()
+            }
+        }
+    }
+
+    /// Evaluates an expression to a single constant value.
+    ///
+    /// Returns an error if there are any free variable assignments within the
+    /// expression tree. Solve for these with `World::solve_for_free_vars(...)`
+    /// first before passing the bindings into this function if you need to
+    /// avoid this problem.
+    pub fn evaluate_expression(
+        &self,
+        expression: Expression,
         bindings: &Bindings,
     ) -> Result<PraxsmthConstant> {
-        match condition {
-            Condition::Value(value) => match value {
+        match expression {
+            Expression::Value(value) => match value {
                 PraxsmthValue::Number(n) => Ok(PraxsmthConstant::Number(n)),
                 PraxsmthValue::Boolean(b) => Ok(PraxsmthConstant::Boolean(b)),
                 PraxsmthValue::Variant(v) => Ok(PraxsmthConstant::Variant(v)),
@@ -345,56 +461,49 @@ impl World {
                 PraxsmthValue::Variable(sentence) => self.resolve_variable(&sentence, bindings),
             },
 
-            Condition::And(cond_1, cond_2) => {
-                let res_1 = self.check_condition_helper(*cond_1, bindings)?;
-                let res_2 = self.check_condition_helper(*cond_2, bindings)?;
-                match (res_1, res_2) {
-                    (PraxsmthConstant::Boolean(b1), PraxsmthConstant::Boolean(b2)) => {
-                        Ok(PraxsmthConstant::Boolean(b1 && b2))
+            Expression::And(x, y) => {
+                let x = self.evaluate_expression(*x, bindings)?;
+                let y = self.evaluate_expression(*y, bindings)?;
+                match (x, y) {
+                    (PraxsmthConstant::Boolean(x), PraxsmthConstant::Boolean(y)) => {
+                        Ok(PraxsmthConstant::Boolean(x && y))
                     }
-                    (a, b) => bail!(
+                    (x, y) => bail!(
                         "And conditions must evaluate to boolean, got {:?} and {:?}",
-                        a,
-                        b
+                        x,
+                        y
                     ),
                 }
             }
 
-            Condition::Or(cond_1, cond_2) => {
-                let res_1 = self.check_condition_helper(*cond_1, bindings)?;
-                let res_2 = self.check_condition_helper(*cond_2, bindings)?;
-                match (res_1, res_2) {
-                    (PraxsmthConstant::Boolean(b1), PraxsmthConstant::Boolean(b2)) => {
-                        Ok(PraxsmthConstant::Boolean(b1 || b2))
+            Expression::Or(x, y) => {
+                let x = self.evaluate_expression(*x, bindings)?;
+                let y = self.evaluate_expression(*y, bindings)?;
+                match (x, y) {
+                    (PraxsmthConstant::Boolean(x), PraxsmthConstant::Boolean(y)) => {
+                        Ok(PraxsmthConstant::Boolean(x || y))
                     }
-                    (a, b) => bail!(
+                    (x, y) => bail!(
                         "Or conditions must evaluate to boolean, got {:?} and {:?}",
-                        a,
-                        b
+                        x,
+                        y
                     ),
                 }
             }
 
-            Condition::Is(cond_1, cond_2) => {
-                let res_1 = self.check_condition_helper(*cond_1, bindings)?;
-                let res_2 = self.check_condition_helper(*cond_2, bindings)?;
-                Ok(PraxsmthConstant::Boolean(res_1 == res_2))
+            Expression::Is(x, y) => {
+                let x = self.evaluate_expression(*x, bindings)?;
+                let y = self.evaluate_expression(*y, bindings)?;
+                Ok(PraxsmthConstant::Boolean(x == y))
             }
 
-            Condition::Not(cond) => {
-                let res = self.check_condition_helper(*cond, bindings)?;
+            Expression::Not(x) => {
+                let res = self.evaluate_expression(*x, bindings)?;
                 match res {
                     PraxsmthConstant::Boolean(b) => Ok(PraxsmthConstant::Boolean(!b)),
                     other => bail!("Not condition must evaluate to boolean, got {:?}", other),
                 }
             }
-        }
-    }
-
-    pub fn check_condition(&self, condition: Condition, bindings: &Bindings) -> Result<bool> {
-        match self.check_condition_helper(condition, bindings)? {
-            PraxsmthConstant::Boolean(b) => Ok(b),
-            other => bail!("condition must evaluate to boolean, got {:?}", other),
         }
     }
 

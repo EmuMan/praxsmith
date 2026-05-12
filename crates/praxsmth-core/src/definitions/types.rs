@@ -80,12 +80,25 @@ pub struct PracticeAction {
 }
 
 #[derive(Debug, Clone)]
-pub enum Condition {
+pub struct Condition {
+    resolution_method: ResolutionMethod,
+    expression: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub enum ResolutionMethod {
+    Undefined,
+    All,
+    Any,
+}
+
+#[derive(Debug, Clone)]
+pub enum Expression {
     Value(PraxsmthValue),
-    And(Box<Condition>, Box<Condition>),
-    Or(Box<Condition>, Box<Condition>),
-    Is(Box<Condition>, Box<Condition>),
-    Not(Box<Condition>),
+    And(Box<Expression>, Box<Expression>),
+    Or(Box<Expression>, Box<Expression>),
+    Is(Box<Expression>, Box<Expression>),
+    Not(Box<Expression>),
 }
 
 #[derive(Debug, Clone)]

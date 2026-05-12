@@ -133,17 +133,17 @@ fn parse_emotion(pair: Pair<Rule>) -> PraxsmthType {
     }
 }
 
-fn parse_condition(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Condition {
+fn parse_condition(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Expression {
     pratt
-        .map_primary(|primary| Condition::Value(parse_value(primary)))
+        .map_primary(|primary| Expression::Value(parse_value(primary)))
         .map_prefix(|op, rhs| match op.as_rule() {
-            Rule::not => Condition::Not(Box::new(rhs)),
+            Rule::not => Expression::Not(Box::new(rhs)),
             _ => unreachable!(),
         })
         .map_infix(|lhs, op, rhs| match op.as_rule() {
-            Rule::and => Condition::And(Box::new(lhs), Box::new(rhs)),
-            Rule::or => Condition::Or(Box::new(lhs), Box::new(rhs)),
-            Rule::is => Condition::Is(Box::new(lhs), Box::new(rhs)),
+            Rule::and => Expression::And(Box::new(lhs), Box::new(rhs)),
+            Rule::or => Expression::Or(Box::new(lhs), Box::new(rhs)),
+            Rule::is => Expression::Is(Box::new(lhs), Box::new(rhs)),
             _ => unreachable!(),
         })
         .parse(pairs.into_inner())
