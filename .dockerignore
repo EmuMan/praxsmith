@@ -1,0 +1,8 @@
+node_modules
+.svelte-kit
+build
+target
+crates/praxsmth-wasm/pkg
+.git
+*.md
+todo.txt

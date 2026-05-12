@@ -1,0 +1,7 @@
+services:
+  web:
+    build: .
+    image: praxsmth
+    ports:
+      - "8080:80"
+    restart: unless-stopped
