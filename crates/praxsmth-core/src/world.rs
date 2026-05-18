@@ -65,7 +65,7 @@ fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -
     Ok(())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bindings {
     variables: HashMap<String, String>,
     self_id: Option<Sentence>,
@@ -87,6 +87,15 @@ impl Bindings {
 
     pub fn insert(&mut self, var: String, value: String) {
         self.variables.insert(var, value);
+    }
+
+    pub fn with(&self, var: String, value: String) -> Self {
+        let mut new_variables = self.variables.clone();
+        new_variables.insert(var, value);
+        Bindings {
+            variables: new_variables,
+            self_id: self.self_id.clone(),
+        }
     }
 }
 
@@ -177,12 +186,29 @@ impl Relation {
 
 #[derive(Debug, Clone)]
 pub enum RelationData {
-    Trait,
-    Directional,
-    Reciprocal,
-    Evaluation { reason: String },
-    Emotion,
-    Practice { bindings: Bindings },
+    Trait {
+        agent: String,
+    },
+    Emotion {
+        agent: String,
+    },
+    Directional {
+        agent_from: String,
+        agent_to: String,
+    },
+    Reciprocal {
+        agent_1: String,
+        agent_2: String,
+    },
+    Evaluation {
+        agent_from: String,
+        agent_to: String,
+        reason: String,
+    },
+    Practice {
+        agents: Vec<String>,
+        bindings: Bindings,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -367,6 +393,18 @@ impl World {
             })
     }
 
+    pub fn iter_agent_relations(
+        &self,
+        agent: &Agent,
+    ) -> impl Iterator<Item = (RelationHandle, &Relation)> {
+        agent.edges.iter().filter_map(|edge| {
+            let handle = edge.handle();
+            self.relation_store
+                .get(handle.clone())
+                .map(|rel| (handle, rel))
+        })
+    }
+
     fn format_string(&self, string: &str, bindings: &Bindings) -> Result<String> {
         let mut result = string.to_string();
         for (var, value) in bindings {
@@ -430,14 +468,14 @@ impl World {
                 )
             })?;
         match &mut relation.data {
-            RelationData::Trait
-            | RelationData::Emotion
-            | RelationData::Directional
-            | RelationData::Reciprocal
+            RelationData::Trait { .. }
+            | RelationData::Emotion { .. }
+            | RelationData::Directional { .. }
+            | RelationData::Reciprocal { .. }
             | RelationData::Practice { .. } => relation
                 .update_fields(new_fields, &relation_type.fields)
                 .with_context(|| format!("updating fields on relation {:?}", handle)),
-            RelationData::Evaluation { reason } => {
+            RelationData::Evaluation { reason, .. } => {
                 if let Some(new_reason) = new_fields.get("reason") {
                     let PraxsmthConstant::String(reason_str) = new_reason else {
                         bail!("evaluation edge 'reason' field must be a string");
@@ -512,7 +550,9 @@ impl World {
             type_name: type_name.to_string(),
             edges: vec![RelationToAgent::Solo(agent.to_string())],
             fields,
-            data: RelationData::Trait,
+            data: RelationData::Trait {
+                agent: agent.to_string(),
+            },
         });
 
         self.agents
@@ -552,7 +592,9 @@ impl World {
             type_name: type_name.to_string(),
             edges: vec![RelationToAgent::Solo(agent.to_string())],
             fields,
-            data: RelationData::Emotion,
+            data: RelationData::Emotion {
+                agent: agent.to_string(),
+            },
         });
 
         let agent_data = self.agents.get_mut(agent).with_context(|| {
@@ -643,7 +685,10 @@ impl World {
                 RelationToAgent::Backward(to.to_string()),
             ],
             fields,
-            data: RelationData::Directional,
+            data: RelationData::Directional {
+                agent_from: from.to_string(),
+                agent_to: to.to_string(),
+            },
         });
 
         self.agents
@@ -729,7 +774,10 @@ impl World {
                 RelationToAgent::Unordered(agent_2.to_string()),
             ],
             fields,
-            data: RelationData::Reciprocal,
+            data: RelationData::Reciprocal {
+                agent_1: agent_1.to_string(),
+                agent_2: agent_2.to_string(),
+            },
         });
 
         self.agents
@@ -793,6 +841,8 @@ impl World {
             ],
             fields,
             data: RelationData::Evaluation {
+                agent_from: from.to_string(),
+                agent_to: to.to_string(),
                 reason: reason.to_string(),
             },
         });
@@ -909,7 +959,10 @@ impl World {
             type_name: type_name.to_string(),
             edges,
             fields,
-            data: RelationData::Practice { bindings },
+            data: RelationData::Practice {
+                agents: participants.iter().cloned().map(String::from).collect(),
+                bindings,
+            },
         });
 
         for participant in participants {

@@ -8,7 +8,9 @@ use crate::{
         types::{Expression, PracticeOutcome, PraxsmthTypeData},
         world::Declaration,
     },
-    world::{AgentToRelation, Bindings, Relation, RelationData, RelationHandle, World},
+    world::{
+        AgentToRelation, Bindings, Relation, RelationData, RelationHandle, RelationToAgent, World,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -350,12 +352,53 @@ impl World {
             .with_context(|| format!("parameter '{}' not found in relation", arg_name))
     }
 
+    /// Finds all agents with the specified trait. Does not verify that the
+    /// trait is the correct type. Used as a helper for
+    /// `World::find_all_valid_bindings(...)`.
+    fn find_agents_with_trait(&self, trait_name: &str) -> Vec<&str> {
+        let mut agents_with_trait = Vec::new();
+        for agent in self.agents.values() {
+            for (_, relation) in self.iter_agent_relations(agent) {
+                if relation.type_name == *trait_name {
+                    agents_with_trait.push(agent.name.as_str());
+                }
+            }
+        }
+        agents_with_trait
+    }
+
+    /// Finds all agents with the specified emotion. Does not verify that the
+    /// emotion is the correct type. Used as a helper for
+    /// `World::find_all_valid_bindings(...)`.
+    fn find_agents_with_emotion(&self, emotion_name: &str) -> Vec<&str> {
+        let mut agents_with_emotion = Vec::new();
+        for agent in self.agents.values() {
+            for (_, relation) in self.iter_agent_relations(agent) {
+                if relation.type_name == *emotion_name {
+                    agents_with_emotion.push(agent.name.as_str());
+                }
+            }
+        }
+        agents_with_emotion
+    }
+
+    fn find_agents_with_binary_relation(&self, type_name: &str) -> Vec<(&str, &str)> {
+        unimplemented!()
+    }
+
     /// Finds all extensions of `bindings` that allow for the valid processing
-    /// of `sentence`. Used as a helper function for variables found within
-    /// `World::solve_for_free_vars`.
+    /// of `sentence`. Valid processing means that the relationship exists and
+    /// can be processed normally. Technically, relationships that are not
+    /// found still evaluate to `PraxsmthConstant::Boolean(false)`, but
+    /// including nonexistent relationships here would make this operation
+    /// trivial and useless. This is used as a helper function for variables
+    /// found within `World::solve_for_free_vars`.
     ///
     /// If all specified actors within `sentence` are already bound, this will
     /// return a list with a single value, which will be a clone of `bindings`.
+    /// No extra checks will be performed to make sure that these agents have
+    /// the specified relations, as that is intended to be done later down the
+    /// line.
     ///
     /// If there are free symbols, all possible assignments of these free
     /// symbols, given the existing assignments defined in `bindings`, are
@@ -366,7 +409,52 @@ impl World {
         sentence: &Sentence,
         bindings: &Bindings,
     ) -> Result<Vec<Bindings>> {
-        unimplemented!()
+        let (query, _) = self
+            .build_query(&sentence, bindings)
+            .with_context(|| format!("finding valid bindings for sentence {:?}", sentence))?;
+        match &query {
+            RelationQuery::Trait { agent, trait_name } => match agent {
+                AgentRef::Literal(_) => Ok(vec![bindings.clone()]),
+                AgentRef::Free(specifier) => Ok(self
+                    .find_agents_with_trait(trait_name)
+                    .into_iter()
+                    .map(|agent_name| bindings.with(specifier.clone(), agent_name.to_string()))
+                    .collect()),
+            },
+            RelationQuery::Emotion {
+                agent,
+                emotion_name,
+            } => match agent {
+                AgentRef::Literal(_) => Ok(vec![bindings.clone()]),
+                AgentRef::Free(specifier) => Ok(self
+                    .find_agents_with_emotion(emotion_name)
+                    .into_iter()
+                    .map(|agent_name| bindings.with(specifier.clone(), agent_name.to_string()))
+                    .collect()),
+            },
+            RelationQuery::Binary {
+                agent_1,
+                agent_2,
+                type_name,
+            } => match (agent_1, agent_2) {
+                (AgentRef::Literal(_), AgentRef::Literal(_)) => Ok(vec![bindings.clone()]),
+                (AgentRef::Free(specifier), AgentRef::Literal(agent_2_name)) => {
+                    unimplemented!()
+                }
+                (AgentRef::Literal(agent_1_name), AgentRef::Free(specifier)) => {
+                    unimplemented!()
+                }
+                (AgentRef::Free(specifier_1), AgentRef::Free(specifier_2)) => {
+                    unimplemented!()
+                }
+            },
+            RelationQuery::Practice {
+                participants,
+                type_name,
+            } => {
+                unimplemented!()
+            }
+        }
     }
 
     /// Calculates for all possible extensions of `bindings` that allow for
@@ -409,19 +497,25 @@ impl World {
                 // value. This means that the only bindings that work are ones
                 // that are shared between `x` and `y`. This is just an
                 // intersection!
-                let x_bindings = self.solve_for_free_vars(x, bindings);
-                let y_bindings = self.solve_for_free_vars(y, bindings);
-                // TODO: figure out how to do intersection
-                unimplemented!()
+                let x_bindings = self.solve_for_free_vars(x, bindings)?;
+                let y_bindings = self.solve_for_free_vars(y, bindings)?;
+                Ok(x_bindings
+                    .iter()
+                    .filter(|b| y_bindings.contains(b))
+                    .cloned()
+                    .collect())
             }
             Expression::Or(x, y) => {
                 // Interestingly, the same shared bindings principle applies
                 // here. The "and" vs. "or" distinction is not important, it's
                 // that both sides must have equivalent bindings.
-                let x_bindings = self.solve_for_free_vars(x, bindings);
-                let y_bindings = self.solve_for_free_vars(y, bindings);
-                // TODO: figure out how to do intersection
-                unimplemented!()
+                let x_bindings = self.solve_for_free_vars(x, bindings)?;
+                let y_bindings = self.solve_for_free_vars(y, bindings)?;
+                Ok(x_bindings
+                    .iter()
+                    .filter(|b| y_bindings.contains(b))
+                    .cloned()
+                    .collect())
             }
             Expression::Not(e) => {
                 // Similar to the above notes, the only thing that matters is
@@ -433,10 +527,13 @@ impl World {
             Expression::Is(x, y) => {
                 // Again, this is just a binary operation. Same as "and" and
                 // "or".
-                let x_bindings = self.solve_for_free_vars(x, bindings);
-                let y_bindings = self.solve_for_free_vars(y, bindings);
-                // TODO: figure out how to do intersection
-                unimplemented!()
+                let x_bindings = self.solve_for_free_vars(x, bindings)?;
+                let y_bindings = self.solve_for_free_vars(y, bindings)?;
+                Ok(x_bindings
+                    .iter()
+                    .filter(|b| y_bindings.contains(b))
+                    .cloned()
+                    .collect())
             }
         }
     }
