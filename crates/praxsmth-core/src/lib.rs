@@ -1,3 +1,4 @@
+pub mod anyhow_ext;
 pub mod definitions;
 pub mod parser;
 pub mod store;

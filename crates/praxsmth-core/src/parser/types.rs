@@ -133,17 +133,17 @@ fn parse_emotion(pair: Pair<Rule>) -> PraxsmthType {
     }
 }
 
-fn parse_condition(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Condition {
+fn parse_condition(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Expression {
     pratt
-        .map_primary(|primary| Condition::Value(parse_value(primary)))
+        .map_primary(|primary| Expression::Value(parse_value(primary)))
         .map_prefix(|op, rhs| match op.as_rule() {
-            Rule::not => Condition::Not(Box::new(rhs)),
+            Rule::not => Expression::Not(Box::new(rhs)),
             _ => unreachable!(),
         })
         .map_infix(|lhs, op, rhs| match op.as_rule() {
-            Rule::and => Condition::And(Box::new(lhs), Box::new(rhs)),
-            Rule::or => Condition::Or(Box::new(lhs), Box::new(rhs)),
-            Rule::is => Condition::Is(Box::new(lhs), Box::new(rhs)),
+            Rule::and => Expression::And(Box::new(lhs), Box::new(rhs)),
+            Rule::or => Expression::Or(Box::new(lhs), Box::new(rhs)),
+            Rule::is => Expression::Is(Box::new(lhs), Box::new(rhs)),
             _ => unreachable!(),
         })
         .parse(pairs.into_inner())
@@ -231,11 +231,23 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
                 name = parse_string(string_pair);
             }
             Rule::t_practice_conditions_field => {
-                // "conditions" ~ ":" ~ t_practice_conditions_field
+                // "conditions" ~ ":" ~ t_condition_list
                 let conditions_pair = inner.next().unwrap(); // Rule::t_condition_list
-                conditions = conditions_pair
-                    .into_inner()
-                    .map(|cond| parse_condition(cond, pratt))
+                let mut cond_inner = conditions_pair.into_inner().peekable();
+
+                let resolution_method = match cond_inner.peek().map(|p| p.as_rule()) {
+                    Some(Rule::t_c_all) => {
+                        cond_inner.next();
+                        ResolutionMethod::All
+                    }
+                    _ => ResolutionMethod::Any,
+                };
+
+                conditions = cond_inner
+                    .map(|expr| Condition {
+                        resolution_method: resolution_method.clone(),
+                        expression: parse_condition(expr, pratt),
+                    })
                     .collect();
             }
             Rule::t_practice_outcomes_field => {

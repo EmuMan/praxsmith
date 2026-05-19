@@ -1,0 +1,14 @@
+// and
+alaina.is_in.Room and jacob.is_in.Room
+
+Any bindings of room that is shared between the two sides will work. This is an intersection.
+
+// or
+alaina.is_in.Room or jacob.is_in.Room
+
+Interestingly, I think this is also an intersection. Both sides refer to the same room here.
+
+// xor (one but not both)
+(alaina.is_in.Room or jacob.is_in.Room) and not (alaina.is_in.Room and jacob.is_in.Room)
+
+So... it seems like not just... passes the bindings through???? Because in this case, `Room` must refer to the same room in all instances. Right????

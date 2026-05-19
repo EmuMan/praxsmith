@@ -32,16 +32,57 @@ impl TypeMapping {
         Ok(mapping)
     }
 
+    /// Gets the type with the given name, if it exists and is a primary type.
+    /// Returns None if the name is not found or if it is a complement.
     pub fn get_type(&self, name: &str) -> Option<&PraxsmthType> {
         match self.types.get(name) {
             Some(TypeMappingEntry::Type(t)) => Some(t),
-            Some(TypeMappingEntry::Complement(other)) => self.get_type(other),
+            Some(TypeMappingEntry::Complement(_)) => None,
+            _ => None,
+        }
+    }
+
+    /// Gets the type with the given name, if it exists. If the name is a
+    /// complement, it follows the chain of complements until it finds a
+    /// primary type or returns None if it doesn't find one.
+    pub fn get_type_or_primary(&self, name: &str) -> Option<&PraxsmthType> {
+        match self.types.get(name) {
+            Some(TypeMappingEntry::Type(t)) => Some(t),
+            Some(TypeMappingEntry::Complement(other)) => self.get_type_or_primary(other),
+            _ => None,
+        }
+    }
+
+    /// Gets the primary name for the given name, if it exists. If the name is
+    /// a complement, it follows the chain of complements until it finds a
+    /// primary type or returns None if it doesn't find one.
+    ///
+    /// Unlike `TypeMapping::get_complement_entry`, this will follow the chain
+    /// of complements and return the primary name even if the input is the
+    /// primary name itself.
+    pub fn get_primary_name(&self, name: &str) -> Option<&str> {
+        match self.types.get(name) {
+            Some(TypeMappingEntry::Type(t)) => Some(&t.name),
+            Some(TypeMappingEntry::Complement(other)) => self.get_primary_name(other),
+            _ => None,
+        }
+    }
+
+    /// Gets the referred name for the given complement, if it exists. If the
+    /// name is a complement, it returns the name it refers to. If the name is
+    /// a primary type, it returns None.
+    ///
+    /// Unlike `TypeMapping::get_primary_name`, this does not follow the chain
+    /// of complements and will return `None` on primary types.
+    pub fn get_complement_entry(&self, name: &str) -> Option<&str> {
+        match self.types.get(name) {
+            Some(TypeMappingEntry::Complement(other)) => Some(other),
             _ => None,
         }
     }
 
     pub fn validate_new_name(&self, name: &str) -> Result<()> {
-        if let Some(existing) = self.get_type(name) {
+        if let Some(existing) = self.get_type_or_primary(name) {
             bail!(
                 "some type with name {} already exists: {:?}",
                 name,
