@@ -1,6 +1,9 @@
 use std::fs;
 
-use pest::iterators::Pair;
+use pest::{
+    iterators::Pair,
+    pratt_parser::{Assoc, Op, PrattParser},
+};
 use pest_derive::Parser;
 
 use crate::definitions::{
@@ -30,9 +33,13 @@ fn parse_value(pair: Pair<Rule>) -> PraxsmthValue {
     match pair.as_rule() {
         Rule::number => PraxsmthValue::Number(pair.as_str().parse().unwrap()),
         Rule::string => PraxsmthValue::String(parse_string(pair)),
-        Rule::var_name => PraxsmthValue::Variant(pair.as_str().to_string()),
-        Rule::variable => {
-            PraxsmthValue::Variable(parse_sentence(pair.into_inner().next().unwrap()))
+        Rule::sentence => {
+            let parts = parse_sentence(pair);
+            if parts.len() == 1 {
+                PraxsmthValue::Variant(parts.into_iter().next().unwrap())
+            } else {
+                PraxsmthValue::Variable(parts)
+            }
         }
         _ => unreachable!(),
     }
@@ -96,4 +103,27 @@ pub fn test_parse() {
             .collect::<Vec<_>>()
             .join("\n")
     );
+}
+
+pub fn build_expression_pratt() -> PrattParser<Rule> {
+    PrattParser::new()
+        .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left))
+        .op(Op::infix(Rule::is, Assoc::Left))
+        .op(Op::prefix(Rule::not))
+}
+
+pub fn parse_expression(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Expression {
+    pratt
+        .map_primary(|primary| Expression::Value(parse_value(primary)))
+        .map_prefix(|op, rhs| match op.as_rule() {
+            Rule::not => Expression::Not(Box::new(rhs)),
+            _ => unreachable!(),
+        })
+        .map_infix(|lhs, op, rhs| match op.as_rule() {
+            Rule::and => Expression::And(Box::new(lhs), Box::new(rhs)),
+            Rule::or => Expression::Or(Box::new(lhs), Box::new(rhs)),
+            Rule::is => Expression::Is(Box::new(lhs), Box::new(rhs)),
+            _ => unreachable!(),
+        })
+        .parse(pairs.into_inner())
 }

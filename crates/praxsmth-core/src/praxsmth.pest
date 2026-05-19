@@ -17,7 +17,6 @@ char         =  {
 }
 var_name     = @{ (ASCII_ALPHANUMERIC | "_")+ }
 sentence     = ${ var_name ~ ("." ~ var_name)* }
-variable     = ${ "$" ~ sentence }
 
 field_brackets =  { "{" ~ field_def* ~ "}" }
 field_def      =  { var_name ~ ":" ~ field }
@@ -26,7 +25,20 @@ number_range   =  { number ~ ".." ~ number }
 variant_list   =  { var_name ~ ("|" ~ var_name)+ }
 
 const = _{ number | string | var_name }
-value = _{ number | string | var_name | variable }
+value = _{ number | string | sentence }
+
+// Pratt parsing, following Pest's example
+expression = {
+    expr_prefix? ~ expr_primary ~ (expr_infix ~ expr_prefix? ~ expr_primary)*
+}
+
+expr_infix   = _{ and | or | is }
+and          = @{ "and" ~ !ASCII_ALPHANUMERIC }
+or           = @{ "or" ~ !ASCII_ALPHANUMERIC }
+is           = @{ "is" ~ !ASCII_ALPHANUMERIC }
+expr_prefix  = _{ not }
+not          = @{ "not" ~ !ASCII_ALPHANUMERIC }
+expr_primary = _{ value }
 
 // ================
 // TYPE DEFINITIONS
@@ -78,22 +90,9 @@ t_practice_name             =  { "name" ~ ":" ~ string }
 t_practice_conditions_field =  { "conditions" ~ ":" ~ t_condition_list }
 t_practice_outcomes_field   =  { "outcomes" ~ ":" ~ t_practice_outcomes }
 
-t_condition_list = { "[" ~ t_c_all? ~ t_expression* ~ "]" }
+t_condition_list = { "[" ~ t_c_all? ~ expression* ~ "]" }
 
 t_c_all = { "all" }
-
-// Pratt parsing, following Pest's example
-t_expression = {
-    expr_prefix? ~ expr_primary ~ (expr_infix ~ expr_prefix? ~ expr_primary)*
-}
-
-expr_infix   = _{ and | or | is }
-and          = @{ "and" ~ !ASCII_ALPHANUMERIC }
-or           = @{ "or" ~ !ASCII_ALPHANUMERIC }
-is           = @{ "is" ~ !ASCII_ALPHANUMERIC }
-expr_prefix  = _{ not }
-not          = @{ "not" ~ !ASCII_ALPHANUMERIC }
-expr_primary = _{ value }
 
 t_practice_outcomes = { "[" ~ t_practice_outcome* ~ "]" }
 
@@ -128,11 +127,12 @@ world_definition = _{
 }
 
 // Agent rules
-w_agent = { "agent" ~ w_agent_inner }
-
-w_agent_inner    = { var_name ~ ("as" ~ string)? ~ w_agent_inactive? ~ w_agent_brackets? }
+w_agent          = { "agent" ~ var_name ~ ("as" ~ string)? ~ w_agent_inactive? ~ w_agent_brackets? }
 w_agent_inactive = { "inactive" }
-w_agent_brackets = { "{" ~ w_agent_inner* ~ "}" }
+w_agent_brackets = { "{" ~ w_agent_goal* ~ "}" }
+w_agent_goal     = { "goal" ~ "(" ~ number ~ ")" ~ ":" ~ (w_increase | w_decrease)? ~ expression }
+w_increase       = { "increase" }
+w_decrease       = { "decrease" }
 
 // Declaration rules
 w_declaration    = { sentence ~ w_decl_brackets? }

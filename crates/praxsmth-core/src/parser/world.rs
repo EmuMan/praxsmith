@@ -3,32 +3,54 @@ use std::collections::HashMap;
 use pest::Parser;
 use pest::error::Error;
 use pest::iterators::Pair;
+use pest::pratt_parser::PrattParser;
 
 use crate::definitions::world::*;
-use crate::parser::{PraxsmthParser, Rule, parse_constant, parse_sentence};
+use crate::parser::{
+    PraxsmthParser, Rule, build_expression_pratt, parse_constant, parse_expression, parse_sentence,
+};
 
-fn parse_agent_inner(pair: Pair<Rule>) -> AgentInfo {
-    // pair is Rule::w_agent_inner: var_name ~ ("as" ~ string)? ~ w_agent_inactive? ~ w_agent_brackets?
+fn parse_agent_goal(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Goal {
+    // pair is Rule::w_agent_goal:
+    //   "goal" ~ "(" ~ number ~ ")" ~ ":" ~ (w_increase | w_decrease)? ~ expression
+    let mut inner = pair.into_inner();
+    let weight: f64 = inner.next().unwrap().as_str().parse().unwrap();
+
+    let next = inner.next().unwrap();
+    let (measurement, expression_pair) = match next.as_rule() {
+        Rule::w_increase => (GoalMeasurement::Increase, inner.next().unwrap()),
+        Rule::w_decrease => (GoalMeasurement::Decrease, inner.next().unwrap()),
+        _ => (GoalMeasurement::Exists, next),
+    };
+    let expression = parse_expression(expression_pair, pratt);
+
+    Goal {
+        weight,
+        measurement,
+        expression,
+    }
+}
+
+fn parse_agent(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> AgentInfo {
+    // pair is Rule::w_agent:
+    //   "agent" ~ var_name ~ ("as" ~ string)? ~ w_agent_inactive? ~ w_agent_brackets?
     let mut inner = pair.into_inner();
     let id = inner.next().unwrap().as_str().to_string();
     let mut name = id.clone();
     let mut active = true;
-    let mut subagents = HashMap::new();
+    let mut goals = Vec::new();
 
     for next in inner {
         match next.as_rule() {
             Rule::string => {
-                // "as" ~ string
                 name = next.into_inner().next().unwrap().as_str().to_string();
             }
             Rule::w_agent_inactive => {
                 active = false;
             }
             Rule::w_agent_brackets => {
-                // "{" ~ w_agent_inner* ~ "}"
-                for agent_inner_pair in next.into_inner() {
-                    let subagent = parse_agent_inner(agent_inner_pair);
-                    subagents.insert(subagent.name.clone(), subagent);
+                for goal_pair in next.into_inner() {
+                    goals.push(parse_agent_goal(goal_pair, pratt));
                 }
             }
             _ => unreachable!(),
@@ -39,14 +61,8 @@ fn parse_agent_inner(pair: Pair<Rule>) -> AgentInfo {
         id,
         name,
         active,
-        subagents,
+        goals,
     }
-}
-
-fn parse_agent(pair: Pair<Rule>) -> AgentInfo {
-    // pair is Rule::w_agent: "agent" ~ w_agent_inner
-    let inner = pair.into_inner().next().unwrap();
-    parse_agent_inner(inner)
 }
 
 pub fn parse_declaration(pair: Pair<Rule>) -> Declaration {
@@ -74,11 +90,12 @@ pub fn parse_declaration(pair: Pair<Rule>) -> Declaration {
 
 pub fn parse_world(input_str: &str) -> Result<Vec<PraxsmthWorldDefinition>, Error<Rule>> {
     let pairs = PraxsmthParser::parse(Rule::praxsmth_world, input_str)?;
+    let pratt = build_expression_pratt();
 
     let values = pairs
         .filter(|pair| matches!(pair.as_rule(), Rule::w_agent | Rule::w_declaration))
         .map(|pair| match pair.as_rule() {
-            Rule::w_agent => PraxsmthWorldDefinition::AgentInfo(parse_agent(pair)),
+            Rule::w_agent => PraxsmthWorldDefinition::AgentInfo(parse_agent(pair, &pratt)),
             Rule::w_declaration => PraxsmthWorldDefinition::Declaration(parse_declaration(pair)),
             _ => unreachable!(),
         })

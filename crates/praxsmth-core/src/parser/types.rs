@@ -3,11 +3,14 @@ use std::collections::HashMap;
 use pest::Parser;
 use pest::error::Error;
 use pest::iterators::Pair;
-use pest::pratt_parser::{Assoc, Op, PrattParser};
+use pest::pratt_parser::PrattParser;
 
 use crate::definitions::{FieldTypes, types::*};
 use crate::parser::world::parse_declaration;
-use crate::parser::{PraxsmthParser, Rule, parse_field, parse_sentence, parse_string, parse_value};
+use crate::parser::{
+    PraxsmthParser, Rule, build_expression_pratt, parse_expression, parse_field, parse_sentence,
+    parse_string, parse_value,
+};
 
 fn parse_field_brackets(pair: Pair<Rule>) -> FieldTypes {
     // pair is Rule::field_brackets, contains field_def pairs
@@ -133,22 +136,6 @@ fn parse_emotion(pair: Pair<Rule>) -> PraxsmthType {
     }
 }
 
-fn parse_condition(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Expression {
-    pratt
-        .map_primary(|primary| Expression::Value(parse_value(primary)))
-        .map_prefix(|op, rhs| match op.as_rule() {
-            Rule::not => Expression::Not(Box::new(rhs)),
-            _ => unreachable!(),
-        })
-        .map_infix(|lhs, op, rhs| match op.as_rule() {
-            Rule::and => Expression::And(Box::new(lhs), Box::new(rhs)),
-            Rule::or => Expression::Or(Box::new(lhs), Box::new(rhs)),
-            Rule::is => Expression::Is(Box::new(lhs), Box::new(rhs)),
-            _ => unreachable!(),
-        })
-        .parse(pairs.into_inner())
-}
-
 fn parse_practice_outcome(pair: Pair<Rule>) -> PracticeOutcome {
     // pair is one of the outcome_* rules
     let mut inner = pair.clone().into_inner();
@@ -246,7 +233,7 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
                 conditions = cond_inner
                     .map(|expr| Condition {
                         resolution_method: resolution_method.clone(),
-                        expression: parse_condition(expr, pratt),
+                        expression: parse_expression(expr, pratt),
                     })
                     .collect();
             }
@@ -323,10 +310,7 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PraxsmthType {
 pub fn parse_types(input_str: &str) -> Result<Vec<PraxsmthType>, Error<Rule>> {
     let pairs = PraxsmthParser::parse(Rule::praxsmth_types, input_str)?;
 
-    let practice_pratt = PrattParser::new()
-        .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left))
-        .op(Op::infix(Rule::is, Assoc::Left))
-        .op(Op::prefix(Rule::not));
+    let practice_pratt = build_expression_pratt();
 
     let values = pairs
         .filter(|pair| {

@@ -13,6 +13,7 @@ use crate::{
 
 pub mod api;
 pub mod simulation;
+pub mod transactions;
 
 type Fields = HashMap<String, PraxsmthConstant>;
 
@@ -325,6 +326,34 @@ impl RelationStore {
         }
     }
 
+    /// Restores a relation into the store at the given index and generation.
+    /// This is used for undoing a removal, and to preserve handle consistency,
+    /// it bypasses the normal checks and advancements the store would normally do.
+    ///
+    /// Returns an error if there is a value in the slot already.
+    pub fn restore_as(&mut self, index: u32, generation: u32, relation: Relation) -> Result<()> {
+        if index as usize >= self.slots.len() {
+            bail!(
+                "cannot restore relation at index {}: index out of bounds",
+                index
+            );
+        }
+        let slot = &mut self.slots[index as usize];
+        if slot.value.is_some() {
+            bail!(
+                "cannot restore relation at index {}: slot is not empty",
+                index
+            );
+        }
+        slot.value = Some(relation);
+        slot.generation = generation as u32;
+        // Remove this index from open_indices if it's there, since the slot is now occupied again
+        if let Some(pos) = self.open_indices.iter().position(|&i| i == index as usize) {
+            self.open_indices.remove(pos);
+        }
+        Ok(())
+    }
+
     pub fn get(&self, handle: RelationHandle) -> Option<&Relation> {
         self.slots.get(handle.index as usize).and_then(|slot| {
             if slot.generation == handle.generation {
@@ -464,6 +493,10 @@ impl World {
         self.agents.get(name)
     }
 
+    pub fn get_agent_mut(&mut self, name: &str) -> Option<&mut Agent> {
+        self.agents.get_mut(name)
+    }
+
     pub fn set_agent_active(&mut self, name: &str, active: bool) -> Result<()> {
         let agent = self
             .agents
@@ -477,8 +510,17 @@ impl World {
         self.relation_store.get(handle)
     }
 
-    pub fn add_relation(&mut self, edge: Relation) -> RelationHandle {
-        self.relation_store.add(edge)
+    pub fn add_relation(&mut self, relation: Relation) -> RelationHandle {
+        self.relation_store.add(relation)
+    }
+
+    pub fn restore_relation(
+        &mut self,
+        index: u32,
+        generation: u32,
+        relation: Relation,
+    ) -> Result<()> {
+        self.relation_store.restore_as(index, generation, relation)
     }
 
     pub fn update_relation(&mut self, handle: RelationHandle, new_fields: Fields) -> Result<()> {

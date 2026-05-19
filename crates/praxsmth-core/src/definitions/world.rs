@@ -1,3 +1,4 @@
+use crate::definitions::types::Expression;
 use crate::definitions::{Sentence, Serialize};
 use std::collections::HashMap;
 
@@ -23,16 +24,35 @@ pub struct AgentInfo {
     pub id: String,
     pub name: String,
     pub active: bool,
-    pub subagents: HashMap<String, AgentInfo>,
+    pub goals: Vec<Goal>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum GoalMeasurement {
+    #[default]
+    Exists,
+    Increase,
+    Decrease,
+}
+
+#[derive(Debug, Clone)]
+pub struct Goal {
+    pub weight: f64,
+    pub measurement: GoalMeasurement,
+    pub expression: Expression,
 }
 
 impl Serialize for AgentInfo {
     fn serialize(&self) -> String {
-        if self.subagents.is_empty() {
+        if self.goals.is_empty() {
             self.name.clone()
         } else {
-            let subagents_str: Vec<_> = self.subagents.iter().map(|(_, a)| a.serialize()).collect();
-            format!("{} {{{}}}", self.name, subagents_str.join(", "))
+            let goals_str: Vec<_> = self
+                .goals
+                .iter()
+                .map(|g| format!("goal({}): {:?}", g.weight, g.expression))
+                .collect();
+            format!("{} {{{}}}", self.name, goals_str.join(", "))
         }
     }
 }

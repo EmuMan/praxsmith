@@ -53,13 +53,13 @@ fn setup_world() -> Result<World> {
         id: "jacob".into(),
         name: "Jacob".into(),
         active: true,
-        subagents: HashMap::new(),
+        goals: Vec::new(),
     })?;
     world.add_agent(&AgentInfo {
         id: "alaina".into(),
         name: "Alaina".into(),
         active: true,
-        subagents: HashMap::new(),
+        goals: Vec::new(),
     })?;
 
     Ok(world)
