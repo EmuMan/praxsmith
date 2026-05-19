@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, bail};
 
@@ -6,12 +6,10 @@ use crate::{
     anyhow_ext::ResultOptionExt,
     definitions::{
         PraxsmthConstant, PraxsmthValue, Sentence,
-        types::{Expression, PracticeOutcome, PraxsmthTypeData},
+        types::{Condition, Expression, PracticeOutcome, PraxsmthTypeData, ResolutionMethod},
         world::Declaration,
     },
-    world::{
-        AgentToRelation, Bindings, Relation, RelationData, RelationHandle, RelationToAgent, World,
-    },
+    world::{AgentToRelation, Bindings, Relation, RelationData, RelationHandle, World},
 };
 
 #[derive(Debug, Clone)]
@@ -358,13 +356,12 @@ impl World {
     /// Finds all agents with the specified trait. Does not verify that the
     /// trait is the correct type. Used as a helper for
     /// `World::find_all_valid_bindings(...)`.
-    fn find_agents_with_trait(&self, trait_name: &str) -> Vec<&str> {
+    fn find_agents_with_trait(&self, trait_id: &str) -> Vec<&str> {
         let mut agents_with_trait = Vec::new();
         for agent in self.agents.values() {
-            for (_, relation) in self.iter_agent_relations(agent) {
-                if relation.type_name == *trait_name {
-                    agents_with_trait.push(agent.name.as_str());
-                }
+            match self.get_trait(agent.name.as_str(), trait_id) {
+                Ok(Some(_)) => agents_with_trait.push(agent.name.as_str()),
+                _ => {}
             }
         }
         agents_with_trait
@@ -373,20 +370,123 @@ impl World {
     /// Finds all agents with the specified emotion. Does not verify that the
     /// emotion is the correct type. Used as a helper for
     /// `World::find_all_valid_bindings(...)`.
-    fn find_agents_with_emotion(&self, emotion_name: &str) -> Vec<&str> {
+    fn find_agents_with_emotion(&self, emotion_id: &str) -> Vec<&str> {
         let mut agents_with_emotion = Vec::new();
         for agent in self.agents.values() {
-            for (_, relation) in self.iter_agent_relations(agent) {
-                if relation.type_name == *emotion_name {
-                    agents_with_emotion.push(agent.name.as_str());
-                }
+            match self.get_emotion(agent.name.as_str(), emotion_id) {
+                Ok(Some(_)) => agents_with_emotion.push(agent.name.as_str()),
+                _ => {}
             }
         }
         agents_with_emotion
     }
 
-    fn find_agents_with_binary_relation(&self, type_name: &str) -> Vec<(&str, &str)> {
-        unimplemented!()
+    /// Finds all agents with the specified binary relation. Does not verify
+    /// that the binary relation is the correct type. Used as a helper for
+    /// `World::find_all_valid_bindings(...)`.
+    fn find_agents_with_binary_relation(&self, type_id: &str) -> Vec<(&str, &str)> {
+        // Efficiency out the window, just go through every agent pair
+        // TODO: better?
+        let mut agent_pairs = Vec::new();
+        // Some of these are unordered, so keep track of handles we've already
+        // seen to avoid duplicates.
+        let mut seen_handles = HashSet::new();
+        for agent_1_id in self.agents.keys() {
+            for agent_2_id in self.agents.keys() {
+                match self.get_binary_relation(agent_1_id, agent_2_id, type_id) {
+                    Ok(Some((edge, _))) => {
+                        if !seen_handles.contains(&edge.relation_handle) {
+                            agent_pairs.push((agent_1_id.as_str(), agent_2_id.as_str()));
+                            seen_handles.insert(edge.relation_handle.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        agent_pairs
+    }
+
+    /// Finds all agents that sit on the second end of the specified binary
+    /// relation. Does not verify that the binary relation is the correct type.
+    /// Used as a helper for `World::find_all_valid_bindings(...)`.
+    fn find_secondary_agents_for_binary_relation(
+        &self,
+        type_id: &str,
+        agent_1_id: &str,
+    ) -> Vec<&str> {
+        let mut secondary_agents = Vec::new();
+        for agent_2_id in self.agents.keys() {
+            match self.get_binary_relation(agent_1_id, agent_2_id, type_id) {
+                Ok(Some(_)) => {
+                    secondary_agents.push(agent_2_id.as_str());
+                }
+                _ => {}
+            }
+        }
+        secondary_agents
+    }
+
+    /// Finds all agents that sit on the first end of the specified binary
+    /// relation. Does not verify that the binary relation is the correct type.
+    /// Used as a helper for `World::find_all_valid_bindings(...)`.
+    fn find_primary_agents_for_binary_relation(
+        &self,
+        type_id: &str,
+        agent_2_id: &str,
+    ) -> Vec<&str> {
+        let mut primary_agents = Vec::new();
+        for agent_1_id in self.agents.keys() {
+            match self.get_binary_relation(agent_1_id, agent_2_id, type_id) {
+                Ok(Some(_)) => {
+                    primary_agents.push(agent_1_id.as_str());
+                }
+                _ => {}
+            }
+        }
+        primary_agents
+    }
+
+    /// Finds all agents that participate in the specified practice, given the
+    /// constraint of the participants specified in the arguments. Does not
+    /// verify that the practice is the correct type. Used as a helper for
+    /// `World::find_all_valid_bindings(...)`.
+    fn find_agents_with_practice(
+        &self,
+        type_id: &str,
+        constraints: &[Option<&str>],
+    ) -> Vec<&Vec<String>> {
+        let mut participant_sets = Vec::new();
+        self.iter_relations().filter(|(_, relation)| {
+            // type name and type should match
+            matches!(
+                self.type_mapping.get_type(&relation.type_name),
+                Some(t) if t.name == type_id && matches!(t.data, PraxsmthTypeData::Practice { .. })
+            )
+        })
+        .filter_map(|(_, relation)| {
+            // participant count should match, and also extract participants
+            match &relation.data {
+                RelationData::Practice { agents, .. } => {
+                    // participant count should match
+                    if agents.len() != constraints.len() {
+                        return None;
+                    }
+                    // all specified participants should match
+                    if agents.iter().zip(constraints.iter()).all(|(agent, constraint)| {
+                        constraint.map_or(true, |p| p == *agent)
+                    }) {
+                        Some(agents)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        })
+        .for_each(|agent_set| participant_sets.push(agent_set));
+
+        participant_sets
     }
 
     /// Finds all extensions of `bindings` that allow for the valid processing
@@ -421,7 +521,9 @@ impl World {
                 AgentRef::Free(specifier) => Ok(self
                     .find_agents_with_trait(trait_name)
                     .into_iter()
-                    .map(|agent_name| bindings.with(specifier.clone(), agent_name.to_string()))
+                    .map(|agent_name| {
+                        bindings.with([(specifier.clone(), agent_name.to_string())].into())
+                    })
                     .collect()),
             },
             RelationQuery::Emotion {
@@ -432,7 +534,9 @@ impl World {
                 AgentRef::Free(specifier) => Ok(self
                     .find_agents_with_emotion(emotion_name)
                     .into_iter()
-                    .map(|agent_name| bindings.with(specifier.clone(), agent_name.to_string()))
+                    .map(|agent_name| {
+                        bindings.with([(specifier.clone(), agent_name.to_string())].into())
+                    })
                     .collect()),
             },
             RelationQuery::Binary {
@@ -441,21 +545,61 @@ impl World {
                 type_name,
             } => match (agent_1, agent_2) {
                 (AgentRef::Literal(_), AgentRef::Literal(_)) => Ok(vec![bindings.clone()]),
-                (AgentRef::Free(specifier), AgentRef::Literal(agent_2_name)) => {
-                    unimplemented!()
-                }
-                (AgentRef::Literal(agent_1_name), AgentRef::Free(specifier)) => {
-                    unimplemented!()
-                }
-                (AgentRef::Free(specifier_1), AgentRef::Free(specifier_2)) => {
-                    unimplemented!()
-                }
+                (AgentRef::Free(specifier), AgentRef::Literal(agent_2_name)) => Ok(self
+                    .find_primary_agents_for_binary_relation(type_name, agent_2_name)
+                    .into_iter()
+                    .map(|agent_1_name| {
+                        bindings.with([(specifier.clone(), agent_1_name.to_string())].into())
+                    })
+                    .collect()),
+                (AgentRef::Literal(agent_1_name), AgentRef::Free(specifier)) => Ok(self
+                    .find_secondary_agents_for_binary_relation(type_name, agent_1_name)
+                    .into_iter()
+                    .map(|agent_2_name| {
+                        bindings.with([(specifier.clone(), agent_2_name.to_string())].into())
+                    })
+                    .collect()),
+                (AgentRef::Free(specifier_1), AgentRef::Free(specifier_2)) => Ok(self
+                    .find_agents_with_binary_relation(type_name)
+                    .into_iter()
+                    .map(|(agent_1_name, agent_2_name)| {
+                        bindings.with(
+                            [
+                                (specifier_1.clone(), agent_1_name.to_string()),
+                                (specifier_2.clone(), agent_2_name.to_string()),
+                            ]
+                            .into(),
+                        )
+                    })
+                    .collect()),
             },
             RelationQuery::Practice {
                 participants,
                 type_name,
             } => {
-                unimplemented!()
+                let constraints = participants
+                    .iter()
+                    .map(|p| match p {
+                        AgentRef::Literal(agent_name) => Some(agent_name.as_str()),
+                        AgentRef::Free(_) => None,
+                    })
+                    .collect::<Vec<Option<&str>>>();
+                let participant_sets = self.find_agents_with_practice(type_name, &constraints);
+                // generate bindings using the participant sets and the free variable specifiers
+                let mut result_bindings = Vec::new();
+                for result_agents in participant_sets {
+                    if result_agents.len() != result_agents.len() {
+                        bail!("participant count mismatch for practice {}", type_name);
+                    }
+                    let mut new_bindings = bindings.clone();
+                    for (p, result_agent) in participants.iter().zip(result_agents.iter()) {
+                        if let AgentRef::Free(specifier) = p {
+                            new_bindings.insert(specifier.clone(), result_agent.clone());
+                        }
+                    }
+                    result_bindings.push(new_bindings);
+                }
+                Ok(result_bindings)
             }
         }
     }
@@ -607,6 +751,61 @@ impl World {
         }
     }
 
+    fn evaluate_expression_as_boolean(
+        &self,
+        expression: Expression,
+        bindings: &Bindings,
+    ) -> Result<bool> {
+        match self.evaluate_expression(expression, bindings)? {
+            PraxsmthConstant::Boolean(b) => Ok(b),
+            other => bail!(
+                "condition expression must evaluate to boolean, got {:?}",
+                other
+            ),
+        }
+    }
+
+    pub fn check_condition(&self, condition: &Condition, bindings: &Bindings) -> Result<bool> {
+        let possible_bindings = self.solve_for_free_vars(&condition.expression, bindings)?;
+        if possible_bindings.is_empty() {
+            // No valid bindings, so condition is false
+            return Ok(false);
+        }
+
+        match condition.resolution_method {
+            ResolutionMethod::Undefined => {
+                if possible_bindings.len() > 1 {
+                    bail!(
+                        "condition {:?} has multiple possible bindings but resolution method is undefined",
+                        condition
+                    );
+                }
+                let binding = &possible_bindings[0];
+                self.evaluate_expression_as_boolean(condition.expression.clone(), binding)
+            }
+            ResolutionMethod::Any => {
+                for binding in possible_bindings {
+                    if self
+                        .evaluate_expression_as_boolean(condition.expression.clone(), &binding)?
+                    {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            ResolutionMethod::All => {
+                for binding in possible_bindings {
+                    if !self
+                        .evaluate_expression_as_boolean(condition.expression.clone(), &binding)?
+                    {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+        }
+    }
+
     fn process_print(
         &self,
         speaker: Option<&str>,
@@ -753,15 +952,12 @@ impl World {
                             continue;
                         }
                         for condition in &action.conditions {
-                            if !self
-                                .check_condition(condition.clone(), bindings)
-                                .with_context(|| {
-                                    format!(
-                                        "checking conditions for action {} of practice {:?}",
-                                        action.name, relation_type.name
-                                    )
-                                })?
-                            {
+                            if !self.check_condition(condition, bindings).with_context(|| {
+                                format!(
+                                    "checking conditions for action {} of practice {:?}",
+                                    action.name, relation_type.name
+                                )
+                            })? {
                                 continue 'action_loop;
                             }
                         }

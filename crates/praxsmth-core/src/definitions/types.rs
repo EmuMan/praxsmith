@@ -81,8 +81,8 @@ pub struct PracticeAction {
 
 #[derive(Debug, Clone)]
 pub struct Condition {
-    resolution_method: ResolutionMethod,
-    expression: Expression,
+    pub resolution_method: ResolutionMethod,
+    pub expression: Expression,
 }
 
 #[derive(Debug, Clone)]

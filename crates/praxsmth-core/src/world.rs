@@ -90,9 +90,11 @@ impl Bindings {
         self.variables.insert(var, value);
     }
 
-    pub fn with(&self, var: String, value: String) -> Self {
+    pub fn with(&self, additions: HashMap<String, String>) -> Self {
         let mut new_variables = self.variables.clone();
-        new_variables.insert(var, value);
+        for (var, value) in additions {
+            new_variables.insert(var, value);
+        }
         Bindings {
             variables: new_variables,
             self_id: self.self_id.clone(),
