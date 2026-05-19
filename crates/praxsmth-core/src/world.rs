@@ -4,7 +4,8 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     definitions::{
-        FieldTypes, PraxsmthConstant, PraxsmthField, Sentence, Serialize, types::PraxsmthTypeData,
+        FieldTypes, PraxsmthConstant, PraxsmthField, Sentence, Serialize,
+        types::{PraxsmthType, PraxsmthTypeData},
         world::*,
     },
     types::TypeMapping,
@@ -117,31 +118,21 @@ impl<'a> IntoIterator for &'a Bindings {
     }
 }
 
+/// Represents an edge from an agent to a relation.
+///
+/// Fields:
+/// - `index`: The index of the agent in the relation's edges list. This is
+///   used primarily for directional edges, where the position of the agent in
+///   the edge list determines its role (e.g. forward vs backward).
+/// - `relation_type`: The type of the relation this edge points to. This is
+///   used for quick access to the relation's type without needing to look it
+///   up in the relation store.
+/// - `relation_handle`: A handle to the relation this edge points to.
 #[derive(Debug, Clone)]
-pub enum AgentToRelation {
-    Trait(RelationHandle),
-    Emotion(RelationHandle),
-    DirectionalForward(RelationHandle),
-    DirectionalBackward(RelationHandle),
-    Reciprocal(RelationHandle),
-    EvaluationForward(RelationHandle),
-    EvaluationBackward(RelationHandle),
-    Practice(RelationHandle),
-}
-
-impl AgentToRelation {
-    pub fn handle(&self) -> RelationHandle {
-        match self {
-            AgentToRelation::Trait(h)
-            | AgentToRelation::Emotion(h)
-            | AgentToRelation::DirectionalForward(h)
-            | AgentToRelation::DirectionalBackward(h)
-            | AgentToRelation::Reciprocal(h)
-            | AgentToRelation::EvaluationForward(h)
-            | AgentToRelation::EvaluationBackward(h)
-            | AgentToRelation::Practice(h) => h.clone(),
-        }
-    }
+pub struct AgentToRelation {
+    index: usize,
+    relation_type: String,
+    relation_handle: RelationHandle,
 }
 
 #[derive(Debug, Clone)]
@@ -356,7 +347,7 @@ impl Agent {
     }
 
     pub fn remove_edges_to(&mut self, handle: RelationHandle) {
-        self.edges.retain(|edge| edge.handle() != handle);
+        self.edges.retain(|edge| edge.relation_handle != handle);
     }
 }
 
@@ -393,15 +384,15 @@ impl World {
             })
     }
 
-    pub fn iter_agent_relations(
-        &self,
-        agent: &Agent,
-    ) -> impl Iterator<Item = (RelationHandle, &Relation)> {
+    pub fn iter_agent_relations<'a, 'b>(
+        &'a self,
+        agent: &'b Agent,
+    ) -> impl Iterator<Item = (&'b AgentToRelation, &'a Relation)> {
         agent.edges.iter().filter_map(|edge| {
-            let handle = edge.handle();
+            let handle = edge.relation_handle.clone();
             self.relation_store
                 .get(handle.clone())
-                .map(|rel| (handle, rel))
+                .map(|rel| (edge, rel))
         })
     }
 
@@ -535,136 +526,245 @@ impl World {
             .with_context(|| format!("verifying fields against type {}", type_name))
     }
 
+    fn expect_type<'a>(
+        &'a self,
+        type_id: &str,
+        label: &str,
+        check: impl Fn(&PraxsmthTypeData) -> bool,
+    ) -> Result<&'a PraxsmthType> {
+        let t = self
+            .type_mapping
+            .get_type(type_id)
+            .with_context(|| format!("type {} not found in type mapping", type_id))?;
+        if !check(&t.data) {
+            bail!("type {} is not a {} type", type_id, label);
+        }
+        Ok(t)
+    }
+
+    /// Adds a trait to the world.
+    ///
+    /// A trait is a relation that connects a single agent to a type, and
+    /// represents a property or characteristic of that agent. As there is only
+    /// ever one edge to the relation, that edge will always have index `0`.
+    ///
+    /// Returns an error if the type does not exist or is not a trait type,
+    /// if the agent does not exist, or if the fields do not match the type
+    /// definition. Otherwise, returns a handle to the newly created relation.
     pub fn add_trait(
         &mut self,
-        agent: &str,
-        type_name: &str,
+        agent_id: &str,
+        type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
-        self.validate_type_fields(type_name, &fields)
-            .with_context(|| format!("adding trait {} to agent {}", type_name, agent))?;
-        self.validate_agent(agent)
-            .with_context(|| format!("adding trait {} to agent {}", type_name, agent))?;
+        let trait_ctx = || format!("adding trait {} to agent {}", type_id, agent_id);
+
+        self.expect_type(type_id, "trait", |d| matches!(d, PraxsmthTypeData::Trait))
+            .with_context(trait_ctx)?;
+        self.validate_type_fields(type_id, &fields)
+            .with_context(trait_ctx)?;
+        self.validate_agent(agent_id).with_context(trait_ctx)?;
 
         let handle = self.add_relation(Relation {
-            type_name: type_name.to_string(),
-            edges: vec![RelationToAgent::Solo(agent.to_string())],
+            type_name: type_id.to_string(),
+            edges: vec![RelationToAgent::Solo(agent_id.to_string())],
             fields,
             data: RelationData::Trait {
-                agent: agent.to_string(),
+                agent: agent_id.to_string(),
             },
         });
 
         self.agents
-            .get_mut(agent)
+            .get_mut(agent_id)
             .unwrap()
             .edges
-            .push(AgentToRelation::Trait(handle.clone()));
+            .push(AgentToRelation {
+                index: 0,
+                relation_type: type_id.to_string(),
+                relation_handle: handle.clone(),
+            });
 
         Ok(handle)
     }
 
-    pub fn get_trait(&self, agent: &str, type_name: &str) -> Option<(RelationHandle, &Relation)> {
-        self.agents.get(agent)?.edges.iter().find_map(|edge| {
-            if let AgentToRelation::Trait(handle) = edge {
-                if let Some(relation) = self.relation_store.get(handle.clone()) {
-                    if relation.type_name == type_name {
-                        return Some((handle.clone(), relation));
-                    }
+    /// Retrieves a trait relation for the given agent and type, if it exists.
+    ///
+    /// Returns an error if the type does not exist or is not a trait type, or
+    /// if the agent does not exist. Otherwise, returns `Ok(None)` if the agent
+    /// does not have that relation, and `Ok(Some((edge, relation)))` if they
+    /// do.
+    pub fn get_trait(
+        &self,
+        agent_id: &str,
+        type_id: &str,
+    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+        let trait_ctx = || format!("getting trait {} from agent {}", type_id, agent_id);
+
+        self.expect_type(type_id, "trait", |d| matches!(d, PraxsmthTypeData::Trait))
+            .with_context(trait_ctx)?;
+
+        let agent = self
+            .agents
+            .get(agent_id)
+            .with_context(|| format!("could not find agent {}", agent_id))
+            .with_context(trait_ctx)?;
+
+        Ok(agent.edges.iter().find_map(|edge| {
+            if edge.relation_type == type_id {
+                if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
+                    return Some((edge, relation));
                 }
             }
             None
-        })
+        }))
     }
 
+    /// Adds an emotion to the world.
+    ///
+    /// An emotion is a relation that connects a single agent to a type, and
+    /// represents the sole, short-term emotion that the agent may have. As
+    /// there is only ever one edge to the relation, that edge will always have
+    /// index `0`.
+    ///
+    /// Returns an error if the type does not exist or is not an emotion type,
+    /// if the agent does not exist, or if the fields do not match the type
+    /// definition. Otherwise, returns a handle to the newly created relation.
     pub fn add_emotion(
         &mut self,
-        agent: &str,
-        type_name: &str,
+        agent_id: &str,
+        type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
-        self.validate_type_fields(type_name, &fields)
-            .with_context(|| format!("adding emotion {} to agent {}", type_name, agent))?;
-        self.validate_agent(agent)
-            .with_context(|| format!("adding emotion {} to agent {}", type_name, agent))?;
+        let emotion_ctx = || format!("adding emotion {} to agent {}", type_id, agent_id);
+
+        self.expect_type(type_id, "emotion", |d| {
+            matches!(d, PraxsmthTypeData::Emotion)
+        })
+        .with_context(emotion_ctx)?;
+        self.validate_type_fields(type_id, &fields)
+            .with_context(emotion_ctx)?;
+        self.validate_agent(agent_id).with_context(emotion_ctx)?;
 
         let handle = self.add_relation(Relation {
-            type_name: type_name.to_string(),
-            edges: vec![RelationToAgent::Solo(agent.to_string())],
+            type_name: type_id.to_string(),
+            edges: vec![RelationToAgent::Solo(agent_id.to_string())],
             fields,
             data: RelationData::Emotion {
-                agent: agent.to_string(),
+                agent: agent_id.to_string(),
             },
         });
 
-        let agent_data = self.agents.get_mut(agent).with_context(|| {
+        let agent_data = self.agents.get_mut(agent_id).with_context(|| {
             format!(
                 "agent {} disappeared between validation and emotion edge insertion",
-                agent
+                agent_id
             )
         })?;
 
         let old_emotion_handle = agent_data.emotion.clone();
 
-        agent_data
-            .edges
-            .push(AgentToRelation::Emotion(handle.clone()));
+        agent_data.edges.push(AgentToRelation {
+            index: 0,
+            relation_type: type_id.to_string(),
+            relation_handle: handle.clone(),
+        });
         agent_data.emotion = Some(handle.clone());
 
         // Remove the old emotion edge for this agent, since an agent can only have one emotion edge at a time
         if let Some(old_emotion_handle) = old_emotion_handle {
             self.remove_relation(old_emotion_handle)
-                .with_context(|| format!("replacing prior emotion edge on agent {}", agent))?;
+                .with_context(|| format!("replacing prior emotion edge on agent {}", agent_id))?;
         }
 
         Ok(handle)
     }
 
-    pub fn get_emotion(&self, agent: &str, type_name: &str) -> Option<(RelationHandle, &Relation)> {
-        self.agents.get(agent)?.edges.iter().find_map(|edge| {
-            if let AgentToRelation::Emotion(handle) = edge {
-                if let Some(relation) = self.relation_store.get(handle.clone()) {
-                    if relation.type_name == type_name {
-                        return Some((handle.clone(), relation));
-                    }
+    /// Retrieves an emotion relation for the given agent and type, if it
+    /// exists.
+    ///
+    /// Returns an error if the type does not exist or is not an emotion type,
+    /// or if the agent does not exist. Otherwise, returns `Ok(None)` if the
+    /// agent does not have that relation, and `Ok(Some((edge, relation)))` if
+    /// they do.
+    pub fn get_emotion(
+        &self,
+        agent_id: &str,
+        type_id: &str,
+    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+        let emotion_ctx = || format!("getting emotion {} from agent {}", type_id, agent_id);
+
+        self.expect_type(type_id, "emotion", |d| {
+            matches!(d, PraxsmthTypeData::Emotion)
+        })
+        .with_context(emotion_ctx)?;
+
+        let agent = self
+            .agents
+            .get(agent_id)
+            .with_context(|| format!("could not find agent {}", agent_id))
+            .with_context(emotion_ctx)?;
+
+        Ok(agent.edges.iter().find_map(|edge| {
+            if edge.relation_type == type_id {
+                if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
+                    return Some((edge, relation));
                 }
             }
             None
-        })
+        }))
     }
 
+    /// Adds a directional relation to the world.
+    ///
+    /// A directional relationship connects two agents in a directed way, with
+    /// a distinct "from" agent and "to" agent. The from agent is always at
+    /// index `0` in the relation's edges list, and the to agent is always at
+    /// index `1`.
+    ///
+    /// Returns an error if the type does not exist or is not a directional
+    /// type, if either agent does not exist, or if the fields do not match the
+    /// type definition. Otherwise, returns a handle to the newly created
+    /// relation.
     pub fn add_directional(
         &mut self,
-        from: &str,
-        to: &str,
-        type_name: &str,
+        from_id: &str,
+        to_id: &str,
+        type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
-        self.validate_type_fields(type_name, &fields)
-            .with_context(|| format!("adding directional {} from {} to {}", type_name, from, to))?;
-        self.validate_agents(&[from, to])
-            .with_context(|| format!("adding directional {} from {} to {}", type_name, from, to))?;
+        let directional_ctx = || {
+            format!(
+                "adding directional {} from {} to {}",
+                type_id, from_id, to_id
+            )
+        };
+
+        self.expect_type(type_id, "directional", |d| {
+            matches!(d, PraxsmthTypeData::Directional { .. })
+        })
+        .with_context(directional_ctx)?;
+        self.validate_type_fields(type_id, &fields)
+            .with_context(directional_ctx)?;
+        self.validate_agents(&[from_id, to_id])
+            .with_context(directional_ctx)?;
 
         let exclusive = matches!(
-            self.type_mapping.get_type(type_name),
+            self.type_mapping.get_type(type_id),
             Some(t) if matches!(&t.data, PraxsmthTypeData::Directional { exclusive: true, .. })
         );
 
         if exclusive {
             let existing = self
                 .agents
-                .get(from)
+                .get(from_id)
                 .into_iter()
                 .flat_map(|a| a.edges.iter())
                 .find_map(|edge| {
-                    if let AgentToRelation::DirectionalForward(h) = edge {
-                        if self
-                            .relation_store
-                            .get(h.clone())
-                            .is_some_and(|r| r.type_name == type_name)
-                        {
-                            return Some(h.clone());
-                        }
+                    // From agents are always index zero, so if this agent has
+                    // an index zero edge going to this type then it's the one
+                    // we want to replace
+                    if edge.relation_type == type_id && edge.index == 0 {
+                        return Some(edge.relation_handle.clone());
                     }
                     None
                 });
@@ -672,362 +772,580 @@ impl World {
                 self.remove_relation(old_handle).with_context(|| {
                     format!(
                         "removing existing exclusive directional {} from {}",
-                        type_name, from
+                        type_id, from_id
                     )
                 })?;
             }
         }
 
         let handle = self.add_relation(Relation {
-            type_name: type_name.to_string(),
+            type_name: type_id.to_string(),
             edges: vec![
-                RelationToAgent::Forward(from.to_string()),
-                RelationToAgent::Backward(to.to_string()),
+                RelationToAgent::Forward(from_id.to_string()),
+                RelationToAgent::Backward(to_id.to_string()),
             ],
             fields,
             data: RelationData::Directional {
-                agent_from: from.to_string(),
-                agent_to: to.to_string(),
+                agent_from: from_id.to_string(),
+                agent_to: to_id.to_string(),
             },
         });
 
         self.agents
-            .get_mut(from)
+            .get_mut(from_id)
             .unwrap()
             .edges
-            .push(AgentToRelation::DirectionalForward(handle.clone()));
+            .push(AgentToRelation {
+                index: 0,
+                relation_type: type_id.to_string(),
+                relation_handle: handle.clone(),
+            });
 
         self.agents
-            .get_mut(to)
+            .get_mut(to_id)
             .unwrap()
             .edges
-            .push(AgentToRelation::DirectionalBackward(handle.clone()));
+            .push(AgentToRelation {
+                index: 1,
+                relation_type: type_id.to_string(),
+                relation_handle: handle.clone(),
+            });
 
         Ok(handle)
     }
 
+    /// Retrieves a directional relation for the given from and to agents and
+    /// type, if it exists. Works on both primary and complement type names,
+    /// but requires correct ordering of arguments.
+    ///
+    /// Due to the nature of directional relationships, this lookup only works
+    /// if the `from` and `to` parameters are ordered correctly. For example,
+    /// if `x.is_in.y` exists, then `get_directional(x, y, is_in)` will find
+    /// it, but `get_directional(y, x, is_in)` will not. However, in this case,
+    /// the complement of this relation (e.g. `y.contains.x`) will be properly
+    /// handled, as the complement is resolved to the primary type and the from
+    /// and to are reversed in the lookup.
+    ///
+    /// Returns an error if the type does not exist or is not a directional
+    /// type, or if either of the agents do not exist. Otherwise, returns
+    /// `Ok(None)` if the agents do not have that relation, and
+    /// `Ok(Some((edge, relation)))` if they do.
     pub fn get_directional(
         &self,
-        from: &str,
-        to: &str,
-        type_name: &str,
-    ) -> Option<(RelationHandle, &Relation)> {
-        self.agents.get(from)?.edges.iter().find_map(|edge| {
-            if let AgentToRelation::DirectionalForward(handle) = edge {
-                if let Some(relation) = self.relation_store.get(handle.clone()) {
-                    if relation.type_name == type_name {
-                        // check that the other edge matches the expected to agent
-                        if relation
-                            .edges
-                            .iter()
-                            .any(|e| matches!(e, RelationToAgent::Backward(a) if a == to))
-                        {
-                            return Some((handle.clone(), relation));
-                        }
-                    }
-                }
-            }
-            // Check backwards edges too!
-            if let AgentToRelation::DirectionalBackward(handle) = edge {
-                if let Some(relation) = self.relation_store.get(handle.clone()) {
-                    if relation.type_name == type_name {
-                        // check that the other edge matches the expected from agent
-                        if relation
-                            .edges
-                            .iter()
-                            .any(|e| matches!(e, RelationToAgent::Forward(a) if a == from))
-                        {
-                            return Some((handle.clone(), relation));
+        from_id: &str,
+        to_id: &str,
+        type_id: &str,
+    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+        // If the edge is a complement, perform a search on the primary type
+        // with the from and to reversed. This allows us to find the edge
+        // regardless of which direction it's referred to as.
+        if let Some(primary_type_name) = self.type_mapping.get_complement_entry(type_id) {
+            return self.get_directional(to_id, from_id, primary_type_name);
+        }
+
+        // Error checking!
+        let directional_ctx = || {
+            format!(
+                "getting directional {} from {} to {}",
+                type_id, from_id, to_id
+            )
+        };
+
+        self.expect_type(type_id, "directional", |d| {
+            matches!(d, PraxsmthTypeData::Directional { .. })
+        })
+        .with_context(directional_ctx)?;
+
+        let from_agent = self
+            .agents
+            .get(from_id)
+            .with_context(|| format!("could not find from agent {}", from_id))
+            .with_context(directional_ctx)?;
+        self.agents
+            .get(to_id)
+            .with_context(|| format!("could not find to agent {}", to_id))
+            .with_context(directional_ctx)?;
+
+        Ok(from_agent.edges.iter().find_map(|edge| {
+            if edge.relation_type == type_id && edge.index == 0 {
+                if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
+                    if let RelationData::Directional { agent_to, .. } = &relation.data {
+                        if agent_to == to_id {
+                            return Some((edge, relation));
                         }
                     }
                 }
             }
             None
-        })
+        }))
     }
 
+    /// Adds a reciprocal relation to the world.
+    ///
+    /// A reciprocal relationship connects two agents in a non-directed way,
+    /// with no order distinction between the two agents. The two agents are
+    /// always at index `0` and `1` in the relation's edges list, but there is
+    /// no significance to this ordering and as with the associated lookup,
+    /// the relation can be found regardless of the order of the agents.
+    ///
+    /// Returns an error if the type does not exist or is not a reciprocal
+    /// type, if either agent does not exist, or if the fields do not match the
+    /// type definition. Otherwise, returns a handle to the newly created
+    /// relation.
     pub fn add_reciprocal(
         &mut self,
-        agent_1: &str,
-        agent_2: &str,
-        type_name: &str,
+        agent_1_id: &str,
+        agent_2_id: &str,
+        type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
-        self.validate_type_fields(type_name, &fields)
-            .with_context(|| {
-                format!(
-                    "adding reciprocal {} between {} and {}",
-                    type_name, agent_1, agent_2
-                )
-            })?;
-        self.validate_agents(&[agent_1, agent_2]).with_context(|| {
+        let reciprocal_ctx = || {
             format!(
                 "adding reciprocal {} between {} and {}",
-                type_name, agent_1, agent_2
+                type_id, agent_1_id, agent_2_id
             )
-        })?;
+        };
+
+        self.expect_type(type_id, "reciprocal", |d| {
+            matches!(d, PraxsmthTypeData::Reciprocal { .. })
+        })
+        .with_context(reciprocal_ctx)?;
+        self.validate_type_fields(type_id, &fields)
+            .with_context(reciprocal_ctx)?;
+        self.validate_agents(&[agent_1_id, agent_2_id])
+            .with_context(reciprocal_ctx)?;
 
         let handle = self.add_relation(Relation {
-            type_name: type_name.to_string(),
+            type_name: type_id.to_string(),
             edges: vec![
-                RelationToAgent::Unordered(agent_1.to_string()),
-                RelationToAgent::Unordered(agent_2.to_string()),
+                RelationToAgent::Unordered(agent_1_id.to_string()),
+                RelationToAgent::Unordered(agent_2_id.to_string()),
             ],
             fields,
             data: RelationData::Reciprocal {
-                agent_1: agent_1.to_string(),
-                agent_2: agent_2.to_string(),
+                agent_1: agent_1_id.to_string(),
+                agent_2: agent_2_id.to_string(),
             },
         });
 
         self.agents
-            .get_mut(agent_1)
+            .get_mut(agent_1_id)
             .unwrap()
             .edges
-            .push(AgentToRelation::Reciprocal(handle.clone()));
+            .push(AgentToRelation {
+                index: 0,
+                relation_type: type_id.to_string(),
+                relation_handle: handle.clone(),
+            });
 
         self.agents
-            .get_mut(agent_2)
+            .get_mut(agent_2_id)
             .unwrap()
             .edges
-            .push(AgentToRelation::Reciprocal(handle.clone()));
+            .push(AgentToRelation {
+                index: 1,
+                relation_type: type_id.to_string(),
+                relation_handle: handle.clone(),
+            });
 
         Ok(handle)
     }
 
+    /// Retrieves a reciprocal relation for the given two agents and type, if
+    /// it exists.
+    ///
+    /// Since reciprocal relations have no order distinction between the two
+    /// agents, this lookup will find the relation regardless of the order of
+    /// `agent_1` and `agent_2`. For example, if `x.is_friends_with.y` exists
+    /// as a reciprocal relation, then both
+    /// `get_reciprocal(x, y, is_friends_with)` and
+    /// `get_reciprocal(y, x, is_friends_with)` will find it.
+    ///
+    /// Returns an error if the type does not exist or is not a reciprocal
+    /// type, or if either of the agents do not exist. Otherwise, returns
+    /// `Ok(None)` if the agents do not have that relation, and
+    /// `Ok(Some((edge, relation)))` if they do.
     pub fn get_reciprocal(
         &self,
-        agent_1: &str,
-        agent_2: &str,
-        type_name: &str,
-    ) -> Option<(RelationHandle, &Relation)> {
-        self.agents.get(agent_1)?.edges.iter().find_map(|edge| {
-            if let AgentToRelation::Reciprocal(handle) = edge {
-                if let Some(relation) = self.relation_store.get(handle.clone()) {
-                    if relation.type_name == type_name {
-                        // check that the other edge matches the expected second agent
-                        if relation
-                            .edges
-                            .iter()
-                            .any(|e| matches!(e, RelationToAgent::Unordered(a) if a == agent_2))
+        agent_1_id: &str,
+        agent_2_id: &str,
+        type_id: &str,
+    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+        // Error checking!
+        let reciprocal_ctx = || {
+            format!(
+                "getting reciprocal {} between {} and {}",
+                type_id, agent_1_id, agent_2_id
+            )
+        };
+
+        self.expect_type(type_id, "reciprocal", |d| {
+            matches!(d, PraxsmthTypeData::Reciprocal { .. })
+        })
+        .with_context(reciprocal_ctx)?;
+
+        let agent_1 = self
+            .agents
+            .get(agent_1_id)
+            .with_context(|| format!("could not find agent {}", agent_1_id))
+            .with_context(reciprocal_ctx)?;
+        self.agents
+            .get(agent_2_id)
+            .with_context(|| format!("could not find agent {}", agent_2_id))
+            .with_context(reciprocal_ctx)?;
+
+        // Order doesn't matter, but still go off of one arbitrary agent's
+        // edges for lookup, meaning we don't have to scan all relations.
+        Ok(agent_1.edges.iter().find_map(|edge| {
+            if edge.relation_type == type_id {
+                if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
+                    if let RelationData::Reciprocal {
+                        agent_1: a1,
+                        agent_2: a2,
+                    } = &relation.data
+                    {
+                        if (a1 == agent_1_id && a2 == agent_2_id)
+                            || (a1 == agent_2_id && a2 == agent_1_id)
                         {
-                            return Some((handle.clone(), relation));
+                            return Some((edge, relation));
                         }
                     }
                 }
             }
             None
-        })
+        }))
     }
 
+    /// Adds an evaluation to the world.
+    ///
+    /// An evaluation is a directed relation that connects two agents, but also
+    /// includes a "reason" field that provides additional context for the
+    /// relation. As with directional relations, the from agent is always at
+    /// index `0` in the relation's edges list, and the to agent is always at
+    /// index `1`.
+    ///
+    /// Returns an error if the type does not exist or is not an evaluation
+    /// type, if either agent does not exist, or if the fields do not match the
+    /// type definition. Otherwise, returns a handle to the newly created
+    /// relation.
     pub fn add_evaluation(
         &mut self,
-        from: &str,
-        to: &str,
-        type_name: &str,
+        from_id: &str,
+        to_id: &str,
+        type_id: &str,
         fields: Fields,
         reason: &str,
     ) -> Result<RelationHandle> {
-        self.validate_type_fields(type_name, &fields)
-            .with_context(|| format!("adding evaluation {} from {} to {}", type_name, from, to))?;
-        self.validate_agents(&[from, to])
-            .with_context(|| format!("adding evaluation {} from {} to {}", type_name, from, to))?;
+        let evaluation_ctx = || {
+            format!(
+                "adding evaluation {} from {} to {}",
+                type_id, from_id, to_id
+            )
+        };
+
+        self.expect_type(type_id, "evaluation", |d| {
+            matches!(d, PraxsmthTypeData::Evaluation { .. })
+        })
+        .with_context(evaluation_ctx)?;
+        self.validate_type_fields(type_id, &fields)
+            .with_context(evaluation_ctx)?;
+        self.validate_agents(&[from_id, to_id])
+            .with_context(evaluation_ctx)?;
 
         let handle = self.add_relation(Relation {
-            type_name: type_name.to_string(),
+            type_name: type_id.to_string(),
             edges: vec![
-                RelationToAgent::Forward(from.to_string()),
-                RelationToAgent::Backward(to.to_string()),
+                RelationToAgent::Forward(from_id.to_string()),
+                RelationToAgent::Backward(to_id.to_string()),
             ],
             fields,
             data: RelationData::Evaluation {
-                agent_from: from.to_string(),
-                agent_to: to.to_string(),
+                agent_from: from_id.to_string(),
+                agent_to: to_id.to_string(),
                 reason: reason.to_string(),
             },
         });
 
         self.agents
-            .get_mut(from)
+            .get_mut(from_id)
             .unwrap()
             .edges
-            .push(AgentToRelation::EvaluationForward(handle.clone()));
+            .push(AgentToRelation {
+                index: 0,
+                relation_type: type_id.to_string(),
+                relation_handle: handle.clone(),
+            });
 
         self.agents
-            .get_mut(to)
+            .get_mut(to_id)
             .unwrap()
             .edges
-            .push(AgentToRelation::EvaluationBackward(handle.clone()));
+            .push(AgentToRelation {
+                index: 1,
+                relation_type: type_id.to_string(),
+                relation_handle: handle.clone(),
+            });
 
         Ok(handle)
     }
 
+    /// Retrieves an evaluation relation for the given from and to agents and
+    /// type, if it exists. Works on both primary and complement type names,
+    /// but requires correct ordering of arguments, with the from agent as
+    /// `from` and the to agent as `to`.
+    ///
+    /// Refer to `World::get_directional` for more details on how the lookup
+    /// handles type complements and ordering of arguments.
+    ///
+    /// Returns an error if the type does not exist or is not an evaluation
+    /// type, or if either of the agents do not exist. Otherwise, returns
+    /// `Ok(None)` if the agents do not have that relation, and
+    /// `Ok(Some((edge, relation)))` if they do.
     pub fn get_evaluation(
         &self,
-        from: &str,
-        to: &str,
-        type_name: &str,
-    ) -> Option<(RelationHandle, &Relation)> {
-        self.agents.get(from)?.edges.iter().find_map(|edge| {
-            if let AgentToRelation::EvaluationForward(handle) = edge {
-                if let Some(relation) = self.relation_store.get(handle.clone()) {
-                    if relation.type_name == type_name {
-                        // check that the other edge matches the expected to agent
-                        if relation
-                            .edges
-                            .iter()
-                            .any(|e| matches!(e, RelationToAgent::Backward(a) if a == to))
-                        {
-                            return Some((handle.clone(), relation));
-                        }
-                    }
-                }
-            }
-            // Check backwards edges too!
-            if let AgentToRelation::EvaluationBackward(handle) = edge {
-                if let Some(relation) = self.relation_store.get(handle.clone()) {
-                    if relation.type_name == type_name {
-                        // check that the other edge matches the expected from agent
-                        if relation
-                            .edges
-                            .iter()
-                            .any(|e| matches!(e, RelationToAgent::Forward(a) if a == from))
-                        {
-                            return Some((handle.clone(), relation));
+        from_id: &str,
+        to_id: &str,
+        type_id: &str,
+    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+        // If the edge is a complement, perform a search on the primary type
+        // with the from and to reversed. This allows us to find the edge
+        // regardless of which direction it's referred to as.
+        if let Some(primary_type_name) = self.type_mapping.get_complement_entry(type_id) {
+            return self.get_evaluation(to_id, from_id, primary_type_name);
+        }
+
+        // Error checking!
+        let evaluation_ctx = || {
+            format!(
+                "getting evaluation {} from {} to {}",
+                type_id, from_id, to_id
+            )
+        };
+
+        self.expect_type(type_id, "evaluation", |d| {
+            matches!(d, PraxsmthTypeData::Evaluation { .. })
+        })
+        .with_context(evaluation_ctx)?;
+
+        let from_agent = self
+            .agents
+            .get(from_id)
+            .with_context(|| format!("could not find from agent {}", from_id))
+            .with_context(evaluation_ctx)?;
+        self.agents
+            .get(to_id)
+            .with_context(|| format!("could not find to agent {}", to_id))
+            .with_context(evaluation_ctx)?;
+
+        Ok(from_agent.edges.iter().find_map(|edge| {
+            if edge.relation_type == type_id && edge.index == 0 {
+                if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
+                    if let RelationData::Evaluation { agent_to, .. } = &relation.data {
+                        if agent_to == to_id {
+                            return Some((edge, relation));
                         }
                     }
                 }
             }
             None
-        })
+        }))
     }
 
+    /// Adds a practice to the world.
+    ///
+    /// A practice is a relation that connects multiple agents together around
+    /// a shared functionality. The specific roles of the agents in the
+    /// practice are determined by the parameters provided by the type
+    /// definition, in conjunction with the arguments passed in. This makes
+    /// practices ordering dependent, so a practice created with participants
+    /// `[x, y]` will not be the same as a practice of the same type created
+    /// with participants `[y, x]` and will not be retrieved if the latter is
+    /// used in the corresponding lookup, `World::get_practice`.
+    ///
+    /// Returns an error if the type does not exist or is not a practice
+    /// type, if any agent does not exist, or if the fields do not match the
+    /// type definition. Otherwise, returns a handle to the newly created
+    /// relation.
     pub fn add_practice(
         &mut self,
-        participants: Vec<&str>,
-        type_name: &str,
+        participant_ids: Vec<&str>,
+        type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
         let practice_ctx = || {
             format!(
                 "adding practice {} with participants {:?}",
-                type_name, participants
+                type_id, participant_ids
             )
         };
 
-        self.validate_type_fields(type_name, &fields)
+        self.expect_type(type_id, "practice", |d| {
+            matches!(d, PraxsmthTypeData::Practice { .. })
+        })
+        .with_context(practice_ctx)?;
+
+        self.validate_type_fields(type_id, &fields)
             .with_context(practice_ctx)?;
 
-        self.validate_agents(&participants)
+        self.validate_agents(&participant_ids)
             .with_context(practice_ctx)?;
 
         let type_def = self
             .type_mapping
-            .get_type(type_name)
+            .get_type(type_id)
             .with_context(practice_ctx)?;
 
         let PraxsmthTypeData::Practice { params, .. } = &type_def.data else {
-            bail!("type {} is not a practice type", type_name);
+            bail!("type {} is not a practice type", type_id);
         };
 
-        if params.len() != participants.len() {
+        if params.len() != participant_ids.len() {
             bail!(
                 "practice type {} expects {} participants, but {} were provided",
-                type_name,
+                type_id,
                 params.len(),
-                participants.len()
+                participant_ids.len()
             );
         }
 
         let variables: HashMap<String, String> = params
             .iter()
             .cloned()
-            .zip(participants.iter().cloned().map(String::from))
+            .zip(participant_ids.iter().cloned().map(String::from))
             .collect();
         let mut self_id = vec!["practice".to_string()];
-        self_id.push(type_name.to_string());
-        self_id.extend(participants.iter().cloned().map(String::from));
+        self_id.push(type_id.to_string());
+        self_id.extend(participant_ids.iter().cloned().map(String::from));
         let bindings = Bindings::new(variables, Some(self_id));
 
-        let edges = participants
+        let edges = participant_ids
             .iter()
             .cloned()
             .map(|p| RelationToAgent::Ordered(p.into()))
             .collect();
 
         let handle = self.add_relation(Relation {
-            type_name: type_name.to_string(),
+            type_name: type_id.to_string(),
             edges,
             fields,
             data: RelationData::Practice {
-                agents: participants.iter().cloned().map(String::from).collect(),
+                agents: participant_ids.iter().cloned().map(String::from).collect(),
                 bindings,
             },
         });
 
-        for participant in participants {
+        for (i, participant) in participant_ids.iter().enumerate() {
             self.agents
-                .get_mut(participant)
+                .get_mut(*participant)
                 .unwrap()
                 .edges
-                .push(AgentToRelation::Practice(handle.clone()));
+                .push(AgentToRelation {
+                    index: i,
+                    relation_type: type_id.to_string(),
+                    relation_handle: handle.clone(),
+                });
         }
 
         Ok(handle)
     }
 
+    /// Retrieves a practice relation for the given participants and type, if
+    /// it exists. The participants must be in the same order as they were when
+    /// the practice was created, since the ordering of agents in a practice is
+    /// significant for determining their roles in the practice.
+    ///
+    /// Returns an error if the type does not exist or is not a practice type,
+    /// or if any of the agents do not exist. Otherwise, returns `Ok(None)` if
+    /// the agents do not have that relation, and `Ok(Some((edge, relation)))`
+    /// if they do.
     pub fn get_practice(
         &self,
-        participants: Vec<&str>,
-        type_name: &str,
-    ) -> Option<(RelationHandle, &Relation)> {
-        self.agents
-            .get(participants[0])?
-            .edges
-            .iter()
-            .find_map(|edge| {
-                if let AgentToRelation::Practice(handle) = edge {
-                    if let Some(relation) = self.relation_store.get(handle.clone()) {
-                        if relation.type_name == type_name {
-                            // participants must match exactly, since order matters for practices
-                            if relation
-                                .edges
-                                .iter()
-                                // Assume all edges are ordered
-                                .map(|e| e.agent())
-                                .eq(participants.iter().cloned())
-                            {
-                                return Some((handle.clone(), relation));
-                            }
-                        }
+        participant_ids: Vec<&str>,
+        type_id: &str,
+    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+        // Error checking!
+        let practice_ctx = || {
+            format!(
+                "getting practice {} with participants {:?}",
+                type_id, participant_ids
+            )
+        };
+
+        self.expect_type(type_id, "practice", |d| {
+            matches!(d, PraxsmthTypeData::Practice { .. })
+        })
+        .with_context(practice_ctx)?;
+
+        // More error checking! Make sure all participants exist
+
+        self.validate_agents(&participant_ids)
+            .with_context(practice_ctx)?;
+
+        // Should never fail but blehhhh...
+        let agent_1 = self.agents.get(participant_ids[0]).with_context(|| {
+            format!(
+                "looking up first participant {} for practice retrieval",
+                participant_ids[0]
+            )
+        })?;
+
+        // Work off of the arbitrary first agent for faster lookup
+        Ok(agent_1.edges.iter().find_map(|edge| {
+            // We know this is the first agent so we know it's at index 0
+            if edge.relation_type == type_id && edge.index == 0 {
+                if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
+                    // Participants must match exactly, since order matters for practices
+                    if relation
+                        .edges
+                        .iter()
+                        // Edges are ordered on creation, so direct
+                        // comparison works
+                        .map(|e| e.agent())
+                        .eq(participant_ids.iter().cloned())
+                    {
+                        return Some((edge, relation));
                     }
                 }
-                None
-            })
+            }
+            None
+        }))
     }
 
-    /// Adds a binary relation between two agents, with the specific edge type determined by the type mapping.
+    /// Adds a binary relation between two agents, with the specific edge type
+    /// determined by the type mapping.
+    ///
+    /// This function can exist because the inputs for all binary relation
+    /// types are the same, so we can determine the specific type of relation
+    /// to create dynamically based on the type mapping entry for the provided
+    /// edge type name. This allows us to have a single function for adding
+    /// them, as is reflected in the ambiguous `x.relation.y` syntax.
+    ///
+    /// Returns an error if the type does not exist or is not a supported
+    /// binary relation type (i.e. directional, reciprocal, or evaluation), if
+    /// either agent does not exist, if the fields do not match the type
+    /// definition, or if the required "reason" field is not provided for
+    /// evaluation types. Otherwise, returns a handle to the newly created
+    /// relation.
     pub fn add_binary_relation(
         &mut self,
-        from: &str,
-        to: &str,
-        edge_type_name: &str,
+        from_id: &str,
+        to_id: &str,
+        edge_type_id: &str,
         mut fields: Fields,
     ) -> Result<RelationHandle> {
-        let edge_type = self
-            .type_mapping
-            .get_type(edge_type_name)
-            .with_context(|| {
-                format!(
-                    "looking up edge type {} for binary relation {} -> {}",
-                    edge_type_name, from, to
-                )
-            })?;
+        let edge_type = self.type_mapping.get_type(edge_type_id).with_context(|| {
+            format!(
+                "looking up edge type {} for binary relation {} -> {}",
+                edge_type_id, from_id, to_id
+            )
+        })?;
         match edge_type.data {
             PraxsmthTypeData::Directional { .. } => {
-                self.add_directional(from, to, edge_type_name, fields)
+                self.add_directional(from_id, to_id, edge_type_id, fields)
             }
-            PraxsmthTypeData::Reciprocal => self.add_reciprocal(from, to, edge_type_name, fields),
+            PraxsmthTypeData::Reciprocal => {
+                self.add_reciprocal(from_id, to_id, edge_type_id, fields)
+            }
             PraxsmthTypeData::Evaluation { .. } => {
                 let reason = fields
                     .get_mut("reason")
@@ -1038,24 +1356,32 @@ impl World {
                 // TODO: Definitely some way to avoid this clone...
                 let reason_string = reason_str.clone();
                 fields.remove("reason");
-                self.add_evaluation(from, to, edge_type_name, fields, &reason_string)
+                self.add_evaluation(from_id, to_id, edge_type_id, fields, &reason_string)
             }
             _ => bail!(
                 "edge type {} has unsupported variant {:?} for bidirectional declaration",
-                edge_type_name,
+                edge_type_id,
                 edge_type.data
             ),
         }
     }
 
-    /// // TODO: More descriptive errors for all get functions
-    /// Gets a binary relation between two agents, regardless of the specific edge type, as long as it matches the expected type variant in the type mapping.
+    /// Gets a binary relation (i.e. directional, reciprocal, or evaluation)
+    /// between two agents, with the specific edge type determined by the type
+    /// mapping. Works on both primary and complement type names, but requires
+    /// correct ordering of arguments if relevant.
+    ///
+    /// Returns an error if the type does not exist or is not a supported
+    /// binary relation type (i.e. directional, reciprocal, or evaluation), or
+    /// if either agent does not exist. Otherwise, returns `Ok(None)` if the
+    /// agents do not have that relation, and `Ok(Some((edge, relation)))` if
+    /// they do.
     pub fn get_binary_relation(
         &self,
         from: &str,
         to: &str,
         edge_type_name: &str,
-    ) -> Option<(RelationHandle, &Relation)> {
+    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
         match self.type_mapping.get_type(edge_type_name) {
             Some(edge_type) => match edge_type.data {
                 PraxsmthTypeData::Directional { .. } => {
@@ -1065,9 +1391,16 @@ impl World {
                 PraxsmthTypeData::Evaluation { .. } => {
                     self.get_evaluation(from, to, edge_type_name)
                 }
-                _ => None,
+                _ => bail!(
+                    "edge type {} has unsupported variant {:?} for binary relation retrieval",
+                    edge_type_name,
+                    edge_type.data
+                ),
             },
-            None => None,
+            None => bail!(
+                "edge type {} does not exist for binary relation retrieval",
+                edge_type_name
+            ),
         }
     }
 }

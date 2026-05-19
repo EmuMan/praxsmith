@@ -1,3 +1,4 @@
+- Add field errors to comment
 - Goals
 - Free variables in conditions
 - Better code editor

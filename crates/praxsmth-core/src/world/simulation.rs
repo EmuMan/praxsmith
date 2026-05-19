@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result, bail};
 
 use crate::{
+    anyhow_ext::ResultOptionExt,
     definitions::{
         PraxsmthConstant, PraxsmthValue, Sentence,
         types::{Expression, PracticeOutcome, PraxsmthTypeData},
@@ -255,28 +256,30 @@ impl World {
 
     /// Uses a relation query to retrieve the associated relation. Will return
     /// an error if there is a free variable in the query.
-    pub fn lookup_relation(&self, query: RelationQuery) -> Result<(RelationHandle, &Relation)> {
+    pub fn lookup_relation(&self, query: RelationQuery) -> Result<(&AgentToRelation, &Relation)> {
         match query {
             RelationQuery::Trait { agent, trait_name } => {
                 let agent_lit = agent.as_literal()?;
-                self.get_trait(agent_lit, &trait_name).with_context(|| {
-                    format!(
-                        "could not find trait with agent: {}, trait name: {}",
-                        agent_lit, trait_name
-                    )
-                })
+                self.get_trait(agent_lit, &trait_name)
+                    .require_with_context(|| {
+                        format!(
+                            "could not find trait with agent: {}, trait name: {}",
+                            agent_lit, trait_name
+                        )
+                    })
             }
             RelationQuery::Emotion {
                 agent,
                 emotion_name,
             } => {
                 let agent_lit = agent.as_literal()?;
-                self.get_emotion(agent_lit, &emotion_name).with_context(|| {
-                    format!(
-                        "could not find emotion with agent: {}, emotion name: {}",
-                        agent_lit, emotion_name
-                    )
-                })
+                self.get_emotion(agent_lit, &emotion_name)
+                    .require_with_context(|| {
+                        format!(
+                            "could not find emotion with agent: {}, emotion name: {}",
+                            agent_lit, emotion_name
+                        )
+                    })
             }
             RelationQuery::Binary {
                 agent_1,
@@ -285,7 +288,7 @@ impl World {
             } => {
                 let agent_1_lit = agent_1.as_literal()?;
                 let agent_2_lit = agent_2.as_literal()?;
-                self.get_binary_relation(agent_1_lit, agent_2_lit, &type_name).with_context(|| {
+                self.get_binary_relation(agent_1_lit, agent_2_lit, &type_name).require_with_context(|| {
                     format!(
                         "could not find binary relation with agent 1: {}, agent 2: {}, type name: {}",
                         agent_1_lit, agent_2_lit, type_name
@@ -301,7 +304,7 @@ impl World {
                     .map(AgentRef::as_literal)
                     .collect::<Result<Vec<&str>>>()?;
                 self.get_practice(participants_lit, &type_name)
-                    .with_context(|| {
+                    .require_with_context(|| {
                         format!(
                             "could not find practice with participants: {:?}, practice name: {}",
                             participants, type_name
@@ -629,10 +632,10 @@ impl World {
             bail!("extra parameters in delete outcome {:?}", sentence);
         }
 
-        let (handle, _) = self
+        let (edge, _) = self
             .lookup_relation(query)
             .with_context(|| format!("relation not found in delete outcome {:?}", sentence))?;
-        self.remove_relation(handle)
+        self.remove_relation(edge.relation_handle.clone())
             .with_context(|| format!("removing relation in delete outcome {:?}", sentence))
     }
 
@@ -658,7 +661,7 @@ impl World {
         }
         let arg_name = &args[0];
 
-        let (handle, _) = self
+        let (edge, _) = self
             .lookup_relation(query)
             .with_context(|| format!("relation not found in set outcome {:?}", sentence))?;
 
@@ -672,8 +675,11 @@ impl World {
                 .context("resolving variable for set outcome")?,
         };
 
-        self.update_relation(handle, HashMap::from([(arg_name.clone(), constant_value)]))
-            .with_context(|| format!("applying set outcome {:?}", sentence))
+        self.update_relation(
+            edge.relation_handle.clone(),
+            HashMap::from([(arg_name.clone(), constant_value)]),
+        )
+        .with_context(|| format!("applying set outcome {:?}", sentence))
     }
 
     fn process_increase(&mut self, _sentence: &Sentence, _amount: i64) -> Result<()> {
@@ -726,25 +732,15 @@ impl World {
             .with_context(|| format!("agent {} not found", agent_name))?;
         let mut available_actions = Vec::new();
 
-        for edge in agent.edges.iter() {
-            match edge {
-                AgentToRelation::Practice(handle) => {
-                    let relation = self.get_relation(handle.clone()).with_context(|| {
-                        format!("relation {:?} not found for practice action", handle)
-                    })?;
+        for (edge, relation) in self.iter_agent_relations(agent) {
+            match &relation.data {
+                RelationData::Practice { bindings, .. } => {
                     let relation_type = self
                         .type_mapping
                         .get_type(&relation.type_name)
                         .with_context(|| {
                             format!("type {} not found for practice action", relation.type_name)
                         })?;
-                    let RelationData::Practice { bindings } = &relation.data else {
-                        bail!(
-                            "relation {:?} data is not practice (was {:?})",
-                            handle,
-                            relation.data
-                        );
-                    };
                     let PraxsmthTypeData::Practice { actions, .. } = &relation_type.data else {
                         bail!(
                             "type {} data is not practice for action lookup",
@@ -762,7 +758,7 @@ impl World {
                                 .with_context(|| {
                                     format!(
                                         "checking conditions for action {} of practice {:?}",
-                                        action.name, handle
+                                        action.name, relation_type.name
                                     )
                                 })?
                             {
@@ -775,12 +771,12 @@ impl World {
                                 || {
                                     format!(
                                         "formatting display name for action {} of practice {:?}",
-                                        action.name, handle
+                                        action.name, relation_type.name
                                     )
                                 },
                             )?,
                             overall_index: available_actions.len(),
-                            practice_handle: handle.clone(),
+                            practice_handle: edge.relation_handle.clone(),
                             index_within_practice: i,
                         });
                     }
@@ -804,7 +800,7 @@ impl World {
                     available_action.practice_handle
                 )
             })?;
-        let RelationData::Practice { bindings } = &relation.data else {
+        let RelationData::Practice { bindings, .. } = &relation.data else {
             bail!(
                 "relation {:?} data is not practice for available action",
                 available_action.practice_handle
