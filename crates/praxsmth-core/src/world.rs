@@ -11,7 +11,6 @@ use crate::{
     types::TypeMapping,
 };
 
-pub mod api;
 pub mod simulation;
 pub mod transactions;
 

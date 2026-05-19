@@ -17,7 +17,7 @@ practice greet (Greeter, Greeted) {
             for: Greeter
             name: "Greet [Greeted]"
             conditions: [
-                $Greeter.is_in.Place and $Greeted.is_in.Place
+                Greeter.is_in.Place and Greeted.is_in.Place
             ]
             outcomes: [
                 say "Hello, [Greeted]!"
@@ -35,7 +35,7 @@ practice move (Agent, From, To) {
             for: Agent
             name: "Move from [From] to [To]"
             conditions: [
-                $Agent.is_in.From
+                Agent.is_in.From
             ]
             outcomes: [
                 set Agent.is_in.To

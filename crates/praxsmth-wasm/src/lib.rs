@@ -1,5 +1,5 @@
 use js_sys::Function;
-use praxsmth as core;
+use praxsmth::{self as core};
 use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
@@ -22,19 +22,19 @@ fn js_err<E: std::fmt::Debug>(err: E) -> JsError {
 }
 
 #[wasm_bindgen]
-pub struct World {
-    inner: core::world::World,
+pub struct PraxsmthApi {
+    inner: core::api::PraxsmthApi,
     on_update: Option<Function>,
     on_dialog: Option<Function>,
 }
 
 #[wasm_bindgen]
-impl World {
+impl PraxsmthApi {
     #[wasm_bindgen(constructor)]
-    pub fn new(types: String, world: String) -> Result<World, JsError> {
+    pub fn new(types: String, world: String) -> Result<PraxsmthApi, JsError> {
         console_error_panic_hook::set_once();
-        let inner = core::world::World::from_strings(&types, &world).map_err(js_err)?;
-        Ok(World {
+        let inner = core::api::PraxsmthApi::from_strings(&types, &world).map_err(js_err)?;
+        Ok(PraxsmthApi {
             inner,
             on_update: None,
             on_dialog: None,
@@ -53,13 +53,13 @@ impl World {
 
     #[wasm_bindgen(js_name = getAgentInfo)]
     pub fn get_agent_info(&self) -> Result<JsValue, JsError> {
-        let agent_names: Vec<AgentInfo> = self
+        let agent_infos: Vec<AgentInfo> = self
             .inner
-            .agents
-            .iter()
-            .map(|(id, agent)| AgentInfo::new(id.clone(), agent.name.clone(), agent.is_active))
+            .get_agent_info()
+            .into_iter()
+            .map(AgentInfo::from)
             .collect();
-        serde_wasm_bindgen::to_value(&agent_names).map_err(js_err)
+        serde_wasm_bindgen::to_value(&agent_infos).map_err(js_err)
     }
 
     #[wasm_bindgen(js_name = getCurrentEmotion)]
@@ -99,7 +99,7 @@ impl World {
     }
 }
 
-impl World {
+impl PraxsmthApi {
     fn trigger_on_update(&self) -> Result<(), JsError> {
         if let Some(cb) = &self.on_update {
             let cb = cb.clone();
@@ -154,8 +154,12 @@ pub struct AgentInfo {
     active: bool,
 }
 
-impl AgentInfo {
-    pub fn new(id: String, name: String, active: bool) -> Self {
-        AgentInfo { id, name, active }
+impl From<core::api::AgentInfo> for AgentInfo {
+    fn from(agent_info: core::api::AgentInfo) -> Self {
+        AgentInfo {
+            id: agent_info.id,
+            name: agent_info.name,
+            active: agent_info.active,
+        }
     }
 }

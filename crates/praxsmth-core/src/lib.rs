@@ -1,4 +1,5 @@
 pub mod anyhow_ext;
+pub mod api;
 pub mod definitions;
 pub mod parser;
 pub mod store;

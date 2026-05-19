@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import init, { World } from "praxsmth";
+    import init, { PraxsmthApi } from "praxsmth";
     import type { AgentInfo, Dialog, ChatMessage } from "$lib/types";
     import { DEFAULT_TYPES, DEFAULT_WORLD } from "$lib/defaults";
     import Editor from "$lib/Editor.svelte";
@@ -10,7 +10,7 @@
     import ErrorPane from "$lib/ErrorPane.svelte";
 
     let wasmReady = $state(false);
-    let world: World | null = $state(null);
+    let api: PraxsmthApi | null = $state(null);
 
     let typesSrc = $state(DEFAULT_TYPES);
     let worldSrc = $state(DEFAULT_WORLD);
@@ -35,14 +35,14 @@
         runtimeError = `error in ${where}:\n${line}`;
     }
 
-    function refreshFromWorld() {
-        if (!world) return;
+    function refreshFromApi() {
+        if (!api) return;
         try {
-            agents = world.getAgentInfo() as AgentInfo[];
+            agents = api.getAgentInfo() as AgentInfo[];
 
             const nextEmotions: Record<string, string | undefined> = {};
             for (const a of agents) {
-                nextEmotions[a.id] = world.getCurrentEmotion(a.id) ?? undefined;
+                nextEmotions[a.id] = api.getCurrentEmotion(a.id) ?? undefined;
             }
             emotions = nextEmotions;
 
@@ -51,7 +51,7 @@
             }
 
             availableActions = selectedId
-                ? world.getAvailableActionNames(selectedId)
+                ? api.getAvailableActionNames(selectedId)
                 : [];
         } catch (err) {
             reportRuntimeError(err, "refreshFromWorld");
@@ -78,16 +78,16 @@
         building = true;
         buildError = null;
         try {
-            const w = new World(typesSrc, worldSrc);
-            w.setOnUpdate(() => refreshFromWorld());
-            w.setOnDialog((d: Dialog) => handleDialog(d));
-            world = w;
+            const newApi = new PraxsmthApi(typesSrc, worldSrc);
+            newApi.setOnUpdate(() => refreshFromApi());
+            newApi.setOnDialog((d: Dialog) => handleDialog(d));
+            api = newApi;
             selectedId = null;
             messages = [];
-            refreshFromWorld();
+            refreshFromApi();
         } catch (err) {
             buildError = err instanceof Error ? err.message : String(err);
-            world = null;
+            api = null;
         } finally {
             building = false;
         }
@@ -95,9 +95,9 @@
 
     function selectAgent(id: string) {
         selectedId = id;
-        if (world) {
+        if (api) {
             try {
-                availableActions = world.getAvailableActionNames(id);
+                availableActions = api.getAvailableActionNames(id);
             } catch (err) {
                 reportRuntimeError(err, "selectAgent");
                 availableActions = [];
@@ -106,10 +106,10 @@
     }
 
     async function chooseAction(index: number) {
-        if (!world || !selectedId || pending) return;
+        if (!api || !selectedId || pending) return;
         pending = true;
         try {
-            world.applyAction(selectedId, index);
+            api.applyAction(selectedId, index);
         } catch (err) {
             reportRuntimeError(err, "applyAction");
         } finally {
@@ -118,7 +118,7 @@
     }
 
     function reset() {
-        world = null;
+        api = null;
         agents = [];
         emotions = {};
         selectedId = null;
@@ -143,7 +143,7 @@
         </p>
     </header>
 
-    {#if !world}
+    {#if !api}
         <Editor
             bind:types={typesSrc}
             bind:world={worldSrc}
