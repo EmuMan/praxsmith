@@ -642,14 +642,12 @@ impl World {
             Expression::And(x, y) => {
                 // Symbols on either side are implied to be bound to the same
                 // value. This means that the only bindings that work are ones
-                // that are shared between `x` and `y`. This is just an
-                // intersection!
+                // that are shared between `x` and `y`. This is just a merge!
                 let x_bindings = self.solve_for_free_vars(x, bindings)?;
                 let y_bindings = self.solve_for_free_vars(y, bindings)?;
                 Ok(x_bindings
                     .iter()
-                    .filter(|b| y_bindings.contains(b))
-                    .cloned()
+                    .flat_map(|xb| y_bindings.iter().filter_map(|yb| xb.try_merge(yb)))
                     .collect())
             }
             Expression::Or(x, y) => {
@@ -660,8 +658,7 @@ impl World {
                 let y_bindings = self.solve_for_free_vars(y, bindings)?;
                 Ok(x_bindings
                     .iter()
-                    .filter(|b| y_bindings.contains(b))
-                    .cloned()
+                    .flat_map(|xb| y_bindings.iter().filter_map(|yb| xb.try_merge(yb)))
                     .collect())
             }
             Expression::Not(e) => {
@@ -678,8 +675,7 @@ impl World {
                 let y_bindings = self.solve_for_free_vars(y, bindings)?;
                 Ok(x_bindings
                     .iter()
-                    .filter(|b| y_bindings.contains(b))
-                    .cloned()
+                    .flat_map(|xb| y_bindings.iter().filter_map(|yb| xb.try_merge(yb)))
                     .collect())
             }
         }
@@ -773,16 +769,6 @@ impl World {
         }
 
         match condition.resolution_method {
-            ResolutionMethod::Undefined => {
-                if possible_bindings.len() > 1 {
-                    bail!(
-                        "condition {:?} has multiple possible bindings but resolution method is undefined",
-                        condition
-                    );
-                }
-                let binding = &possible_bindings[0];
-                self.evaluate_expression_as_boolean(condition.expression.clone(), binding)
-            }
             ResolutionMethod::Any => {
                 for binding in possible_bindings {
                     if self

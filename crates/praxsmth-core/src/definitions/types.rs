@@ -87,7 +87,6 @@ pub struct Condition {
 
 #[derive(Debug, Clone)]
 pub enum ResolutionMethod {
-    Undefined,
     All,
     Any,
 }

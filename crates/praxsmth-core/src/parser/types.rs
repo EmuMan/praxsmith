@@ -231,11 +231,23 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
                 name = parse_string(string_pair);
             }
             Rule::t_practice_conditions_field => {
-                // "conditions" ~ ":" ~ t_practice_conditions_field
+                // "conditions" ~ ":" ~ t_condition_list
                 let conditions_pair = inner.next().unwrap(); // Rule::t_condition_list
-                conditions = conditions_pair
-                    .into_inner()
-                    .map(|cond| parse_condition(cond, pratt))
+                let mut cond_inner = conditions_pair.into_inner().peekable();
+
+                let resolution_method = match cond_inner.peek().map(|p| p.as_rule()) {
+                    Some(Rule::t_c_all) => {
+                        cond_inner.next();
+                        ResolutionMethod::All
+                    }
+                    _ => ResolutionMethod::Any,
+                };
+
+                conditions = cond_inner
+                    .map(|expr| Condition {
+                        resolution_method: resolution_method.clone(),
+                        expression: parse_condition(expr, pratt),
+                    })
                     .collect();
             }
             Rule::t_practice_outcomes_field => {

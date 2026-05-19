@@ -78,20 +78,22 @@ t_practice_name             =  { "name" ~ ":" ~ string }
 t_practice_conditions_field =  { "conditions" ~ ":" ~ t_condition_list }
 t_practice_outcomes_field   =  { "outcomes" ~ ":" ~ t_practice_outcomes }
 
-t_condition_list = { "[" ~ t_condition* ~ "]" }
+t_condition_list = { "[" ~ t_c_all? ~ t_expression* ~ "]" }
+
+t_c_all = { "all" }
 
 // Pratt parsing, following Pest's example
-t_condition = {
-    pc_prefix? ~ pc_primary ~ (pc_infix ~ pc_prefix? ~ pc_primary)*
+t_expression = {
+    expr_prefix? ~ expr_primary ~ (expr_infix ~ expr_prefix? ~ expr_primary)*
 }
 
-pc_infix   = _{ and | or | is }
-and        = @{ "and" ~ !ASCII_ALPHANUMERIC }
-or         = @{ "or" ~ !ASCII_ALPHANUMERIC }
-is         = @{ "is" ~ !ASCII_ALPHANUMERIC }
-pc_prefix  = _{ not }
-not        = @{ "not" ~ !ASCII_ALPHANUMERIC }
-pc_primary = _{ value }
+expr_infix   = _{ and | or | is }
+and          = @{ "and" ~ !ASCII_ALPHANUMERIC }
+or           = @{ "or" ~ !ASCII_ALPHANUMERIC }
+is           = @{ "is" ~ !ASCII_ALPHANUMERIC }
+expr_prefix  = _{ not }
+not          = @{ "not" ~ !ASCII_ALPHANUMERIC }
+expr_primary = _{ value }
 
 t_practice_outcomes = { "[" ~ t_practice_outcome* ~ "]" }
 

@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use anyhow::{Context, Result, bail};
 use praxsmth::definitions::PraxsmthValue;
 use praxsmth::definitions::types::{
-    Expression, PracticeAction, PracticeOutcome, PraxsmthType, PraxsmthTypeData,
+    Condition, Expression, PracticeAction, PracticeOutcome, PraxsmthType, PraxsmthTypeData,
+    ResolutionMethod,
 };
 use praxsmth::definitions::world::{AgentInfo, Declaration};
 use praxsmth::types::TypeMapping;
@@ -26,11 +27,14 @@ fn setup_world() -> Result<World> {
             actions: vec![PracticeAction {
                 for_actor: "waker".into(),
                 name: "Wake".into(),
-                conditions: vec![Expression::Value(PraxsmthValue::Variable(vec![
-                    "woken".into(),
-                    "feels".into(),
-                    "chronically_sleep_deprived".into(),
-                ]))],
+                conditions: vec![Condition {
+                    resolution_method: ResolutionMethod::Any,
+                    expression: Expression::Value(PraxsmthValue::Variable(vec![
+                        "woken".into(),
+                        "feels".into(),
+                        "chronically_sleep_deprived".into(),
+                    ])),
+                }],
                 outcomes: vec![
                     PracticeOutcome::Say("AWOKEN".into()),
                     PracticeOutcome::Delete(vec![
@@ -80,13 +84,16 @@ fn test_trait() -> Result<()> {
     )?;
 
     let jacob = world.get_agent("jacob").context("could not find jacob")?;
-    let new_edge_handle = jacob.edges.get(0).context("jacob has no edges")?;
+    let new_edge = jacob.edges.get(0).context("jacob has no edges")?;
     world
-        .get_relation(new_edge_handle.handle())
+        .get_relation(new_edge.relation_handle.clone())
         .context("could not find edge")?;
 
     if !world.check_condition(
-        Expression::Value(PraxsmthValue::Variable(sentence)),
+        &Condition {
+            resolution_method: ResolutionMethod::Any,
+            expression: Expression::Value(PraxsmthValue::Variable(sentence)),
+        },
         &Bindings::default(),
     )? {
         bail!("jacob should be chronically sleep deprived");
@@ -130,7 +137,10 @@ fn test_practice_ok() -> Result<()> {
 
     let jacob = world.get_agent("jacob").context("could not find jacob")?;
     if world.check_condition(
-        Expression::Value(PraxsmthValue::Variable(emotion_sentence)),
+        &Condition {
+            resolution_method: ResolutionMethod::Any,
+            expression: Expression::Value(PraxsmthValue::Variable(emotion_sentence)),
+        },
         &Bindings::default(),
     )? {
         bail!("jacob should no longer be chronically sleep deprived");
