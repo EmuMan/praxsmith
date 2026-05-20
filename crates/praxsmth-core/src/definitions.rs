@@ -15,9 +15,9 @@ impl Serialize for Sentence {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PraxsmthConstant {
-    Number(i64),
+    Number(f64),
     Boolean(bool),
     Variant(String),
     String(String),
@@ -34,9 +34,9 @@ impl Serialize for PraxsmthConstant {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PraxsmthValue {
-    Number(i64),
+    Number(f64),
     Boolean(bool),
     Variant(String),
     String(String),
@@ -70,7 +70,7 @@ pub type FieldTypes = HashMap<String, PraxsmthField>;
 
 #[derive(Debug, Clone)]
 pub enum PraxsmthField {
-    NumberRange(i64, i64),
+    NumberRange(f64, f64),
     VariantList(Vec<String>),
 }
 

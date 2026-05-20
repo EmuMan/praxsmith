@@ -60,8 +60,8 @@ fn parse_field(pair: Pair<Rule>) -> PraxsmthField {
         Rule::number_range => {
             // number_range is: number ~ ".." ~ number
             let mut numbers = pair.into_inner();
-            let start: i64 = numbers.next().unwrap().as_str().parse().unwrap();
-            let end: i64 = numbers.next().unwrap().as_str().parse().unwrap();
+            let start: f64 = numbers.next().unwrap().as_str().parse().unwrap();
+            let end: f64 = numbers.next().unwrap().as_str().parse().unwrap();
             PraxsmthField::NumberRange(start, end)
         }
         Rule::variant_list => {

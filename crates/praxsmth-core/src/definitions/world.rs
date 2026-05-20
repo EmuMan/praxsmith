@@ -31,8 +31,7 @@ pub struct AgentInfo {
 pub enum GoalMeasurement {
     #[default]
     Exists,
-    Increase,
-    Decrease,
+    Delta,
 }
 
 #[derive(Debug, Clone)]

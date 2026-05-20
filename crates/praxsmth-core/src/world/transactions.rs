@@ -36,6 +36,12 @@ pub enum UndoOp {
         agent_id: String,
         prior_emotion: Option<RelationHandle>,
     },
+
+    // Restores an agent's activation state to a prior value.
+    RestoreAgentActive {
+        agent_id: String,
+        prior_active: bool,
+    },
 }
 
 pub struct UndoLog {
@@ -65,6 +71,11 @@ impl<'a> WorldTxn<'a> {
             world,
             undo_log: UndoLog::new(),
         }
+    }
+
+    /// Public read-only access to the world for querying.
+    pub fn inner(&self) -> &World {
+        self.world
     }
 
     /// Wrapper for `World::add_trait` that logs undoable actions.
@@ -203,6 +214,24 @@ impl<'a> WorldTxn<'a> {
         Ok(())
     }
 
+    /// Wrapper for setting an agent's active state that logs undoable actions.
+    pub fn set_agent_active(&mut self, name: &str, active: bool) -> Result<()> {
+        let prior_active = self
+            .world
+            .get_agent(name)
+            .with_context(|| format!("failed to find agent {} for setting active state", name))?
+            .is_active;
+
+        self.world.set_agent_active(name, active)?;
+
+        self.undo_log.push(UndoOp::RestoreAgentActive {
+            agent_id: name.to_string(),
+            prior_active,
+        });
+
+        Ok(())
+    }
+
     pub fn commit(self) {
         // No action needed, changes are already in the world.
         // Idk why this is here... for completeness or something lmfao
@@ -244,9 +273,23 @@ impl<'a> WorldTxn<'a> {
                         .with_context(|| format!("failed to find agent {}", agent_id))?
                         .emotion = prior_emotion;
                 }
+                UndoOp::RestoreAgentActive {
+                    agent_id,
+                    prior_active,
+                } => {
+                    self.world.set_agent_active(&agent_id, prior_active)?;
+                }
             }
         }
 
         Ok(())
+    }
+}
+
+impl World {
+    /// Start a new transaction on the world. Changes made through the returned
+    /// `WorldTxn` can be rolled back if needed by calling `rollback`.
+    pub fn transaction(&mut self) -> WorldTxn<'_> {
+        WorldTxn::new(self)
     }
 }

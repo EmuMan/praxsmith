@@ -130,9 +130,8 @@ world_definition = _{
 w_agent          = { "agent" ~ var_name ~ ("as" ~ string)? ~ w_agent_inactive? ~ w_agent_brackets? }
 w_agent_inactive = { "inactive" }
 w_agent_brackets = { "{" ~ w_agent_goal* ~ "}" }
-w_agent_goal     = { "goal" ~ "(" ~ number ~ ")" ~ ":" ~ (w_increase | w_decrease)? ~ expression }
-w_increase       = { "increase" }
-w_decrease       = { "decrease" }
+w_agent_goal     = { "goal" ~ "(" ~ number ~ ")" ~ ":" ~ w_delta? ~ expression }
+w_delta          = { "delta" }
 
 // Declaration rules
 w_declaration    = { sentence ~ w_decl_brackets? }

@@ -52,7 +52,7 @@ impl PraxsmthApi {
                 }
                 PraxsmthWorldDefinition::Declaration(declaration) => {
                     simulation
-                        .process_declaration(&mut world, declaration, &empty_bindings)
+                        .process_declaration(&mut world.transaction(), declaration, &empty_bindings)
                         .with_context(|| {
                             format!("processing declaration {:?}", declaration.sentence)
                         })?;
@@ -97,7 +97,7 @@ impl PraxsmthApi {
         })?;
 
         self.simulation
-            .process_available_action(&mut self.world, action)
+            .process_available_action(&mut self.world.transaction(), action)
             .with_context(|| format!("applying action {} for agent {}", action_index, agent_name))
     }
 

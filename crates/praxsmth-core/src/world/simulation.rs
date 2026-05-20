@@ -7,9 +7,12 @@ use crate::{
     definitions::{
         PraxsmthConstant, PraxsmthValue, Sentence,
         types::{Condition, Expression, PracticeOutcome, PraxsmthTypeData, ResolutionMethod},
-        world::Declaration,
+        world::{Declaration, Goal, GoalMeasurement},
     },
-    world::{AgentToRelation, Bindings, Relation, RelationData, RelationHandle, World},
+    world::{
+        Agent, AgentToRelation, Bindings, Relation, RelationData, RelationHandle, World,
+        transactions::WorldTxn,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -84,7 +87,9 @@ pub struct Dialog {
 
 /// The simulation component of the world, responsible for processing
 /// declarations, evaluating variables, and generally doing the work of turning
-/// the static world state into a dynamic, interactive simulation.
+/// the static world state into a dynamic, interactive simulation. Any write
+/// operations must be done through a `WorldTxn` passed into the relevant
+/// functions, but read operations can be done directly on the `World`.
 ///
 /// The world state and simulation are tied together through a `PraxsmthApi`.
 #[derive(Debug, Clone)]
@@ -235,12 +240,12 @@ impl Simulation {
     /// be raised if there are any free variables within this query.
     pub fn process_declaration(
         &mut self,
-        world: &mut World,
+        world: &mut WorldTxn,
         declaration: &Declaration,
         bindings: &Bindings,
     ) -> Result<RelationHandle> {
         let (query, args) = self
-            .build_query(world, &declaration.sentence, bindings)
+            .build_query(world.inner(), &declaration.sentence, bindings)
             .with_context(|| format!("processing declaration {:?}", declaration.sentence))?;
         // TODO: relations with one parameter should be initializable this way!
         if !args.is_empty() {
@@ -738,23 +743,23 @@ impl Simulation {
     pub fn evaluate_expression(
         &self,
         world: &World,
-        expression: Expression,
+        expression: &Expression,
         bindings: &Bindings,
     ) -> Result<PraxsmthConstant> {
         match expression {
             Expression::Value(value) => match value {
-                PraxsmthValue::Number(n) => Ok(PraxsmthConstant::Number(n)),
-                PraxsmthValue::Boolean(b) => Ok(PraxsmthConstant::Boolean(b)),
-                PraxsmthValue::Variant(v) => Ok(PraxsmthConstant::Variant(v)),
-                PraxsmthValue::String(s) => Ok(PraxsmthConstant::String(s)),
+                PraxsmthValue::Number(n) => Ok(PraxsmthConstant::Number(*n)),
+                PraxsmthValue::Boolean(b) => Ok(PraxsmthConstant::Boolean(*b)),
+                PraxsmthValue::Variant(v) => Ok(PraxsmthConstant::Variant(v.clone())),
+                PraxsmthValue::String(s) => Ok(PraxsmthConstant::String(s.clone())),
                 PraxsmthValue::Variable(sentence) => {
                     self.resolve_variable(world, &sentence, bindings)
                 }
             },
 
             Expression::And(x, y) => {
-                let x = self.evaluate_expression(world, *x, bindings)?;
-                let y = self.evaluate_expression(world, *y, bindings)?;
+                let x = self.evaluate_expression(world, x.as_ref(), bindings)?;
+                let y = self.evaluate_expression(world, y.as_ref(), bindings)?;
                 match (x, y) {
                     (PraxsmthConstant::Boolean(x), PraxsmthConstant::Boolean(y)) => {
                         Ok(PraxsmthConstant::Boolean(x && y))
@@ -768,8 +773,8 @@ impl Simulation {
             }
 
             Expression::Or(x, y) => {
-                let x = self.evaluate_expression(world, *x, bindings)?;
-                let y = self.evaluate_expression(world, *y, bindings)?;
+                let x = self.evaluate_expression(world, x.as_ref(), bindings)?;
+                let y = self.evaluate_expression(world, y.as_ref(), bindings)?;
                 match (x, y) {
                     (PraxsmthConstant::Boolean(x), PraxsmthConstant::Boolean(y)) => {
                         Ok(PraxsmthConstant::Boolean(x || y))
@@ -783,13 +788,13 @@ impl Simulation {
             }
 
             Expression::Is(x, y) => {
-                let x = self.evaluate_expression(world, *x, bindings)?;
-                let y = self.evaluate_expression(world, *y, bindings)?;
+                let x = self.evaluate_expression(world, x.as_ref(), bindings)?;
+                let y = self.evaluate_expression(world, y.as_ref(), bindings)?;
                 Ok(PraxsmthConstant::Boolean(x == y))
             }
 
             Expression::Not(x) => {
-                let res = self.evaluate_expression(world, *x, bindings)?;
+                let res = self.evaluate_expression(world, x.as_ref(), bindings)?;
                 match res {
                     PraxsmthConstant::Boolean(b) => Ok(PraxsmthConstant::Boolean(!b)),
                     other => bail!("Not condition must evaluate to boolean, got {:?}", other),
@@ -801,7 +806,7 @@ impl Simulation {
     fn evaluate_expression_as_boolean(
         &self,
         world: &World,
-        expression: Expression,
+        expression: &Expression,
         bindings: &Bindings,
     ) -> Result<bool> {
         match self.evaluate_expression(world, expression, bindings)? {
@@ -830,7 +835,7 @@ impl Simulation {
                 for binding in possible_bindings {
                     if self.evaluate_expression_as_boolean(
                         world,
-                        condition.expression.clone(),
+                        &condition.expression,
                         &binding,
                     )? {
                         return Ok(true);
@@ -842,7 +847,7 @@ impl Simulation {
                 for binding in possible_bindings {
                     if !self.evaluate_expression_as_boolean(
                         world,
-                        condition.expression.clone(),
+                        &condition.expression,
                         &binding,
                     )? {
                         return Ok(false);
@@ -875,19 +880,19 @@ impl Simulation {
 
     fn process_delete(
         &mut self,
-        world: &mut World,
+        world: &mut WorldTxn,
         sentence: &Sentence,
         bindings: &Bindings,
     ) -> Result<()> {
         let (query, args) = self
-            .build_query(world, sentence, bindings)
+            .build_query(world.inner(), sentence, bindings)
             .with_context(|| format!("processing delete outcome {:?}", sentence))?;
         if !args.is_empty() {
             bail!("extra parameters in delete outcome {:?}", sentence);
         }
 
         let (edge, _) = self
-            .lookup_relation(world, query)
+            .lookup_relation(world.inner(), query)
             .with_context(|| format!("relation not found in delete outcome {:?}", sentence))?;
         world
             .remove_relation(edge.relation_handle.clone())
@@ -896,13 +901,13 @@ impl Simulation {
 
     fn process_update(
         &mut self,
-        world: &mut World,
+        world: &mut WorldTxn,
         sentence: &Sentence,
         value: &PraxsmthValue,
         bindings: &Bindings,
     ) -> Result<()> {
         let (query, args) = self
-            .build_query(world, sentence, bindings)
+            .build_query(world.inner(), sentence, bindings)
             .with_context(|| format!("processing set outcome {:?}", sentence))?;
         if args.len() != 1 {
             // TODO: Support bracket syntax so this is actually usable!!!
@@ -918,7 +923,7 @@ impl Simulation {
         let arg_name = &args[0];
 
         let (edge, _) = self
-            .lookup_relation(world, query)
+            .lookup_relation(world.inner(), query)
             .with_context(|| format!("relation not found in set outcome {:?}", sentence))?;
 
         let constant_value = match value {
@@ -927,7 +932,7 @@ impl Simulation {
             PraxsmthValue::Variant(v) => PraxsmthConstant::Variant(v.clone()),
             PraxsmthValue::String(s) => PraxsmthConstant::String(s.clone()),
             PraxsmthValue::Variable(sentence) => self
-                .resolve_variable(world, sentence, bindings)
+                .resolve_variable(world.inner(), sentence, bindings)
                 .context("resolving variable for set outcome")?,
         };
 
@@ -941,7 +946,7 @@ impl Simulation {
 
     fn process_increase(
         &mut self,
-        _world: &mut World,
+        _world: &mut WorldTxn,
         _sentence: &Sentence,
         _amount: i64,
         _bindings: &Bindings,
@@ -951,7 +956,7 @@ impl Simulation {
 
     fn process_cycle(
         &mut self,
-        _world: &mut World,
+        _world: &mut WorldTxn,
         _sentence: &Sentence,
         _amount: i64,
         _bindings: &Bindings,
@@ -961,18 +966,23 @@ impl Simulation {
 
     pub fn process_outcome(
         &mut self,
-        world: &mut World,
+        world: &mut WorldTxn,
         agent_name: &str,
         outcome: &PracticeOutcome,
         bindings: &Bindings,
     ) -> Result<Option<Dialog>> {
         match outcome {
             PracticeOutcome::Broadcast(string) => {
-                return Ok(Some(self.process_print(world, None, string, bindings)?));
+                return Ok(Some(self.process_print(
+                    world.inner(),
+                    None,
+                    string,
+                    bindings,
+                )?));
             }
             PracticeOutcome::Say(string) => {
                 return Ok(Some(self.process_print(
-                    world,
+                    world.inner(),
                     Some(agent_name),
                     string,
                     bindings,
@@ -1070,10 +1080,11 @@ impl Simulation {
 
     pub fn process_available_action(
         &mut self,
-        world: &mut World,
+        world: &mut WorldTxn,
         available_action: &AvailableAction,
     ) -> Result<Vec<Dialog>> {
         let relation = world
+            .inner()
             .get_relation(available_action.practice_handle.clone())
             .with_context(|| {
                 format!(
@@ -1088,6 +1099,7 @@ impl Simulation {
             );
         };
         let relation_type = world
+            .inner()
             .type_mapping
             .get_type(&relation.type_name)
             .with_context(|| {
@@ -1126,5 +1138,81 @@ impl Simulation {
         }
 
         Ok(dialog)
+    }
+
+    /// Evaluates the current state of a goal within the context of a world.
+    /// This value is not entirely useful by itself, and is intended to be used
+    /// as part of a net delta of an agent's goals across two world states. The
+    /// return value is derived from the goal's measurements and weights.
+    ///
+    /// This system supports the same unbound variables as conditions do, and
+    /// any expressions with multiple possible bindings will have their weights
+    /// summed.
+    ///
+    /// TODO: If a new edge is added that gets caught by an increase
+    /// measurement, it will result in a huge delta for that event. Figure out
+    /// a way to only count deltas between bindings that are continuous across
+    /// the change.
+    fn evaluate_goal(&self, world: &World, goal: &Goal, bindings: &Bindings) -> Result<f64> {
+        let possible_bindings = self.solve_for_free_vars(world, &goal.expression, bindings)?;
+        if possible_bindings.is_empty() {
+            // No valid bindings, so the goal should just evaluate to 0.
+            // TODO: This is probably not great behavior...
+            return Ok(0.0);
+        }
+
+        let evaluations: Vec<PraxsmthConstant> = possible_bindings
+            .iter()
+            .map(|binding| {
+                self.evaluate_expression(world, &goal.expression, binding)
+                    .with_context(|| format!("evaluating expression for goal {:?}", goal))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut total_weight = 0.0;
+        match goal.measurement {
+            GoalMeasurement::Exists => {
+                for evaluation in evaluations {
+                    match evaluation {
+                        PraxsmthConstant::Boolean(b) => {
+                            if b {
+                                total_weight += goal.weight;
+                            }
+                        }
+                        other => bail!(
+                            "goal expression must evaluate to boolean for Exists measurement, got {:?}",
+                            other
+                        ),
+                    }
+                }
+            }
+            GoalMeasurement::Delta => {
+                for evaluation in evaluations {
+                    match evaluation {
+                        PraxsmthConstant::Number(n) => {
+                            total_weight += n * goal.weight;
+                        }
+                        other => bail!(
+                            "goal expression must evaluate to number for Increase/Decrease measurement, got {:?}",
+                            other
+                        ),
+                    }
+                }
+            }
+        }
+
+        Ok(total_weight)
+    }
+
+    /// Evaluates all of an agent's goals and returns the total score. This is
+    /// intended to be used as part of a net delta of an agent's goals across
+    /// two world states, so the return value is not entirely useful by itself.
+    /// The return value is derived from the goals' measurements and weights.
+    pub fn evaluate_agent_goals(&self, world: &World, agent: &Agent) -> Result<f64> {
+        let mut total_score = 0.0;
+        for goal in &agent.goals {
+            total_score += self.evaluate_goal(world, goal, &Bindings::default())?;
+        }
+        Ok(total_score)
     }
 }

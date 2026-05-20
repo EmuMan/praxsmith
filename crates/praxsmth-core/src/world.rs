@@ -399,6 +399,7 @@ pub struct Agent {
     // Quick access field for the singular emotion they might have
     pub emotion: Option<RelationHandle>,
     pub is_active: bool,
+    pub goals: Vec<Goal>,
 }
 
 impl Agent {
@@ -408,6 +409,7 @@ impl Agent {
             edges: Vec::new(),
             emotion: None,
             is_active: info.active,
+            goals: info.goals.clone(),
         }
     }
 

@@ -18,8 +18,7 @@ fn parse_agent_goal(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Goal {
 
     let next = inner.next().unwrap();
     let (measurement, expression_pair) = match next.as_rule() {
-        Rule::w_increase => (GoalMeasurement::Increase, inner.next().unwrap()),
-        Rule::w_decrease => (GoalMeasurement::Decrease, inner.next().unwrap()),
+        Rule::w_delta => (GoalMeasurement::Delta, inner.next().unwrap()),
         _ => (GoalMeasurement::Exists, next),
     };
     let expression = parse_expression(expression_pair, pratt);
