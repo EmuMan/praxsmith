@@ -1,7 +1,12 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import init, { PraxsmthApi } from "praxsmth";
-    import type { AgentInfo, Dialog, ChatMessage } from "$lib/types";
+    import type {
+        AvailableAction,
+        AgentInfo,
+        Dialog,
+        ChatMessage,
+    } from "$lib/types";
     import { DEFAULT_TYPES, DEFAULT_WORLD } from "$lib/defaults";
     import Editor from "$lib/Editor.svelte";
     import Cast from "$lib/Cast.svelte";
@@ -20,7 +25,7 @@
     let agents: AgentInfo[] = $state([]);
     let emotions: Record<string, string | undefined> = $state({});
     let selectedId: string | null = $state(null);
-    let availableActions: string[] = $state([]);
+    let availableActions: AvailableAction[] = $state([]);
     let messages: ChatMessage[] = $state([]);
     let runtimeError: string | null = $state(null);
     let pending = $state(false);
@@ -51,7 +56,7 @@
             }
 
             availableActions = selectedId
-                ? api.getAvailableActionNames(selectedId)
+                ? api.getAvailableActions(selectedId)
                 : [];
         } catch (err) {
             reportRuntimeError(err, "refreshFromWorld");
@@ -97,7 +102,7 @@
         selectedId = id;
         if (api) {
             try {
-                availableActions = api.getAvailableActionNames(id);
+                availableActions = api.getAvailableActions(id);
             } catch (err) {
                 reportRuntimeError(err, "selectAgent");
                 availableActions = [];

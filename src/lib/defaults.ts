@@ -50,18 +50,20 @@ export const DEFAULT_WORLD = `
 agent house as "House" inactive
 agent street as "Street" inactive
 
-agent jacob as "Jacob"
+agent jacob as "Jacob" {
+    goal (10): alaina.feels.happy
+}
 agent alaina as "Alaina"
 
 jacob.is_married_to.alaina {
     since: 2024
 }
 
-jacob.is_in.street
-alaina.is_in.house
+jacob.is_in.house
+alaina.is_in.street
 
-jacob.feels.sad
+alaina.feels.sad
 
-practice.greet.alaina.jacob
-practice.move.jacob.street.house
+practice.greet.jacob.alaina
+practice.move.alaina.street.house
 `;

@@ -16,6 +16,12 @@ pub struct AgentInfo {
     pub active: bool,
 }
 
+pub struct AvailableAction {
+    pub index: usize,
+    pub display_name: String,
+    pub goal_delta: f64,
+}
+
 /// The main API for interacting with the Praxsmth world. This is the intended
 /// interface for external code to use when working with the world. It combines
 /// both the `World` and `Simulation` into a single struct, and provides
@@ -65,15 +71,48 @@ impl PraxsmthApi {
 
     /// Get the names of the available actions for an agent.
     /// The order for this is deterministic, so that the same action will always have the same index.
-    pub fn get_available_action_names(&self, agent_name: &str) -> Result<Vec<String>> {
+    pub fn get_available_actions(&mut self, agent_id: &str) -> Result<Vec<AvailableAction>> {
         let actions = self
             .simulation
-            .get_available_actions(&self.world, agent_name)
-            .with_context(|| format!("getting available action names for agent {}", agent_name))?;
-        Ok(actions
-            .into_iter()
-            .map(|action| action.display_name)
-            .collect())
+            .get_available_actions(&self.world, agent_id)
+            .with_context(|| format!("getting available action names for agent {}", agent_id))?;
+
+        let base_score = self
+            .simulation
+            .evaluate_agent_goals(&self.world, agent_id)
+            .with_context(|| {
+                format!(
+                    "evaluating goals for agent {} before applying actions",
+                    agent_id
+                )
+            })?;
+
+        let mut available_actions = vec![];
+
+        for (i, action) in actions.iter().enumerate() {
+            let mut transaction = self.world.transaction();
+            self.simulation
+                .process_available_action(&mut transaction, &action)
+                .with_context(|| {
+                    format!(
+                        "applying action {:?} for agent {} goal evaluation",
+                        action, agent_id
+                    )
+                })?;
+            let score = self
+                .simulation
+                .evaluate_agent_goals(&transaction.inner(), &agent_id)?;
+            transaction.rollback().with_context(|| {
+                format!("rolling back action {:?} for agent {}", action, agent_id)
+            })?;
+            available_actions.push(AvailableAction {
+                index: i,
+                display_name: action.display_name.clone(),
+                goal_delta: score - base_score,
+            });
+        }
+
+        Ok(available_actions)
     }
 
     /// Apply an action by its index in the list of available actions for an agent.
@@ -105,23 +144,20 @@ impl PraxsmthApi {
     pub fn get_current_emotion(&self, agent: &str) -> Result<Option<(RelationHandle, &Relation)>> {
         Ok(self
             .world
-            .agents
-            .get(agent)
+            .get_agent(agent)
             .with_context(|| format!("could not find agent {} in world", agent))?
             .emotion
             .as_ref()
             .and_then(|handle| {
                 self.world
-                    .relation_store
-                    .get(handle.clone())
+                    .get_relation(handle.clone())
                     .map(|relation| (handle.clone(), relation))
             }))
     }
 
     pub fn get_agent_info(&self) -> Vec<AgentInfo> {
         self.world
-            .agents
-            .iter()
+            .iter_agents()
             .map(|(id, agent)| AgentInfo {
                 id: id.clone(),
                 name: agent.name.clone(),

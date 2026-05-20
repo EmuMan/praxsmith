@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
+log = "0.4.29"
 pest = "2.8.6"
 pest_derive = "2.8.6"
 

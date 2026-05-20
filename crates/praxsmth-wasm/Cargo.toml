@@ -15,3 +15,5 @@ tsify = { version = "0.4", default-features = false, features = ["js"] }
 console_error_panic_hook = "0.1"
 js-sys = "0.3.97"
 web-sys = { version = "0.3", features = ["Window"] }
+log = "0.4.29"
+console_log = "1.0.0"

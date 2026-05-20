@@ -1,75 +1,19 @@
 use anyhow::{Context, Result};
 
-use crate::world::{AgentToRelation, Fields, Relation, RelationHandle, World};
-
-/// An enumeration of possible operations that can be undone in the world. Used
-/// in transactions to allow rolling back changes.
-pub enum UndoOp {
-    // Restore a removed relation into its previous slot in `RelationStore`.
-    // Maintains index and generation for consistency with lookups.
-    RestoreRelation {
-        index: u32,
-        generation: u32,
-        relation: Relation,
-    },
-
-    // Remove a relation that was added.
-    RemoveAddedRelation {
-        handle: RelationHandle,
-    },
-
-    // Restore a modified relation to its previous state.
-    RestoreFields {
-        handle: RelationHandle,
-        prior: Fields,
-    },
-
-    // Restore an agents edges to their prior state. These will be modified by
-    // transactions that add or remove relations.
-    RestoreAgentEdges {
-        agent_id: String,
-        prior_edges: Vec<AgentToRelation>,
-    },
-
-    // Restore an agent's emotion to a prior value.
-    RestoreAgentEmotion {
-        agent_id: String,
-        prior_emotion: Option<RelationHandle>,
-    },
-
-    // Restores an agent's activation state to a prior value.
-    RestoreAgentActive {
-        agent_id: String,
-        prior_active: bool,
-    },
-}
-
-pub struct UndoLog {
-    ops: Vec<UndoOp>,
-}
-
-impl UndoLog {
-    pub fn new() -> Self {
-        Self { ops: Vec::new() }
-    }
-
-    pub fn push(&mut self, op: UndoOp) {
-        self.ops.push(op);
-    }
-}
+use crate::world::{Fields, RelationHandle, World, WorldMutation};
 
 /// Represents a transaction on the world. Changes made through this interface
 /// can be rolled back if needed by calling `rollback`.
 pub struct WorldTxn<'a> {
     world: &'a mut World,
-    undo_log: UndoLog,
+    mutation_log: Vec<WorldMutation>,
 }
 
 impl<'a> WorldTxn<'a> {
     pub fn new(world: &'a mut World) -> Self {
         Self {
             world,
-            undo_log: UndoLog::new(),
+            mutation_log: Vec::new(),
         }
     }
 
@@ -85,13 +29,9 @@ impl<'a> WorldTxn<'a> {
         type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
-        let handle = self.world.add_trait(agent_id, type_id, fields)?;
-        // Undone by removing the relation we just added. The remove function
-        // called by this undo op will handle removing edges from agents.
-        self.undo_log.push(UndoOp::RemoveAddedRelation {
-            handle: handle.clone(),
-        });
-        Ok(handle)
+        let created = self.world.add_trait(agent_id, type_id, fields)?;
+        self.mutation_log.extend(created.mutations);
+        Ok(created.handle)
     }
 
     /// Wrapper for `World::add_emotion` that logs undoable actions.
@@ -101,13 +41,9 @@ impl<'a> WorldTxn<'a> {
         type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
-        let handle = self.world.add_emotion(agent_id, type_id, fields)?;
-        // Undone by removing the relation we just added. The remove function
-        // called by this undo op will handle removing edges from agents.
-        self.undo_log.push(UndoOp::RemoveAddedRelation {
-            handle: handle.clone(),
-        });
-        Ok(handle)
+        let created = self.world.add_emotion(agent_id, type_id, fields)?;
+        self.mutation_log.extend(created.mutations);
+        Ok(created.handle)
     }
 
     /// Wrapper for `World::add_binary_relation` that logs undoable actions.
@@ -118,15 +54,11 @@ impl<'a> WorldTxn<'a> {
         edge_type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
-        let handle = self
+        let created = self
             .world
             .add_binary_relation(from_id, to_id, edge_type_id, fields)?;
-        // Undone by removing the relation we just added. The remove function
-        // called by this undo op will handle removing edges from agents.
-        self.undo_log.push(UndoOp::RemoveAddedRelation {
-            handle: handle.clone(),
-        });
-        Ok(handle)
+        self.mutation_log.extend(created.mutations);
+        Ok(created.handle)
     }
 
     /// Wrapper for `World::add_practice` that logs undoable actions.
@@ -136,150 +68,44 @@ impl<'a> WorldTxn<'a> {
         type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
-        let handle = self.world.add_practice(participant_ids, type_id, fields)?;
-        // Undone by removing the relation we just added. The remove function
-        // called by this undo op will handle removing edges from agents.
-        self.undo_log.push(UndoOp::RemoveAddedRelation {
-            handle: handle.clone(),
-        });
-        Ok(handle)
-    }
-
-    /// Wrapper for `World::add_relation` that logs undoable actions.
-    pub fn add_relation(&mut self, rel: Relation) -> RelationHandle {
-        let handle = self.world.add_relation(rel);
-        // Undone by removing the relation we just added. The remove function
-        // called by this undo op will handle removing edges from agents.
-        self.undo_log.push(UndoOp::RemoveAddedRelation {
-            handle: handle.clone(),
-        });
-        handle
+        let created = self.world.add_practice(participant_ids, type_id, fields)?;
+        self.mutation_log.extend(created.mutations);
+        Ok(created.handle)
     }
 
     /// Wrapper for `World::remove_relation` that logs undoable actions,
     /// including logging the edges of any agents connected to the relation
     /// being removed, so that they can be restored on rollback.
     pub fn remove_relation(&mut self, handle: RelationHandle) -> Result<()> {
-        let index = handle.index;
-        let generation = handle.generation;
-
-        let prior = self
-            .world
-            .get_relation(handle.clone())
-            .with_context(|| format!("failed to find relation with handle {:?}", handle))?
-            .clone();
-
-        prior.edges.iter().for_each(|edge| {
-            if let Some(agent) = self.world.get_agent(edge.agent()) {
-                // If the agent still exists, log its edges before we remove the relation.
-                self.undo_log.push(UndoOp::RestoreAgentEdges {
-                    agent_id: edge.agent().to_string(),
-                    prior_edges: agent.edges.clone(),
-                })
-                // TODO: consider emotions too
-            }
-        });
-
-        self.world.remove_relation(handle)?;
-
-        self.undo_log.push(UndoOp::RestoreRelation {
-            index,
-            generation,
-            relation: prior,
-        });
-
+        self.mutation_log
+            .extend(self.world.remove_relation(handle)?);
         Ok(())
     }
 
     /// Wrapper for `World::update_relation` that logs undoable actions.
     pub fn update_relation(&mut self, handle: RelationHandle, new_fields: Fields) -> Result<()> {
-        let prior = self
-            .world
-            .get_relation(handle.clone())
-            .with_context(|| {
-                format!(
-                    "failed to find relation with handle {:?} for updating fields",
-                    handle
-                )
-            })?
-            .fields
-            .clone();
-
-        self.world.update_relation(handle.clone(), new_fields)?;
-
-        self.undo_log.push(UndoOp::RestoreFields { handle, prior });
-
-        // TODO: if it is an emotion, handle that too
-
+        self.mutation_log
+            .push(self.world.update_relation(handle, new_fields)?);
         Ok(())
     }
 
     /// Wrapper for setting an agent's active state that logs undoable actions.
     pub fn set_agent_active(&mut self, name: &str, active: bool) -> Result<()> {
-        let prior_active = self
-            .world
-            .get_agent(name)
-            .with_context(|| format!("failed to find agent {} for setting active state", name))?
-            .is_active;
-
-        self.world.set_agent_active(name, active)?;
-
-        self.undo_log.push(UndoOp::RestoreAgentActive {
-            agent_id: name.to_string(),
-            prior_active,
-        });
-
+        self.mutation_log
+            .push(self.world.set_agent_active(name, active)?);
         Ok(())
     }
 
-    pub fn commit(self) {
-        // No action needed, changes are already in the world.
-        // Idk why this is here... for completeness or something lmfao
-    }
-
     pub fn rollback(self) -> Result<()> {
-        for op in self.undo_log.ops.into_iter().rev() {
-            match op {
-                UndoOp::RestoreRelation {
-                    index,
-                    generation,
-                    relation,
-                } => {
-                    self.world
-                        .restore_relation(index, generation, relation)
-                        .with_context(|| format!("restoring relation to index {}", index))?;
-                }
-                UndoOp::RemoveAddedRelation { handle } => {
-                    self.world.remove_relation(handle)?;
-                }
-                UndoOp::RestoreFields { handle, prior } => {
-                    self.world.update_relation(handle, prior)?;
-                }
-                UndoOp::RestoreAgentEdges {
-                    agent_id,
-                    prior_edges,
-                } => {
-                    self.world
-                        .get_agent_mut(&agent_id)
-                        .with_context(|| format!("failed to find agent {}", agent_id))?
-                        .edges = prior_edges;
-                }
-                UndoOp::RestoreAgentEmotion {
-                    agent_id,
-                    prior_emotion,
-                } => {
-                    self.world
-                        .get_agent_mut(&agent_id)
-                        .with_context(|| format!("failed to find agent {}", agent_id))?
-                        .emotion = prior_emotion;
-                }
-                UndoOp::RestoreAgentActive {
-                    agent_id,
-                    prior_active,
-                } => {
-                    self.world.set_agent_active(&agent_id, prior_active)?;
-                }
-            }
+        log::info!(
+            "rolling back transaction with {} undo operations",
+            self.mutation_log.len()
+        );
+        for mutation in self.mutation_log.into_iter().rev() {
+            let mutation_str = format!("{:?}", mutation);
+            self.world
+                .undo_mutation(mutation)
+                .with_context(|| format!("undoing mutation {}", mutation_str))?;
         }
 
         Ok(())

@@ -1,6 +1,8 @@
 <script lang="ts">
+    import type { AvailableAction } from "$lib/types";
+
     interface Props {
-        actions: string[];
+        actions: AvailableAction[];
         actorName: string | null;
         pending: boolean;
         onchoose: (index: number) => void;
@@ -21,13 +23,13 @@
         {#if actorName && actions.length === 0}
             <span class="empty">nothing they can do right now.</span>
         {/if}
-        {#each actions as label, i (i)}
+        {#each actions as action, i (i)}
             <button
                 class="action"
                 disabled={pending}
                 onclick={() => onchoose(i)}
             >
-                {label}
+                {action.display_name} ({action.score})
             </button>
         {/each}
     </div>

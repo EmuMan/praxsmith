@@ -327,27 +327,33 @@ impl RelationStore {
 
     /// Restores a relation into the store at the given index and generation.
     /// This is used for undoing a removal, and to preserve handle consistency,
-    /// it bypasses the normal checks and advancements the store would normally do.
+    /// it bypasses the normal checks and advancements the store would normally
+    /// do. Do NOT use this for anything other than undoing a removal, as it
+    /// can easily lead to inconsistent state if used incorrectly.
     ///
     /// Returns an error if there is a value in the slot already.
-    pub fn restore_as(&mut self, index: u32, generation: u32, relation: Relation) -> Result<()> {
-        if index as usize >= self.slots.len() {
+    pub fn restore(&mut self, handle: RelationHandle, relation: Relation) -> Result<()> {
+        if handle.index as usize >= self.slots.len() {
             bail!(
                 "cannot restore relation at index {}: index out of bounds",
-                index
+                handle.index
             );
         }
-        let slot = &mut self.slots[index as usize];
+        let slot = &mut self.slots[handle.index as usize];
         if slot.value.is_some() {
             bail!(
                 "cannot restore relation at index {}: slot is not empty",
-                index
+                handle.index
             );
         }
         slot.value = Some(relation);
-        slot.generation = generation as u32;
+        slot.generation = handle.generation;
         // Remove this index from open_indices if it's there, since the slot is now occupied again
-        if let Some(pos) = self.open_indices.iter().position(|&i| i == index as usize) {
+        if let Some(pos) = self
+            .open_indices
+            .iter()
+            .position(|&i| i == handle.index as usize)
+        {
             self.open_indices.remove(pos);
         }
         Ok(())
@@ -418,10 +424,43 @@ impl Agent {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct RelationCreated {
+    pub handle: RelationHandle,
+    pub mutations: Vec<WorldMutation>,
+}
+
+#[derive(Debug, Clone)]
+pub enum WorldMutation {
+    RelationAdded {
+        handle: RelationHandle,
+    },
+    RelationRemoved {
+        handle: RelationHandle,
+        prior: Relation,
+    },
+    RelationFieldsUpdated {
+        handle: RelationHandle,
+        prior_fields: Fields,
+    },
+    AgentSetActive {
+        agent_id: String,
+        prior_active: bool,
+    },
+    AgentEdgesUpdated {
+        agent_id: String,
+        prior_edges: Vec<AgentToRelation>,
+    },
+    AgentEmotionUpdated {
+        agent_id: String,
+        prior_emotion: Option<RelationHandle>,
+    },
+}
+
 pub struct World {
-    pub agents: HashMap<String, Agent>,
-    pub type_mapping: TypeMapping,
-    pub relation_store: RelationStore,
+    agents: HashMap<String, Agent>,
+    type_mapping: TypeMapping,
+    relation_store: RelationStore,
 }
 
 impl World {
@@ -498,33 +537,40 @@ impl World {
         self.agents.get_mut(name)
     }
 
-    pub fn set_agent_active(&mut self, name: &str, active: bool) -> Result<()> {
+    pub fn iter_agents(&self) -> impl Iterator<Item = (&String, &Agent)> {
+        self.agents.iter()
+    }
+
+    pub fn set_agent_active(&mut self, name: &str, active: bool) -> Result<WorldMutation> {
         let agent = self
             .agents
             .get_mut(name)
             .with_context(|| format!("looking up agent {} for activation", name))?;
+        let prior_active = agent.is_active;
         agent.is_active = active;
-        Ok(())
+        Ok(WorldMutation::AgentSetActive {
+            agent_id: name.to_string(),
+            prior_active,
+        })
     }
 
     pub fn get_relation(&self, handle: RelationHandle) -> Option<&Relation> {
         self.relation_store.get(handle)
     }
 
-    pub fn add_relation(&mut self, relation: Relation) -> RelationHandle {
-        self.relation_store.add(relation)
+    fn add_relation(&mut self, relation: Relation) -> RelationCreated {
+        let handle = self.relation_store.add(relation);
+        RelationCreated {
+            handle: handle.clone(),
+            mutations: vec![WorldMutation::RelationAdded { handle }],
+        }
     }
 
-    pub fn restore_relation(
+    pub fn update_relation(
         &mut self,
-        index: u32,
-        generation: u32,
-        relation: Relation,
-    ) -> Result<()> {
-        self.relation_store.restore_as(index, generation, relation)
-    }
-
-    pub fn update_relation(&mut self, handle: RelationHandle, new_fields: Fields) -> Result<()> {
+        handle: RelationHandle,
+        new_fields: Fields,
+    ) -> Result<WorldMutation> {
         let relation = self
             .relation_store
             .get_mut(handle.clone())
@@ -538,6 +584,9 @@ impl World {
                     relation.type_name, handle
                 )
             })?;
+
+        let prior_fields = relation.fields.clone();
+
         match &mut relation.data {
             RelationData::Trait { .. }
             | RelationData::Emotion { .. }
@@ -545,7 +594,7 @@ impl World {
             | RelationData::Reciprocal { .. }
             | RelationData::Practice { .. } => relation
                 .update_fields(new_fields, &relation_type.fields)
-                .with_context(|| format!("updating fields on relation {:?}", handle)),
+                .with_context(|| format!("updating fields on relation {:?}", handle))?,
             RelationData::Evaluation { reason, .. } => {
                 if let Some(new_reason) = new_fields.get("reason") {
                     let PraxsmthConstant::String(reason_str) = new_reason else {
@@ -555,12 +604,21 @@ impl World {
                 }
                 relation
                     .update_fields(new_fields, &relation_type.fields)
-                    .with_context(|| format!("updating fields on evaluation relation {:?}", handle))
+                    .with_context(|| {
+                        format!("updating fields on evaluation relation {:?}", handle)
+                    })?
             }
         }
+
+        Ok(WorldMutation::RelationFieldsUpdated {
+            handle,
+            prior_fields,
+        })
     }
 
-    pub fn remove_relation(&mut self, handle: RelationHandle) -> Result<()> {
+    pub fn remove_relation(&mut self, handle: RelationHandle) -> Result<Vec<WorldMutation>> {
+        let mut mutations = Vec::new();
+
         let relation = self
             .relation_store
             .get(handle.clone())
@@ -568,6 +626,10 @@ impl World {
         relation.edges.iter().for_each(|edge_to_agent| {
             let agent_name = edge_to_agent.agent();
             if let Some(agent) = self.agents.get_mut(agent_name) {
+                mutations.push(WorldMutation::AgentEdgesUpdated {
+                    agent_id: agent_name.to_string(),
+                    prior_edges: agent.edges.clone(),
+                });
                 agent.remove_edges_to(handle.clone());
             } else {
                 panic!(
@@ -576,9 +638,17 @@ impl World {
                 );
             }
         });
+
+        mutations.push(WorldMutation::RelationRemoved {
+            handle: handle.clone(),
+            prior: relation.clone(),
+        });
+
         self.relation_store
             .remove(handle.clone())
-            .with_context(|| format!("removing relation {:?} from store", handle))
+            .with_context(|| format!("removing relation {:?} from store", handle))?;
+
+        Ok(mutations)
     }
 
     fn validate_agent(&self, name: &str) -> Result<()> {
@@ -630,22 +700,27 @@ impl World {
     ///
     /// Returns an error if the type does not exist or is not a trait type,
     /// if the agent does not exist, or if the fields do not match the type
-    /// definition. Otherwise, returns a handle to the newly created relation.
+    /// definition. Otherwise, returns an associated `RelationCreated`
+    /// containing a handle to the newly created relation and a list of
+    /// mutations that were applied to the world as part of creating the
+    /// relation.
     pub fn add_trait(
         &mut self,
         agent_id: &str,
         type_id: &str,
         fields: Fields,
-    ) -> Result<RelationHandle> {
+    ) -> Result<RelationCreated> {
         let trait_ctx = || format!("adding trait {} to agent {}", type_id, agent_id);
 
         self.expect_type(type_id, "trait", |d| matches!(d, PraxsmthTypeData::Trait))
             .with_context(trait_ctx)?;
+
         self.validate_type_fields(type_id, &fields)
             .with_context(trait_ctx)?;
+
         self.validate_agent(agent_id).with_context(trait_ctx)?;
 
-        let handle = self.add_relation(Relation {
+        let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             edges: vec![RelationToAgent::Solo(agent_id.to_string())],
             fields,
@@ -654,17 +729,20 @@ impl World {
             },
         });
 
-        self.agents
-            .get_mut(agent_id)
-            .unwrap()
-            .edges
-            .push(AgentToRelation {
-                index: 0,
-                relation_type: type_id.to_string(),
-                relation_handle: handle.clone(),
-            });
+        let agent = self.agents.get_mut(agent_id).unwrap();
 
-        Ok(handle)
+        created.mutations.push(WorldMutation::AgentEdgesUpdated {
+            agent_id: agent_id.to_string(),
+            prior_edges: agent.edges.clone(),
+        });
+
+        agent.edges.push(AgentToRelation {
+            index: 0,
+            relation_type: type_id.to_string(),
+            relation_handle: created.handle.clone(),
+        });
+
+        Ok(created)
     }
 
     /// Retrieves a trait relation for the given agent and type, if it exists.
@@ -683,11 +761,9 @@ impl World {
         self.expect_type(type_id, "trait", |d| matches!(d, PraxsmthTypeData::Trait))
             .with_context(trait_ctx)?;
 
-        let agent = self
-            .agents
-            .get(agent_id)
-            .with_context(|| format!("could not find agent {}", agent_id))
-            .with_context(trait_ctx)?;
+        self.validate_agent(agent_id).with_context(trait_ctx)?;
+
+        let agent = self.agents.get(agent_id).unwrap();
 
         Ok(agent.edges.iter().find_map(|edge| {
             if edge.relation_type == type_id {
@@ -708,24 +784,29 @@ impl World {
     ///
     /// Returns an error if the type does not exist or is not an emotion type,
     /// if the agent does not exist, or if the fields do not match the type
-    /// definition. Otherwise, returns a handle to the newly created relation.
+    /// definition. Otherwise, returns an associated `RelationCreated`
+    /// containing a handle to the newly created relation and a list of
+    /// mutations that were applied to the world as part of creating the
+    /// relation.
     pub fn add_emotion(
         &mut self,
         agent_id: &str,
         type_id: &str,
         fields: Fields,
-    ) -> Result<RelationHandle> {
+    ) -> Result<RelationCreated> {
         let emotion_ctx = || format!("adding emotion {} to agent {}", type_id, agent_id);
 
         self.expect_type(type_id, "emotion", |d| {
             matches!(d, PraxsmthTypeData::Emotion)
         })
         .with_context(emotion_ctx)?;
+
         self.validate_type_fields(type_id, &fields)
             .with_context(emotion_ctx)?;
+
         self.validate_agent(agent_id).with_context(emotion_ctx)?;
 
-        let handle = self.add_relation(Relation {
+        let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             edges: vec![RelationToAgent::Solo(agent_id.to_string())],
             fields,
@@ -734,29 +815,35 @@ impl World {
             },
         });
 
-        let agent_data = self.agents.get_mut(agent_id).with_context(|| {
-            format!(
-                "agent {} disappeared between validation and emotion edge insertion",
-                agent_id
-            )
-        })?;
+        let agent = self.agents.get_mut(agent_id).unwrap();
 
-        let old_emotion_handle = agent_data.emotion.clone();
+        let old_emotion_handle = agent.emotion.clone();
 
-        agent_data.edges.push(AgentToRelation {
+        created.mutations.push(WorldMutation::AgentEdgesUpdated {
+            agent_id: agent_id.to_string(),
+            prior_edges: agent.edges.clone(),
+        });
+        created.mutations.push(WorldMutation::AgentEmotionUpdated {
+            agent_id: agent_id.to_string(),
+            prior_emotion: old_emotion_handle.clone(),
+        });
+
+        agent.edges.push(AgentToRelation {
             index: 0,
             relation_type: type_id.to_string(),
-            relation_handle: handle.clone(),
+            relation_handle: created.handle.clone(),
         });
-        agent_data.emotion = Some(handle.clone());
+        agent.emotion = Some(created.handle.clone());
 
         // Remove the old emotion edge for this agent, since an agent can only have one emotion edge at a time
         if let Some(old_emotion_handle) = old_emotion_handle {
-            self.remove_relation(old_emotion_handle)
+            let old_removal_mutations = self
+                .remove_relation(old_emotion_handle)
                 .with_context(|| format!("replacing prior emotion edge on agent {}", agent_id))?;
+            created.mutations.extend(old_removal_mutations);
         }
 
-        Ok(handle)
+        Ok(created)
     }
 
     /// Retrieves an emotion relation for the given agent and type, if it
@@ -778,11 +865,9 @@ impl World {
         })
         .with_context(emotion_ctx)?;
 
-        let agent = self
-            .agents
-            .get(agent_id)
-            .with_context(|| format!("could not find agent {}", agent_id))
-            .with_context(emotion_ctx)?;
+        self.validate_agent(agent_id).with_context(emotion_ctx)?;
+
+        let agent = self.agents.get(agent_id).unwrap();
 
         Ok(agent.edges.iter().find_map(|edge| {
             if edge.relation_type == type_id {
@@ -803,7 +888,9 @@ impl World {
     ///
     /// Returns an error if the type does not exist or is not a directional
     /// type, if either agent does not exist, or if the fields do not match the
-    /// type definition. Otherwise, returns a handle to the newly created
+    /// type definition. Otherwise, returns an associated `RelationCreated`
+    /// containing a handle to the newly created relation and a list of
+    /// mutations that were applied to the world as part of creating the
     /// relation.
     pub fn add_directional(
         &mut self,
@@ -811,7 +898,7 @@ impl World {
         to_id: &str,
         type_id: &str,
         fields: Fields,
-    ) -> Result<RelationHandle> {
+    ) -> Result<RelationCreated> {
         let directional_ctx = || {
             format!(
                 "adding directional {} from {} to {}",
@@ -823,8 +910,10 @@ impl World {
             matches!(d, PraxsmthTypeData::Directional { .. })
         })
         .with_context(directional_ctx)?;
+
         self.validate_type_fields(type_id, &fields)
             .with_context(directional_ctx)?;
+
         self.validate_agents(&[from_id, to_id])
             .with_context(directional_ctx)?;
 
@@ -833,9 +922,8 @@ impl World {
             Some(t) if matches!(&t.data, PraxsmthTypeData::Directional { exclusive: true, .. })
         );
 
-        if exclusive {
-            let existing = self
-                .agents
+        let existing = if exclusive {
+            self.agents
                 .get(from_id)
                 .into_iter()
                 .flat_map(|a| a.edges.iter())
@@ -847,18 +935,12 @@ impl World {
                         return Some(edge.relation_handle.clone());
                     }
                     None
-                });
-            if let Some(old_handle) = existing {
-                self.remove_relation(old_handle).with_context(|| {
-                    format!(
-                        "removing existing exclusive directional {} from {}",
-                        type_id, from_id
-                    )
-                })?;
-            }
-        }
+                })
+        } else {
+            None
+        };
 
-        let handle = self.add_relation(Relation {
+        let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             edges: vec![
                 RelationToAgent::Forward(from_id.to_string()),
@@ -871,27 +953,40 @@ impl World {
             },
         });
 
-        self.agents
-            .get_mut(from_id)
-            .unwrap()
-            .edges
-            .push(AgentToRelation {
-                index: 0,
-                relation_type: type_id.to_string(),
-                relation_handle: handle.clone(),
-            });
+        if let Some(existing) = existing {
+            let removal_mutations = self
+                .remove_relation(existing)
+                .with_context(|| format!("removing existing exclusive directional relation from {} for new relation from {} to {}", from_id, from_id, to_id))?;
+            created.mutations.extend(removal_mutations);
+        }
 
-        self.agents
-            .get_mut(to_id)
-            .unwrap()
-            .edges
-            .push(AgentToRelation {
-                index: 1,
-                relation_type: type_id.to_string(),
-                relation_handle: handle.clone(),
-            });
+        let from_agent = self.agents.get_mut(from_id).unwrap();
 
-        Ok(handle)
+        created.mutations.push(WorldMutation::AgentEdgesUpdated {
+            agent_id: from_id.to_string(),
+            prior_edges: from_agent.edges.clone(),
+        });
+
+        from_agent.edges.push(AgentToRelation {
+            index: 0,
+            relation_type: type_id.to_string(),
+            relation_handle: created.handle.clone(),
+        });
+
+        let to_agent = self.agents.get_mut(to_id).unwrap();
+
+        created.mutations.push(WorldMutation::AgentEdgesUpdated {
+            agent_id: to_id.to_string(),
+            prior_edges: to_agent.edges.clone(),
+        });
+
+        to_agent.edges.push(AgentToRelation {
+            index: 1,
+            relation_type: type_id.to_string(),
+            relation_handle: created.handle.clone(),
+        });
+
+        Ok(created)
     }
 
     /// Retrieves a directional relation for the given from and to agents and
@@ -936,15 +1031,10 @@ impl World {
         })
         .with_context(directional_ctx)?;
 
-        let from_agent = self
-            .agents
-            .get(from_id)
-            .with_context(|| format!("could not find from agent {}", from_id))
+        self.validate_agents(&[from_id, to_id])
             .with_context(directional_ctx)?;
-        self.agents
-            .get(to_id)
-            .with_context(|| format!("could not find to agent {}", to_id))
-            .with_context(directional_ctx)?;
+
+        let from_agent = self.agents.get(from_id).unwrap();
 
         Ok(from_agent.edges.iter().find_map(|edge| {
             if edge.relation_type == type_id && edge.index == 0 {
@@ -970,7 +1060,9 @@ impl World {
     ///
     /// Returns an error if the type does not exist or is not a reciprocal
     /// type, if either agent does not exist, or if the fields do not match the
-    /// type definition. Otherwise, returns a handle to the newly created
+    /// type definition. Otherwise, returns an associated `RelationCreated`
+    /// containing a handle to the newly created relation and a list of
+    /// mutations that were applied to the world as part of creating the
     /// relation.
     pub fn add_reciprocal(
         &mut self,
@@ -978,7 +1070,7 @@ impl World {
         agent_2_id: &str,
         type_id: &str,
         fields: Fields,
-    ) -> Result<RelationHandle> {
+    ) -> Result<RelationCreated> {
         let reciprocal_ctx = || {
             format!(
                 "adding reciprocal {} between {} and {}",
@@ -990,12 +1082,14 @@ impl World {
             matches!(d, PraxsmthTypeData::Reciprocal { .. })
         })
         .with_context(reciprocal_ctx)?;
+
         self.validate_type_fields(type_id, &fields)
             .with_context(reciprocal_ctx)?;
+
         self.validate_agents(&[agent_1_id, agent_2_id])
             .with_context(reciprocal_ctx)?;
 
-        let handle = self.add_relation(Relation {
+        let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             edges: vec![
                 RelationToAgent::Unordered(agent_1_id.to_string()),
@@ -1008,27 +1102,33 @@ impl World {
             },
         });
 
-        self.agents
-            .get_mut(agent_1_id)
-            .unwrap()
-            .edges
-            .push(AgentToRelation {
-                index: 0,
-                relation_type: type_id.to_string(),
-                relation_handle: handle.clone(),
-            });
+        let agent_1 = self.agents.get_mut(agent_1_id).unwrap();
 
-        self.agents
-            .get_mut(agent_2_id)
-            .unwrap()
-            .edges
-            .push(AgentToRelation {
-                index: 1,
-                relation_type: type_id.to_string(),
-                relation_handle: handle.clone(),
-            });
+        created.mutations.push(WorldMutation::AgentEdgesUpdated {
+            agent_id: agent_1_id.to_string(),
+            prior_edges: agent_1.edges.clone(),
+        });
 
-        Ok(handle)
+        agent_1.edges.push(AgentToRelation {
+            index: 0,
+            relation_type: type_id.to_string(),
+            relation_handle: created.handle.clone(),
+        });
+
+        let agent_2 = self.agents.get_mut(agent_2_id).unwrap();
+
+        created.mutations.push(WorldMutation::AgentEdgesUpdated {
+            agent_id: agent_2_id.to_string(),
+            prior_edges: agent_2.edges.clone(),
+        });
+
+        agent_2.edges.push(AgentToRelation {
+            index: 1,
+            relation_type: type_id.to_string(),
+            relation_handle: created.handle.clone(),
+        });
+
+        Ok(created)
     }
 
     /// Retrieves a reciprocal relation for the given two agents and type, if
@@ -1064,15 +1164,10 @@ impl World {
         })
         .with_context(reciprocal_ctx)?;
 
-        let agent_1 = self
-            .agents
-            .get(agent_1_id)
-            .with_context(|| format!("could not find agent {}", agent_1_id))
+        self.validate_agents(&[agent_1_id, agent_2_id])
             .with_context(reciprocal_ctx)?;
-        self.agents
-            .get(agent_2_id)
-            .with_context(|| format!("could not find agent {}", agent_2_id))
-            .with_context(reciprocal_ctx)?;
+
+        let agent_1 = self.agents.get(agent_1_id).unwrap();
 
         // Order doesn't matter, but still go off of one arbitrary agent's
         // edges for lookup, meaning we don't have to scan all relations.
@@ -1106,7 +1201,9 @@ impl World {
     ///
     /// Returns an error if the type does not exist or is not an evaluation
     /// type, if either agent does not exist, or if the fields do not match the
-    /// type definition. Otherwise, returns a handle to the newly created
+    /// type definition. Otherwise, returns an associated `RelationCreated`
+    /// containing a handle to the newly created relation and a list of
+    /// mutations that were applied to the world as part of creating the
     /// relation.
     pub fn add_evaluation(
         &mut self,
@@ -1115,7 +1212,7 @@ impl World {
         type_id: &str,
         fields: Fields,
         reason: &str,
-    ) -> Result<RelationHandle> {
+    ) -> Result<RelationCreated> {
         let evaluation_ctx = || {
             format!(
                 "adding evaluation {} from {} to {}",
@@ -1127,12 +1224,14 @@ impl World {
             matches!(d, PraxsmthTypeData::Evaluation { .. })
         })
         .with_context(evaluation_ctx)?;
+
         self.validate_type_fields(type_id, &fields)
             .with_context(evaluation_ctx)?;
+
         self.validate_agents(&[from_id, to_id])
             .with_context(evaluation_ctx)?;
 
-        let handle = self.add_relation(Relation {
+        let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             edges: vec![
                 RelationToAgent::Forward(from_id.to_string()),
@@ -1146,27 +1245,33 @@ impl World {
             },
         });
 
-        self.agents
-            .get_mut(from_id)
-            .unwrap()
-            .edges
-            .push(AgentToRelation {
-                index: 0,
-                relation_type: type_id.to_string(),
-                relation_handle: handle.clone(),
-            });
+        let from_agent = self.agents.get_mut(from_id).unwrap();
 
-        self.agents
-            .get_mut(to_id)
-            .unwrap()
-            .edges
-            .push(AgentToRelation {
-                index: 1,
-                relation_type: type_id.to_string(),
-                relation_handle: handle.clone(),
-            });
+        created.mutations.push(WorldMutation::AgentEdgesUpdated {
+            agent_id: from_id.to_string(),
+            prior_edges: from_agent.edges.clone(),
+        });
 
-        Ok(handle)
+        from_agent.edges.push(AgentToRelation {
+            index: 0,
+            relation_type: type_id.to_string(),
+            relation_handle: created.handle.clone(),
+        });
+
+        let to_agent = self.agents.get_mut(to_id).unwrap();
+
+        created.mutations.push(WorldMutation::AgentEdgesUpdated {
+            agent_id: to_id.to_string(),
+            prior_edges: to_agent.edges.clone(),
+        });
+
+        to_agent.edges.push(AgentToRelation {
+            index: 1,
+            relation_type: type_id.to_string(),
+            relation_handle: created.handle.clone(),
+        });
+
+        Ok(created)
     }
 
     /// Retrieves an evaluation relation for the given from and to agents and
@@ -1207,15 +1312,10 @@ impl World {
         })
         .with_context(evaluation_ctx)?;
 
-        let from_agent = self
-            .agents
-            .get(from_id)
-            .with_context(|| format!("could not find from agent {}", from_id))
+        self.validate_agents(&[from_id, to_id])
             .with_context(evaluation_ctx)?;
-        self.agents
-            .get(to_id)
-            .with_context(|| format!("could not find to agent {}", to_id))
-            .with_context(evaluation_ctx)?;
+
+        let from_agent = self.agents.get(from_id).unwrap();
 
         Ok(from_agent.edges.iter().find_map(|edge| {
             if edge.relation_type == type_id && edge.index == 0 {
@@ -1244,14 +1344,16 @@ impl World {
     ///
     /// Returns an error if the type does not exist or is not a practice
     /// type, if any agent does not exist, or if the fields do not match the
-    /// type definition. Otherwise, returns a handle to the newly created
+    /// type definition. Otherwise, returns an associated `RelationCreated`
+    /// containing a handle to the newly created relation and a list of
+    /// mutations that were applied to the world as part of creating the
     /// relation.
     pub fn add_practice(
         &mut self,
         participant_ids: Vec<&str>,
         type_id: &str,
         fields: Fields,
-    ) -> Result<RelationHandle> {
+    ) -> Result<RelationCreated> {
         let practice_ctx = || {
             format!(
                 "adding practice {} with participants {:?}",
@@ -1304,7 +1406,7 @@ impl World {
             .map(|p| RelationToAgent::Ordered(p.into()))
             .collect();
 
-        let handle = self.add_relation(Relation {
+        let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             edges,
             fields,
@@ -1315,18 +1417,21 @@ impl World {
         });
 
         for (i, participant) in participant_ids.iter().enumerate() {
-            self.agents
-                .get_mut(*participant)
-                .unwrap()
-                .edges
-                .push(AgentToRelation {
-                    index: i,
-                    relation_type: type_id.to_string(),
-                    relation_handle: handle.clone(),
-                });
+            let agent = self.agents.get_mut(*participant).unwrap();
+
+            created.mutations.push(WorldMutation::AgentEdgesUpdated {
+                agent_id: participant.to_string(),
+                prior_edges: agent.edges.clone(),
+            });
+
+            agent.edges.push(AgentToRelation {
+                index: i,
+                relation_type: type_id.to_string(),
+                relation_handle: created.handle.clone(),
+            });
         }
 
-        Ok(handle)
+        Ok(created)
     }
 
     /// Retrieves a practice relation for the given participants and type, if
@@ -1404,7 +1509,9 @@ impl World {
     /// binary relation type (i.e. directional, reciprocal, or evaluation), if
     /// either agent does not exist, if the fields do not match the type
     /// definition, or if the required "reason" field is not provided for
-    /// evaluation types. Otherwise, returns a handle to the newly created
+    /// evaluation types. Otherwise, returns an associated `RelationCreated`
+    /// containing a handle to the newly created relation and a list of
+    /// mutations that were applied to the world as part of creating the
     /// relation.
     pub fn add_binary_relation(
         &mut self,
@@ -1412,7 +1519,7 @@ impl World {
         to_id: &str,
         edge_type_id: &str,
         mut fields: Fields,
-    ) -> Result<RelationHandle> {
+    ) -> Result<RelationCreated> {
         let edge_type = self.type_mapping.get_type(edge_type_id).with_context(|| {
             format!(
                 "looking up edge type {} for binary relation {} -> {}",
@@ -1481,6 +1588,62 @@ impl World {
                 "edge type {} does not exist for binary relation retrieval",
                 edge_type_name
             ),
+        }
+    }
+
+    pub fn undo_mutation(&mut self, mutation: WorldMutation) -> Result<()> {
+        match mutation {
+            WorldMutation::RelationAdded { handle } => self.relation_store.remove(handle),
+            WorldMutation::RelationRemoved { handle, prior } => {
+                self.relation_store.restore(handle, prior)
+            }
+            WorldMutation::RelationFieldsUpdated {
+                handle,
+                prior_fields,
+            } => {
+                let cloned_handle = handle.clone();
+                let relation = self.relation_store.get_mut(handle).with_context(|| {
+                    format!(
+                        "looking up relation {:?} for undoing field update",
+                        cloned_handle
+                    )
+                })?;
+                relation.fields = prior_fields;
+                Ok(())
+            }
+            WorldMutation::AgentSetActive {
+                agent_id,
+                prior_active,
+            } => {
+                let agent = self.agents.get_mut(&agent_id).with_context(|| {
+                    format!(
+                        "looking up agent {} for undoing active state change",
+                        agent_id
+                    )
+                })?;
+                agent.is_active = prior_active;
+                Ok(())
+            }
+            WorldMutation::AgentEdgesUpdated {
+                agent_id,
+                prior_edges,
+            } => {
+                let agent = self.agents.get_mut(&agent_id).with_context(|| {
+                    format!("looking up agent {} for undoing edges update", agent_id)
+                })?;
+                agent.edges = prior_edges;
+                Ok(())
+            }
+            WorldMutation::AgentEmotionUpdated {
+                agent_id,
+                prior_emotion,
+            } => {
+                let agent = self.agents.get_mut(&agent_id).with_context(|| {
+                    format!("looking up agent {} for undoing emotion update", agent_id)
+                })?;
+                agent.emotion = prior_emotion;
+                Ok(())
+            }
         }
     }
 }

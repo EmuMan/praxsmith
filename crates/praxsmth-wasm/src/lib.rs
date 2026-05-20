@@ -33,6 +33,7 @@ impl PraxsmthApi {
     #[wasm_bindgen(constructor)]
     pub fn new(types: String, world: String) -> Result<PraxsmthApi, JsError> {
         console_error_panic_hook::set_once();
+        console_log::init_with_level(log::Level::Trace).ok();
         let inner = core::api::PraxsmthApi::from_strings(&types, &world).map_err(js_err)?;
         Ok(PraxsmthApi {
             inner,
@@ -71,11 +72,16 @@ impl PraxsmthApi {
             .map(|(_, relation)| relation.type_name.clone()))
     }
 
-    #[wasm_bindgen(js_name = getAvailableActionNames)]
-    pub fn get_available_action_names(&self, agent_name: String) -> Result<Vec<String>, JsError> {
-        self.inner
-            .get_available_action_names(&agent_name)
-            .map_err(js_err)
+    #[wasm_bindgen(js_name = getAvailableActions)]
+    pub fn get_available_actions(&mut self, agent_name: String) -> Result<JsValue, JsError> {
+        let actions: Vec<AvailableAction> = self
+            .inner
+            .get_available_actions(&agent_name)
+            .map_err(js_err)?
+            .into_iter()
+            .map(AvailableAction::from)
+            .collect();
+        serde_wasm_bindgen::to_value(&actions).map_err(js_err)
     }
 
     #[wasm_bindgen(js_name = applyAction)]
@@ -160,6 +166,24 @@ impl From<core::api::AgentInfo> for AgentInfo {
             id: agent_info.id,
             name: agent_info.name,
             active: agent_info.active,
+        }
+    }
+}
+
+#[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct AvailableAction {
+    index: usize,
+    display_name: String,
+    score: f64,
+}
+
+impl From<core::api::AvailableAction> for AvailableAction {
+    fn from(action: core::api::AvailableAction) -> Self {
+        AvailableAction {
+            index: action.index,
+            display_name: action.display_name,
+            score: action.goal_delta,
         }
     }
 }

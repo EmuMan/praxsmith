@@ -10,7 +10,7 @@ use crate::{
         world::{Declaration, Goal, GoalMeasurement},
     },
     world::{
-        Agent, AgentToRelation, Bindings, Relation, RelationData, RelationHandle, World,
+        AgentToRelation, Bindings, Relation, RelationData, RelationHandle, World,
         transactions::WorldTxn,
     },
 };
@@ -971,6 +971,12 @@ impl Simulation {
         outcome: &PracticeOutcome,
         bindings: &Bindings,
     ) -> Result<Option<Dialog>> {
+        log::info!(
+            "processing outcome {:?} for agent {} with bindings {:?}",
+            outcome,
+            agent_name,
+            bindings
+        );
         match outcome {
             PracticeOutcome::Broadcast(string) => {
                 return Ok(Some(self.process_print(
@@ -1083,6 +1089,11 @@ impl Simulation {
         world: &mut WorldTxn,
         available_action: &AvailableAction,
     ) -> Result<Vec<Dialog>> {
+        log::info!(
+            "processing available action {} of practice {:?}",
+            available_action.index_within_practice,
+            available_action.practice_handle
+        );
         let relation = world
             .inner()
             .get_relation(available_action.practice_handle.clone())
@@ -1208,7 +1219,10 @@ impl Simulation {
     /// intended to be used as part of a net delta of an agent's goals across
     /// two world states, so the return value is not entirely useful by itself.
     /// The return value is derived from the goals' measurements and weights.
-    pub fn evaluate_agent_goals(&self, world: &World, agent: &Agent) -> Result<f64> {
+    pub fn evaluate_agent_goals(&self, world: &World, agent_id: &str) -> Result<f64> {
+        let agent = world
+            .get_agent(agent_id)
+            .with_context(|| format!("agent {} not found for goal evaluation", agent_id))?;
         let mut total_score = 0.0;
         for goal in &agent.goals {
             total_score += self.evaluate_goal(world, goal, &Bindings::default())?;
