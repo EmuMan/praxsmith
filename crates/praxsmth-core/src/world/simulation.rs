@@ -6,7 +6,7 @@ use crate::{
     anyhow_ext::ResultOptionExt,
     definitions::{
         PraxsmthConstant, PraxsmthValue, Sentence,
-        types::{Condition, Expression, PracticeOutcome, PraxsmthTypeData, ResolutionMethod},
+        types::{Condition, Expression, Effect, PraxsmthTypeData, ResolutionMethod},
         world::{Declaration, Goal, GoalMeasurement},
     },
     world::{
@@ -964,15 +964,15 @@ impl Simulation {
         unimplemented!()
     }
 
-    pub fn process_outcome(
+    pub fn process_effect(
         &mut self,
         world: &mut WorldTxn,
         agent_name: &str,
-        outcome: &PracticeOutcome,
+        effect: &Effect,
         bindings: &Bindings,
     ) -> Result<Option<Dialog>> {
-        match outcome {
-            PracticeOutcome::Broadcast(string) => {
+        match effect {
+            Effect::Broadcast(string) => {
                 return Ok(Some(self.process_print(
                     world.inner(),
                     None,
@@ -980,7 +980,7 @@ impl Simulation {
                     bindings,
                 )?));
             }
-            PracticeOutcome::Say(string) => {
+            Effect::Say(string) => {
                 return Ok(Some(self.process_print(
                     world.inner(),
                     Some(agent_name),
@@ -988,23 +988,23 @@ impl Simulation {
                     bindings,
                 )?));
             }
-            PracticeOutcome::Activate(agent_id) => {
+            Effect::Activate(agent_id) => {
                 world.set_agent_active(&bindings.get_or_same(agent_id), true)
             }
-            PracticeOutcome::Deactivate(agent_id) => {
+            Effect::Deactivate(agent_id) => {
                 world.set_agent_active(&bindings.get_or_same(agent_id), false)
             }
-            PracticeOutcome::Delete(sentence) => self.process_delete(world, sentence, bindings),
-            PracticeOutcome::Set(declaration) => self
+            Effect::Delete(sentence) => self.process_delete(world, sentence, bindings),
+            Effect::Set(declaration) => self
                 .process_declaration(world, declaration, bindings)
                 .map(|_| ()),
-            PracticeOutcome::Update(sentence, value) => {
+            Effect::Update(sentence, value) => {
                 self.process_update(world, sentence, value, bindings)
             }
-            PracticeOutcome::Increase(sentence, amount) => {
+            Effect::Increase(sentence, amount) => {
                 self.process_increase(world, sentence, *amount, bindings)
             }
-            PracticeOutcome::Cycle(sentence, amount) => {
+            Effect::Cycle(sentence, amount) => {
                 self.process_cycle(world, sentence, *amount, bindings)
             }
         }?;
@@ -1118,16 +1118,16 @@ impl Simulation {
 
         // TODO: Fix this a better way.
         let actor_name = World::resolve_binding_or_same(&action.for_actor, &bindings);
-        let outcomes = action.outcomes.clone();
+        let effects = action.effects.clone();
         let action_name = action.name.clone();
         let bindings = bindings.clone();
 
         let mut dialog: Vec<Dialog> = vec![];
 
-        for outcome in &outcomes {
+        for effect in &effects {
             if let Some(new_dialog) = self
-                .process_outcome(world, &actor_name, outcome, &bindings)
-                .with_context(|| format!("processing outcome of action {}", action_name))?
+                .process_effect(world, &actor_name, effect, &bindings)
+                .with_context(|| format!("processing effect of action {}", action_name))?
             {
                 dialog.push(new_dialog);
             }

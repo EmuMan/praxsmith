@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 
 use crate::{
-    definitions::world::PraxsmthWorldDefinition,
-    parser::{types::parse_types, world::parse_world},
+    definitions::{PraxsmthConstant, world::PraxsmthWorldDefinition},
+    parser::{parse_effect_str, parse_expression_str, types::parse_types, world::parse_world},
     types::TypeMapping,
     world::{
         Bindings, Relation, RelationHandle, World,
@@ -70,6 +70,34 @@ impl PraxsmthApi {
         }
 
         Ok(Self::new(world, simulation))
+    }
+
+    /// Parse and apply a single effect (e.g. `set agent.likes { amount: 5 }`) to the
+    /// world on behalf of `agent_name`, committing the change. Returns any dialog the
+    /// effect produced (e.g. from `say`/`broadcast`).
+    pub fn apply_effect(&mut self, agent_name: &str, input: &str) -> Result<Option<Dialog>> {
+        let effect = parse_effect_str(input).context("parsing effect")?;
+        let bindings = Bindings::default();
+
+        let mut transaction = self.world.transaction();
+        let dialog = self
+            .simulation
+            .process_effect(&mut transaction, agent_name, &effect, &bindings)
+            .with_context(|| format!("applying effect {:?}", effect))?;
+        transaction.commit();
+
+        Ok(dialog)
+    }
+
+    /// Parse and evaluate a single expression (e.g. `a is b and not c`) against the
+    /// current world state, returning the resulting constant.
+    pub fn evaluate_expression(&self, input: &str) -> Result<PraxsmthConstant> {
+        let expression = parse_expression_str(input).context("parsing expression")?;
+        let bindings = Bindings::default();
+
+        self.simulation
+            .evaluate_expression(&self.world, &expression, &bindings)
+            .with_context(|| format!("evaluating expression {:?}", expression))
     }
 
     /// Get the names of the available actions for an agent.

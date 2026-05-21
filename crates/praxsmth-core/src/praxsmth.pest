@@ -6,6 +6,10 @@ COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 praxsmth_types = _{ SOI ~ type_definition* ~ EOI }
 praxsmth_world = _{ SOI ~ world_definition* ~ EOI }
 
+// Single-fragment entry points, callable individually from the API.
+parse_effect     = _{ SOI ~ effect ~ EOI }
+parse_expression = _{ SOI ~ expression ~ EOI }
+
 // Common rules
 number       = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 string       = ${ "\"" ~ string_inner ~ "\"" }
@@ -94,28 +98,28 @@ t_condition_list = { "[" ~ t_c_all? ~ expression* ~ "]" }
 
 t_c_all = { "all" }
 
-t_practice_outcomes = { "[" ~ t_practice_outcome* ~ "]" }
+t_practice_outcomes = { "[" ~ effect* ~ "]" }
 
-t_practice_outcome = _{
-    outcome_broadcast
-  | outcome_say
-  | outcome_activate
-  | outcome_deactivate
-  | outcome_delete
-  | outcome_set
-  | outcome_update
-  | outcome_increase
-  | outcome_cycle
+effect            = _{
+    effect_broadcast
+  | effect_say
+  | effect_activate
+  | effect_deactivate
+  | effect_delete
+  | effect_set
+  | effect_update
+  | effect_increase
+  | effect_cycle
 }
-outcome_broadcast  =  { "broadcast" ~ string }
-outcome_say        =  { "say" ~ string }
-outcome_activate   =  { "activate" ~ var_name }
-outcome_deactivate =  { "deactivate" ~ var_name }
-outcome_delete     =  { "delete" ~ sentence }
-outcome_set        =  { "set" ~ w_declaration }
-outcome_update     =  { "update" ~ sentence ~ "to" ~ value }
-outcome_increase   =  { "increase" ~ sentence ~ "by" ~ number }
-outcome_cycle      =  { "cycle" ~ sentence ~ "by" ~ number }
+effect_broadcast  =  { "broadcast" ~ string }
+effect_say        =  { "say" ~ string }
+effect_activate   =  { "activate" ~ var_name }
+effect_deactivate =  { "deactivate" ~ var_name }
+effect_delete     =  { "delete" ~ sentence }
+effect_set        =  { "set" ~ w_declaration }
+effect_update     =  { "update" ~ sentence ~ "to" ~ value }
+effect_increase   =  { "increase" ~ sentence ~ "by" ~ number }
+effect_cycle      =  { "cycle" ~ sentence ~ "by" ~ number }
 
 // =================
 // WORLD DEFINITIONS

@@ -136,60 +136,60 @@ fn parse_emotion(pair: Pair<Rule>) -> PraxsmthType {
     }
 }
 
-fn parse_practice_outcome(pair: Pair<Rule>) -> PracticeOutcome {
-    // pair is one of the outcome_* rules
+pub fn parse_effect(pair: Pair<Rule>) -> Effect {
+    // pair is one of the effect_* rules
     let mut inner = pair.clone().into_inner();
 
     match pair.as_rule() {
-        Rule::outcome_broadcast => {
+        Rule::effect_broadcast => {
             // "broadcast" ~ string
             let string_pair = inner.next().unwrap();
-            PracticeOutcome::Broadcast(parse_string(string_pair))
+            Effect::Broadcast(parse_string(string_pair))
         }
-        Rule::outcome_say => {
+        Rule::effect_say => {
             // "say" ~ string
             let string_pair = inner.next().unwrap();
-            PracticeOutcome::Say(parse_string(string_pair))
+            Effect::Say(parse_string(string_pair))
         }
-        Rule::outcome_activate => {
+        Rule::effect_activate => {
             // "activate" ~ var_name
             let var_pair = inner.next().unwrap();
-            PracticeOutcome::Activate(var_pair.as_str().to_string())
+            Effect::Activate(var_pair.as_str().to_string())
         }
-        Rule::outcome_deactivate => {
+        Rule::effect_deactivate => {
             // "deactivate" ~ var_name
             let var_pair = inner.next().unwrap();
-            PracticeOutcome::Deactivate(var_pair.as_str().to_string())
+            Effect::Deactivate(var_pair.as_str().to_string())
         }
-        Rule::outcome_delete => {
+        Rule::effect_delete => {
             // "delete" ~ sentence
             let sentence_pair = inner.next().unwrap();
-            PracticeOutcome::Delete(parse_sentence(sentence_pair))
+            Effect::Delete(parse_sentence(sentence_pair))
         }
-        Rule::outcome_set => {
+        Rule::effect_set => {
             // "set" ~ w_declaration
             let decl_pair = inner.next().unwrap();
-            PracticeOutcome::Set(parse_declaration(decl_pair))
+            Effect::Set(parse_declaration(decl_pair))
         }
-        Rule::outcome_update => {
+        Rule::effect_update => {
             // "update" ~ sentence ~ "to" ~ value
             let sentence_pair = inner.next().unwrap();
             let value_pair = inner.next().unwrap();
-            PracticeOutcome::Update(parse_sentence(sentence_pair), parse_value(value_pair))
+            Effect::Update(parse_sentence(sentence_pair), parse_value(value_pair))
         }
-        Rule::outcome_increase => {
+        Rule::effect_increase => {
             // "increase" ~ sentence ~ "by" ~ number
             let sentence_pair = inner.next().unwrap();
             let number_pair = inner.next().unwrap();
             let num: i64 = number_pair.as_str().parse().unwrap();
-            PracticeOutcome::Increase(parse_sentence(sentence_pair), num)
+            Effect::Increase(parse_sentence(sentence_pair), num)
         }
-        Rule::outcome_cycle => {
+        Rule::effect_cycle => {
             // "cycle" ~ sentence ~ "by" ~ number
             let sentence_pair = inner.next().unwrap();
             let number_pair = inner.next().unwrap();
             let num: i64 = number_pair.as_str().parse().unwrap();
-            PracticeOutcome::Cycle(parse_sentence(sentence_pair), num)
+            Effect::Cycle(parse_sentence(sentence_pair), num)
         }
         _ => unreachable!(),
     }
@@ -200,7 +200,7 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
     let mut for_actor = String::new();
     let mut name = String::new();
     let mut conditions = Vec::new();
-    let mut outcomes = Vec::new();
+    let mut effects = Vec::new();
 
     for field_pair in pair.into_inner() {
         // field_pair is one of the t_practice_* field rules
@@ -240,10 +240,7 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
             Rule::t_practice_outcomes_field => {
                 // "outcomes" ~ ":" ~ t_practice_outcomes
                 let outcomes_pair = inner.next().unwrap(); // Rule::t_practice_outcomes
-                outcomes = outcomes_pair
-                    .into_inner()
-                    .map(parse_practice_outcome)
-                    .collect();
+                effects = outcomes_pair.into_inner().map(parse_effect).collect();
             }
             _ => unreachable!(),
         }
@@ -253,7 +250,7 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
         for_actor,
         name,
         conditions,
-        outcomes,
+        effects,
     }
 }
 

@@ -76,7 +76,7 @@ pub struct PracticeAction {
     pub for_actor: String,
     pub name: String,
     pub conditions: Vec<Condition>,
-    pub outcomes: Vec<PracticeOutcome>,
+    pub effects: Vec<Effect>,
 }
 
 #[derive(Debug, Clone)]
@@ -101,7 +101,7 @@ pub enum Expression {
 }
 
 #[derive(Debug, Clone)]
-pub enum PracticeOutcome {
+pub enum Effect {
     Broadcast(String),
     Say(String),
     Activate(String),

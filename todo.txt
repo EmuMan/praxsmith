@@ -1,8 +1,6 @@
-- Add field errors to comment
-- Goals
 - Extract dialog storage to API
 - Any and All as operators
-- Free variables in conditions
+- Free variables creating actions?
 - Better code editor
 - Comments
 - Documentation

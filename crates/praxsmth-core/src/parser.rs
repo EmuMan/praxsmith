@@ -1,6 +1,8 @@
 use std::fs;
 
 use pest::{
+    Parser,
+    error::Error,
     iterators::Pair,
     pratt_parser::{Assoc, Op, PrattParser},
 };
@@ -105,6 +107,22 @@ pub fn test_parse() {
     );
 }
 
+/// Parse a single effect (e.g. `set agent.likes { amount: 5 }`) from a string.
+pub fn parse_effect_str(input_str: &str) -> Result<Effect, Error<Rule>> {
+    let mut pairs = PraxsmthParser::parse(Rule::parse_effect, input_str)?;
+    // parse_effect is silent and anchored: SOI ~ effect ~ EOI
+    let effect_pair = pairs.next().unwrap();
+    Ok(types::parse_effect(effect_pair))
+}
+
+/// Parse a single expression (e.g. `a is b and not c`) from a string.
+pub fn parse_expression_str(input_str: &str) -> Result<Expression, Error<Rule>> {
+    let mut pairs = PraxsmthParser::parse(Rule::parse_expression, input_str)?;
+    let expression_pair = pairs.next().unwrap();
+    let pratt = build_expression_pratt();
+    Ok(parse_expression(expression_pair, &pratt))
+}
+
 pub fn build_expression_pratt() -> PrattParser<Rule> {
     PrattParser::new()
         .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left))
@@ -126,4 +144,50 @@ pub fn parse_expression(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Express
             _ => unreachable!(),
         })
         .parse(pairs.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_effect() {
+        // `set` wraps a declaration, so this also exercises declaration parsing.
+        let effect = parse_effect_str("set agent.likes { amount: 5 }").unwrap();
+        match effect {
+            Effect::Set(decl) => {
+                assert_eq!(decl.sentence, vec!["agent", "likes"]);
+                assert_eq!(
+                    decl.fields.get("amount"),
+                    Some(&PraxsmthConstant::Number(5.0))
+                );
+            }
+            other => panic!("expected Effect::Set, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_simple_effect() {
+        assert!(matches!(
+            parse_effect_str("activate guard").unwrap(),
+            Effect::Activate(_)
+        ));
+    }
+
+    #[test]
+    fn rejects_effect_with_trailing_junk() {
+        assert!(parse_effect_str("activate guard extra").is_err());
+    }
+
+    #[test]
+    fn parses_expression() {
+        // Just assert it parses; the AST shape is covered by the grammar tests.
+        let expr = parse_expression_str("a is b and not c").unwrap();
+        assert!(matches!(expr, Expression::And(_, _)));
+    }
+
+    #[test]
+    fn rejects_expression_with_trailing_junk() {
+        assert!(parse_expression_str("a is b )").is_err());
+    }
 }
