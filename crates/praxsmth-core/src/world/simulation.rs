@@ -6,7 +6,7 @@ use crate::{
     anyhow_ext::ResultOptionExt,
     definitions::{
         PraxsmthConstant, PraxsmthValue, Sentence,
-        types::{Condition, Expression, Effect, PraxsmthTypeData, ResolutionMethod},
+        types::{Condition, Effect, Expression, PraxsmthTypeData, ResolutionMethod},
         world::{Declaration, Goal, GoalMeasurement},
     },
     world::{
@@ -92,10 +92,11 @@ pub struct Dialog {
 /// functions, but read operations can be done directly on the `World`.
 ///
 /// The world state and simulation are tied together through a `PraxsmthApi`.
+///
+/// There is currently no maintained state... I'm going to keep it as instanced
+/// though just in case.
 #[derive(Debug, Clone)]
-pub struct Simulation {
-    pub dialog_history: Vec<Dialog>,
-}
+pub struct Simulation {}
 
 impl Default for Simulation {
     fn default() -> Self {
@@ -105,9 +106,7 @@ impl Default for Simulation {
 
 impl Simulation {
     pub fn new() -> Self {
-        Self {
-            dialog_history: Vec::new(),
-        }
+        Self {}
     }
 
     /// Parses a sentence into a relation query, returning the query and any
@@ -874,7 +873,6 @@ impl Simulation {
                 )
             })?,
         };
-        self.dialog_history.push(dialog.clone());
         Ok(dialog)
     }
 

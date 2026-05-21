@@ -24,7 +24,7 @@ fn world() -> PraxsmthApi {
 #[test]
 fn update_changes_field() {
     let mut api = world();
-    api.apply_effect("alice", "update alice.is.rich.amount to 8")
+    api.process_effect("alice", "update alice.is.rich.amount to 8")
         .unwrap();
     assert_eq!(
         api.evaluate_expression("alice.is.rich.amount").unwrap(),
@@ -36,7 +36,7 @@ fn update_changes_field() {
 fn set_creates_relation() {
     let mut api = world();
     // bob has no `rich` trait in the fixture; `set` should create it.
-    api.apply_effect("bob", "set bob.is.rich { amount: 42 }")
+    api.process_effect("bob", "set bob.is.rich { amount: 42 }")
         .unwrap();
     assert_eq!(
         api.evaluate_expression("bob.is.rich.amount").unwrap(),
@@ -47,7 +47,7 @@ fn set_creates_relation() {
 #[test]
 fn set_agent_active_works() {
     let mut api = world();
-    api.apply_effect("alice", "deactivate alice").unwrap();
+    api.process_effect("alice", "deactivate alice").unwrap();
     assert!(
         !api.get_agent_info()
             .iter()
@@ -60,7 +60,7 @@ fn set_agent_active_works() {
 #[test]
 fn delete_removes_relation() {
     let mut api = world();
-    api.apply_effect("alice", "delete alice.is.rich").unwrap();
+    api.process_effect("alice", "delete alice.is.rich").unwrap();
     assert_eq!(
         api.evaluate_expression("alice.is.rich").unwrap(),
         PraxsmthConstant::Boolean(false),

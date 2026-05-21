@@ -42,6 +42,32 @@ impl PraxsmthApi {
         })
     }
 
+    #[wasm_bindgen(js_name = processEffect)]
+    pub fn process_effect(
+        &mut self,
+        agent_name: String,
+        input: String,
+    ) -> Result<Option<Dialog>, JsError> {
+        let dialog = self
+            .inner
+            .process_effect(&agent_name, &input)
+            .map_err(js_err)?
+            .map(Dialog::from);
+        if let Some(ref dialog) = dialog {
+            self.trigger_on_dialog(dialog)?;
+        }
+        self.trigger_on_update()?;
+        Ok(dialog)
+    }
+
+    #[wasm_bindgen(js_name = evaluateExpression)]
+    pub fn evaluate_expression(&self, input: String) -> Result<PraxsmthConstant, JsError> {
+        self.inner
+            .evaluate_expression(&input)
+            .map_err(js_err)
+            .map(PraxsmthConstant::from)
+    }
+
     #[wasm_bindgen(js_name = setOnUpdate)]
     pub fn set_on_update(&mut self, cb: Function) {
         self.on_update = Some(cb);
@@ -105,6 +131,18 @@ impl PraxsmthApi {
             self.trigger_on_dialog(dialog)?;
         }
         self.trigger_on_update()?;
+        serde_wasm_bindgen::to_value(&dialogs).map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = getDialogHistory)]
+    pub fn get_dialog_history(&self) -> Result<JsValue, JsError> {
+        let dialogs: Vec<Dialog> = self
+            .inner
+            .dialog_history
+            .iter()
+            .cloned()
+            .map(Dialog::from)
+            .collect();
         serde_wasm_bindgen::to_value(&dialogs).map_err(js_err)
     }
 }
@@ -188,6 +226,26 @@ impl From<core::api::AvailableAction> for AvailableAction {
             index: action.index,
             display_name: action.display_name,
             score: action.goal_delta,
+        }
+    }
+}
+
+#[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub enum PraxsmthConstant {
+    Number(f64),
+    Boolean(bool),
+    Variant(String),
+    String(String),
+}
+
+impl From<core::definitions::PraxsmthConstant> for PraxsmthConstant {
+    fn from(constant: core::definitions::PraxsmthConstant) -> Self {
+        match constant {
+            core::definitions::PraxsmthConstant::Number(n) => PraxsmthConstant::Number(n),
+            core::definitions::PraxsmthConstant::Boolean(b) => PraxsmthConstant::Boolean(b),
+            core::definitions::PraxsmthConstant::Variant(v) => PraxsmthConstant::Variant(v),
+            core::definitions::PraxsmthConstant::String(s) => PraxsmthConstant::String(s),
         }
     }
 }

@@ -29,13 +29,18 @@ pub struct AvailableAction {
 /// convenience methods for common operations like parsing from strings,
 /// getting available actions, and applying actions.
 pub struct PraxsmthApi {
+    pub dialog_history: Vec<Dialog>,
     world: World,
     simulation: Simulation,
 }
 
 impl PraxsmthApi {
     pub fn new(world: World, simulation: Simulation) -> Self {
-        Self { world, simulation }
+        Self {
+            dialog_history: Vec::new(),
+            world,
+            simulation,
+        }
     }
 
     /// Parse a world from strings containing the type definitions and world definitions.
@@ -75,7 +80,7 @@ impl PraxsmthApi {
     /// Parse and apply a single effect (e.g. `set agent.likes { amount: 5 }`) to the
     /// world on behalf of `agent_name`, committing the change. Returns any dialog the
     /// effect produced (e.g. from `say`/`broadcast`).
-    pub fn apply_effect(&mut self, agent_name: &str, input: &str) -> Result<Option<Dialog>> {
+    pub fn process_effect(&mut self, agent_name: &str, input: &str) -> Result<Option<Dialog>> {
         let effect = parse_effect_str(input).context("parsing effect")?;
         let bindings = Bindings::default();
 
@@ -213,6 +218,7 @@ impl PraxsmthApi {
                 format!("applying action {} for agent {}", action_index, agent_name)
             })?;
         transaction.commit();
+        self.dialog_history.extend(dialog.clone());
         Ok(dialog)
     }
 

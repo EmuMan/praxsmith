@@ -1,4 +1,3 @@
-- Extract dialog storage to API
 - Any and All as operators
 - Free variables creating actions?
 - Better code editor
