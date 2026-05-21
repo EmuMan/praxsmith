@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct AvailableAction {
+pub struct ActionRef {
     pub display_name: String,
     pub overall_index: usize,
     pub practice_handle: RelationHandle,
@@ -971,12 +971,6 @@ impl Simulation {
         outcome: &PracticeOutcome,
         bindings: &Bindings,
     ) -> Result<Option<Dialog>> {
-        log::info!(
-            "processing outcome {:?} for agent {} with bindings {:?}",
-            outcome,
-            agent_name,
-            bindings
-        );
         match outcome {
             PracticeOutcome::Broadcast(string) => {
                 return Ok(Some(self.process_print(
@@ -1017,11 +1011,7 @@ impl Simulation {
         Ok(None)
     }
 
-    pub fn get_available_actions(
-        &self,
-        world: &World,
-        agent_name: &str,
-    ) -> Result<Vec<AvailableAction>> {
+    pub fn get_available_actions(&self, world: &World, agent_name: &str) -> Result<Vec<ActionRef>> {
         let agent = world
             .get_agent(agent_name)
             .with_context(|| format!("agent {} not found", agent_name))?;
@@ -1062,7 +1052,7 @@ impl Simulation {
                             }
                         }
 
-                        available_actions.push(AvailableAction {
+                        available_actions.push(ActionRef {
                             display_name: world
                                 .format_string(&action.name, bindings)
                                 .with_context(|| {
@@ -1087,13 +1077,8 @@ impl Simulation {
     pub fn process_available_action(
         &mut self,
         world: &mut WorldTxn,
-        available_action: &AvailableAction,
+        available_action: &ActionRef,
     ) -> Result<Vec<Dialog>> {
-        log::info!(
-            "processing available action {} of practice {:?}",
-            available_action.index_within_practice,
-            available_action.practice_handle
-        );
         let relation = world
             .inner()
             .get_relation(available_action.practice_handle.clone())
@@ -1160,15 +1145,15 @@ impl Simulation {
     /// any expressions with multiple possible bindings will have their weights
     /// summed.
     ///
-    /// TODO: If a new edge is added that gets caught by an increase
-    /// measurement, it will result in a huge delta for that event. Figure out
-    /// a way to only count deltas between bindings that are continuous across
-    /// the change.
+    /// WARNING: If a new edge is added that gets caught by an increase
+    /// measurement, it will result in a huge delta for that event. I would
+    /// recommend normalizing your values for this; throwing away non-delta
+    /// scores would fix this issue, but also throws away potentially useful
+    /// information, so I've decided not to do that.
     fn evaluate_goal(&self, world: &World, goal: &Goal, bindings: &Bindings) -> Result<f64> {
         let possible_bindings = self.solve_for_free_vars(world, &goal.expression, bindings)?;
         if possible_bindings.is_empty() {
             // No valid bindings, so the goal should just evaluate to 0.
-            // TODO: This is probably not great behavior...
             return Ok(0.0);
         }
 

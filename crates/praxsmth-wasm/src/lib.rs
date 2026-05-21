@@ -73,10 +73,14 @@ impl PraxsmthApi {
     }
 
     #[wasm_bindgen(js_name = getAvailableActions)]
-    pub fn get_available_actions(&mut self, agent_name: String) -> Result<JsValue, JsError> {
+    pub fn get_available_actions(
+        &mut self,
+        agent_name: String,
+        depth: usize,
+    ) -> Result<JsValue, JsError> {
         let actions: Vec<AvailableAction> = self
             .inner
-            .get_available_actions(&agent_name)
+            .get_available_actions(&agent_name, depth)
             .map_err(js_err)?
             .into_iter()
             .map(AvailableAction::from)

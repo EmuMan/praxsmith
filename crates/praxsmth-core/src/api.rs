@@ -6,7 +6,8 @@ use crate::{
     types::TypeMapping,
     world::{
         Bindings, Relation, RelationHandle, World,
-        simulation::{Dialog, Simulation},
+        simulation::{ActionRef, Dialog, Simulation},
+        transactions::WorldTxn,
     },
 };
 
@@ -57,11 +58,13 @@ impl PraxsmthApi {
                         .with_context(|| format!("adding agent {}", agent_info.name))?;
                 }
                 PraxsmthWorldDefinition::Declaration(declaration) => {
+                    let mut transaction = world.transaction();
                     simulation
-                        .process_declaration(&mut world.transaction(), declaration, &empty_bindings)
+                        .process_declaration(&mut transaction, declaration, &empty_bindings)
                         .with_context(|| {
                             format!("processing declaration {:?}", declaration.sentence)
                         })?;
+                    transaction.commit();
                 }
             }
         }
@@ -71,7 +74,11 @@ impl PraxsmthApi {
 
     /// Get the names of the available actions for an agent.
     /// The order for this is deterministic, so that the same action will always have the same index.
-    pub fn get_available_actions(&mut self, agent_id: &str) -> Result<Vec<AvailableAction>> {
+    pub fn get_available_actions(
+        &mut self,
+        agent_id: &str,
+        score_depth: usize,
+    ) -> Result<Vec<AvailableAction>> {
         let actions = self
             .simulation
             .get_available_actions(&self.world, agent_id)
@@ -91,20 +98,14 @@ impl PraxsmthApi {
 
         for (i, action) in actions.iter().enumerate() {
             let mut transaction = self.world.transaction();
-            self.simulation
-                .process_available_action(&mut transaction, &action)
-                .with_context(|| {
-                    format!(
-                        "applying action {:?} for agent {} goal evaluation",
-                        action, agent_id
-                    )
-                })?;
-            let score = self
-                .simulation
-                .evaluate_agent_goals(&transaction.inner(), &agent_id)?;
-            transaction.rollback().with_context(|| {
-                format!("rolling back action {:?} for agent {}", action, agent_id)
-            })?;
+            let score = Self::score_action(
+                &mut transaction,
+                &mut self.simulation,
+                agent_id,
+                action,
+                score_depth,
+            )
+            .with_context(|| format!("scoring action {:?} for agent {}", action, agent_id))?;
             available_actions.push(AvailableAction {
                 index: i,
                 display_name: action.display_name.clone(),
@@ -113,6 +114,47 @@ impl PraxsmthApi {
         }
 
         Ok(available_actions)
+    }
+
+    fn score_action(
+        world: &mut WorldTxn,
+        simulation: &mut Simulation,
+        agent_id: &str,
+        action: &ActionRef,
+        depth: usize,
+    ) -> Result<f64> {
+        if depth == 0 {
+            return Ok(0.0);
+        }
+
+        let savepoint = world.savepoint();
+
+        simulation.process_available_action(world, action)?;
+
+        let score = if depth == 1 {
+            simulation.evaluate_agent_goals(world.inner(), agent_id)?
+        } else {
+            let actions = simulation.get_available_actions(world.inner(), agent_id)?;
+
+            if actions.is_empty() {
+                // This tree ends here, so return the score of the current state.
+                simulation.evaluate_agent_goals(world.inner(), agent_id)?
+            } else {
+                let mut best_score = f64::NEG_INFINITY;
+                for action in actions {
+                    let action_score =
+                        Self::score_action(world, simulation, agent_id, &action, depth - 1)?;
+                    if action_score > best_score {
+                        best_score = action_score;
+                    }
+                }
+                best_score
+            }
+        };
+
+        world.rollback_to(savepoint)?;
+
+        Ok(score)
     }
 
     /// Apply an action by its index in the list of available actions for an agent.
@@ -135,9 +177,15 @@ impl PraxsmthApi {
             )
         })?;
 
-        self.simulation
-            .process_available_action(&mut self.world.transaction(), action)
-            .with_context(|| format!("applying action {} for agent {}", action_index, agent_name))
+        let mut transaction = self.world.transaction();
+        let dialog = self
+            .simulation
+            .process_available_action(&mut transaction, action)
+            .with_context(|| {
+                format!("applying action {} for agent {}", action_index, agent_name)
+            })?;
+        transaction.commit();
+        Ok(dialog)
     }
 
     /// Gets the current emotion of the agent, if any.

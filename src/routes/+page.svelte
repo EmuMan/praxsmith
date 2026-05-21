@@ -26,6 +26,7 @@
     let emotions: Record<string, string | undefined> = $state({});
     let selectedId: string | null = $state(null);
     let availableActions: AvailableAction[] = $state([]);
+    let actionScoreDepth = $state(3);
     let messages: ChatMessage[] = $state([]);
     let runtimeError: string | null = $state(null);
     let pending = $state(false);
@@ -56,7 +57,7 @@
             }
 
             availableActions = selectedId
-                ? api.getAvailableActions(selectedId)
+                ? api.getAvailableActions(selectedId, actionScoreDepth)
                 : [];
         } catch (err) {
             reportRuntimeError(err, "refreshFromWorld");
@@ -102,7 +103,10 @@
         selectedId = id;
         if (api) {
             try {
-                availableActions = api.getAvailableActions(id);
+                availableActions = api.getAvailableActions(
+                    id,
+                    actionScoreDepth,
+                );
             } catch (err) {
                 reportRuntimeError(err, "selectAgent");
                 availableActions = [];

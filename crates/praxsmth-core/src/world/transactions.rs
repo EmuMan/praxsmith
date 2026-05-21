@@ -96,12 +96,26 @@ impl<'a> WorldTxn<'a> {
         Ok(())
     }
 
-    pub fn rollback(self) -> Result<()> {
-        log::info!(
-            "rolling back transaction with {} undo operations",
-            self.mutation_log.len()
-        );
-        for mutation in self.mutation_log.into_iter().rev() {
+    pub fn savepoint(&self) -> usize {
+        self.mutation_log.len()
+    }
+
+    pub fn commit(&mut self) {
+        // Just drop the mutation log
+        self.mutation_log.clear();
+    }
+
+    pub fn rollback_to(&mut self, savepoint: usize) -> Result<()> {
+        if savepoint > self.mutation_log.len() {
+            anyhow::bail!(
+                "invalid savepoint {}: only {} mutations in log",
+                savepoint,
+                self.mutation_log.len()
+            );
+        }
+
+        while self.mutation_log.len() > savepoint {
+            let mutation = self.mutation_log.pop().unwrap();
             let mutation_str = format!("{:?}", mutation);
             self.world
                 .undo_mutation(mutation)
@@ -109,6 +123,20 @@ impl<'a> WorldTxn<'a> {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for WorldTxn<'_> {
+    fn drop(&mut self) {
+        if !self.mutation_log.is_empty() {
+            log::warn!(
+                "transaction dropped with {} unrolled mutations, rolling back",
+                self.mutation_log.len()
+            );
+            if let Err(err) = self.rollback_to(0) {
+                log::error!("error rolling back transaction on drop: {err:?}");
+            }
+        }
     }
 }
 

@@ -1,5 +1,7 @@
 - Add field errors to comment
 - Goals
+- Extract dialog storage to API
+- Any and All as operators
 - Free variables in conditions
 - Better code editor
 - Comments
