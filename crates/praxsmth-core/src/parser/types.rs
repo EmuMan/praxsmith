@@ -220,21 +220,10 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
             Rule::t_practice_conditions_field => {
                 // "conditions" ~ ":" ~ t_condition_list
                 let conditions_pair = inner.next().unwrap(); // Rule::t_condition_list
-                let mut cond_inner = conditions_pair.into_inner().peekable();
-
-                let resolution_method = match cond_inner.peek().map(|p| p.as_rule()) {
-                    Some(Rule::t_c_all) => {
-                        cond_inner.next();
-                        ResolutionMethod::All
-                    }
-                    _ => ResolutionMethod::Any,
-                };
+                let cond_inner = conditions_pair.into_inner();
 
                 conditions = cond_inner
-                    .map(|expr| Condition {
-                        resolution_method: resolution_method.clone(),
-                        expression: parse_expression(expr, pratt),
-                    })
+                    .map(|expr| parse_expression(expr, pratt))
                     .collect();
             }
             Rule::t_practice_outcomes_field => {

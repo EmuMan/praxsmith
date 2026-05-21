@@ -125,6 +125,10 @@ pub fn parse_expression_str(input_str: &str) -> Result<Expression, Error<Rule>> 
 
 pub fn build_expression_pratt() -> PrattParser<Rule> {
     PrattParser::new()
+        // Quantifiers bind loosest, so the body extends as far right as
+        // possible (e.g. `for all x, a and b` is `for all x, (a and b)`).
+        // The first `.op` call has the lowest precedence.
+        .op(Op::prefix(Rule::forall) | Op::prefix(Rule::any_where))
         .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left))
         .op(Op::infix(Rule::is, Assoc::Left))
         .op(Op::prefix(Rule::not))
@@ -135,6 +139,16 @@ pub fn parse_expression(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Express
         .map_primary(|primary| Expression::Value(parse_value(primary)))
         .map_prefix(|op, rhs| match op.as_rule() {
             Rule::not => Expression::Not(Box::new(rhs)),
+            Rule::forall => {
+                // `for all X, <body>` — first inner pair is the bound var_name.
+                let var = op.into_inner().next().unwrap().as_str().to_string();
+                Expression::ForAll(var, Box::new(rhs))
+            }
+            Rule::any_where => {
+                // `any X where <body>` — first inner pair is the bound var_name.
+                let var = op.into_inner().next().unwrap().as_str().to_string();
+                Expression::Any(var, Box::new(rhs))
+            }
             _ => unreachable!(),
         })
         .map_infix(|lhs, op, rhs| match op.as_rule() {
@@ -189,5 +203,82 @@ mod tests {
     #[test]
     fn rejects_expression_with_trailing_junk() {
         assert!(parse_expression_str("a is b )").is_err());
+    }
+
+    #[test]
+    fn parses_forall_quantifier() {
+        let expr = parse_expression_str("for all x, x is happy").unwrap();
+        match expr {
+            Expression::ForAll(var, body) => {
+                assert_eq!(var, "x");
+                assert!(matches!(*body, Expression::Is(_, _)));
+            }
+            other => panic!("expected ForAll, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_any_where_quantifier() {
+        let expr = parse_expression_str("any x where x is happy").unwrap();
+        match expr {
+            Expression::Any(var, body) => {
+                assert_eq!(var, "x");
+                assert!(matches!(*body, Expression::Is(_, _)));
+            }
+            other => panic!("expected Any, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn quantifier_body_is_greedy() {
+        // Quantifiers bind loosest, so the body should swallow the trailing
+        // `and`, yielding ForAll(x, And(..)) rather than And(ForAll(x, ..), ..).
+        let expr = parse_expression_str("for all x, a and b").unwrap();
+        match expr {
+            Expression::ForAll(var, body) => {
+                assert_eq!(var, "x");
+                assert!(matches!(*body, Expression::And(_, _)));
+            }
+            other => panic!("expected ForAll wrapping And, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_quantifier_under_not() {
+        // `not` binds tighter than the quantifier, so this is ForAll(x, Not(..)).
+        let expr = parse_expression_str("for all x, not x").unwrap();
+        match expr {
+            Expression::ForAll(var, body) => {
+                assert_eq!(var, "x");
+                assert!(matches!(*body, Expression::Not(_)));
+            }
+            other => panic!("expected ForAll wrapping Not, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_nested_quantifiers() {
+        let expr = parse_expression_str("for all x, any y where x is y").unwrap();
+        match expr {
+            Expression::ForAll(var, body) => {
+                assert_eq!(var, "x");
+                match *body {
+                    Expression::Any(inner_var, inner_body) => {
+                        assert_eq!(inner_var, "y");
+                        assert!(matches!(*inner_body, Expression::Is(_, _)));
+                    }
+                    other => panic!("expected nested Any, got {:?}", other),
+                }
+            }
+            other => panic!("expected outer ForAll, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn quantifier_keywords_do_not_swallow_identifiers() {
+        // `anything` must not be lexed as the `any` quantifier; it is a plain
+        // value, so the whole input has no operator and parses as a value.
+        let expr = parse_expression_str("anything").unwrap();
+        assert!(matches!(expr, Expression::Value(_)));
     }
 }

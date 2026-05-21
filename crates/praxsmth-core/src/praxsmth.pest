@@ -33,15 +33,21 @@ value = _{ number | string | sentence }
 
 // Pratt parsing, following Pest's example
 expression = {
-    expr_prefix? ~ expr_primary ~ (expr_infix ~ expr_prefix? ~ expr_primary)*
+    expr_prefix* ~ expr_primary ~ (expr_infix ~ expr_prefix* ~ expr_primary)*
 }
 
-expr_infix   = _{ and | or | is }
-and          = @{ "and" ~ !ASCII_ALPHANUMERIC }
-or           = @{ "or" ~ !ASCII_ALPHANUMERIC }
-is           = @{ "is" ~ !ASCII_ALPHANUMERIC }
-expr_prefix  = _{ not }
-not          = @{ "not" ~ !ASCII_ALPHANUMERIC }
+expr_infix  = _{ and | or | is }
+and         = @{ "and" ~ !ASCII_ALPHANUMERIC }
+or          = @{ "or" ~ !ASCII_ALPHANUMERIC }
+is          = @{ "is" ~ !ASCII_ALPHANUMERIC }
+expr_prefix = _{ not | forall | any_where }
+not         = @{ "not" ~ !ASCII_ALPHANUMERIC }
+// Quantifiers: prefix operators that bind a variable. The body is the
+// right-hand operand (everything to the right, since they bind loosest).
+// Compound-atomic so keyword boundaries are exact (e.g. `anything` is not
+// matched as `any`) while `var_name` is still captured as an inner token.
+forall       = ${ "for" ~ WHITESPACE+ ~ "all" ~ WHITESPACE+ ~ var_name ~ WHITESPACE* ~ "," }
+any_where    = ${ "any" ~ WHITESPACE+ ~ var_name ~ WHITESPACE+ ~ "where" ~ !ASCII_ALPHANUMERIC }
 expr_primary = _{ value }
 
 // ================
@@ -94,9 +100,7 @@ t_practice_name             =  { "name" ~ ":" ~ string }
 t_practice_conditions_field =  { "conditions" ~ ":" ~ t_condition_list }
 t_practice_outcomes_field   =  { "outcomes" ~ ":" ~ t_practice_outcomes }
 
-t_condition_list = { "[" ~ t_c_all? ~ expression* ~ "]" }
-
-t_c_all = { "all" }
+t_condition_list = { "[" ~ expression* ~ "]" }
 
 t_practice_outcomes = { "[" ~ effect* ~ "]" }
 

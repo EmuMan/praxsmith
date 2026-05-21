@@ -1,4 +1,4 @@
-- Any and All as operators
+- Fix free variables
 - Free variables creating actions?
 - Better code editor
 - Comments

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use anyhow::{Context, Result, bail};
 
@@ -6,7 +6,7 @@ use crate::{
     anyhow_ext::ResultOptionExt,
     definitions::{
         PraxsmthConstant, PraxsmthValue, Sentence,
-        types::{Condition, Effect, Expression, PraxsmthTypeData, ResolutionMethod},
+        types::{Effect, Expression, PraxsmthTypeData},
         world::{Declaration, Goal, GoalMeasurement},
     },
     world::{
@@ -395,344 +395,6 @@ impl Simulation {
             .with_context(|| format!("parameter '{}' not found in relation", arg_name))
     }
 
-    /// Finds all agents with the specified trait. Does not verify that the
-    /// trait is the correct type. Used as a helper for
-    /// `World::find_all_valid_bindings(...)`.
-    fn find_agents_with_trait<'a>(&self, world: &'a World, trait_id: &str) -> Vec<&'a str> {
-        let mut agents_with_trait = Vec::new();
-        for agent in world.agents.values() {
-            match world.get_trait(agent.name.as_str(), trait_id) {
-                Ok(Some(_)) => agents_with_trait.push(agent.name.as_str()),
-                _ => {}
-            }
-        }
-        agents_with_trait
-    }
-
-    /// Finds all agents with the specified emotion. Does not verify that the
-    /// emotion is the correct type. Used as a helper for
-    /// `World::find_all_valid_bindings(...)`.
-    fn find_agents_with_emotion<'a>(&self, world: &'a World, emotion_id: &str) -> Vec<&'a str> {
-        let mut agents_with_emotion = Vec::new();
-        for agent in world.agents.values() {
-            match world.get_emotion(agent.name.as_str(), emotion_id) {
-                Ok(Some(_)) => agents_with_emotion.push(agent.name.as_str()),
-                _ => {}
-            }
-        }
-        agents_with_emotion
-    }
-
-    /// Finds all agents with the specified binary relation. Does not verify
-    /// that the binary relation is the correct type. Used as a helper for
-    /// `World::find_all_valid_bindings(...)`.
-    fn find_agents_with_binary_relation<'a>(
-        &self,
-        world: &'a World,
-        type_id: &str,
-    ) -> Vec<(&'a str, &'a str)> {
-        // Efficiency out the window, just go through every agent pair
-        // TODO: better?
-        let mut agent_pairs = Vec::new();
-        // Some of these are unordered, so keep track of handles we've already
-        // seen to avoid duplicates.
-        let mut seen_handles = HashSet::new();
-        for agent_1_id in world.agents.keys() {
-            for agent_2_id in world.agents.keys() {
-                match world.get_binary_relation(agent_1_id, agent_2_id, type_id) {
-                    Ok(Some((edge, _))) => {
-                        if !seen_handles.contains(&edge.relation_handle) {
-                            agent_pairs.push((agent_1_id.as_str(), agent_2_id.as_str()));
-                            seen_handles.insert(edge.relation_handle.clone());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        agent_pairs
-    }
-
-    /// Finds all agents that sit on the second end of the specified binary
-    /// relation. Does not verify that the binary relation is the correct type.
-    /// Used as a helper for `World::find_all_valid_bindings(...)`.
-    fn find_secondary_agents_for_binary_relation<'a>(
-        &self,
-        world: &'a World,
-        type_id: &str,
-        agent_1_id: &str,
-    ) -> Vec<&'a str> {
-        let mut secondary_agents = Vec::new();
-        for agent_2_id in world.agents.keys() {
-            match world.get_binary_relation(agent_1_id, agent_2_id, type_id) {
-                Ok(Some(_)) => {
-                    secondary_agents.push(agent_2_id.as_str());
-                }
-                _ => {}
-            }
-        }
-        secondary_agents
-    }
-
-    /// Finds all agents that sit on the first end of the specified binary
-    /// relation. Does not verify that the binary relation is the correct type.
-    /// Used as a helper for `World::find_all_valid_bindings(...)`.
-    fn find_primary_agents_for_binary_relation<'a>(
-        &self,
-        world: &'a World,
-        type_id: &str,
-        agent_2_id: &str,
-    ) -> Vec<&'a str> {
-        let mut primary_agents = Vec::new();
-        for agent_1_id in world.agents.keys() {
-            match world.get_binary_relation(agent_1_id, agent_2_id, type_id) {
-                Ok(Some(_)) => {
-                    primary_agents.push(agent_1_id.as_str());
-                }
-                _ => {}
-            }
-        }
-        primary_agents
-    }
-
-    /// Finds all agents that participate in the specified practice, given the
-    /// constraint of the participants specified in the arguments. Does not
-    /// verify that the practice is the correct type. Used as a helper for
-    /// `World::find_all_valid_bindings(...)`.
-    fn find_agents_with_practice<'a>(
-        &self,
-        world: &'a World,
-        type_id: &str,
-        constraints: &[Option<&str>],
-    ) -> Vec<&'a Vec<String>> {
-        let mut participant_sets = Vec::new();
-        world.iter_relations().filter(|(_, relation)| {
-            // type name and type should match
-            matches!(
-                world.type_mapping.get_type(&relation.type_name),
-                Some(t) if t.name == type_id && matches!(t.data, PraxsmthTypeData::Practice { .. })
-            )
-        })
-        .filter_map(|(_, relation)| {
-            // participant count should match, and also extract participants
-            match &relation.data {
-                RelationData::Practice { agents, .. } => {
-                    // participant count should match
-                    if agents.len() != constraints.len() {
-                        return None;
-                    }
-                    // all specified participants should match
-                    if agents.iter().zip(constraints.iter()).all(|(agent, constraint)| {
-                        constraint.map_or(true, |p| p == *agent)
-                    }) {
-                        Some(agents)
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        })
-        .for_each(|agent_set| participant_sets.push(agent_set));
-
-        participant_sets
-    }
-
-    /// Finds all extensions of `bindings` that allow for the valid processing
-    /// of `sentence`. Valid processing means that the relationship exists and
-    /// can be processed normally. Technically, relationships that are not
-    /// found still evaluate to `PraxsmthConstant::Boolean(false)`, but
-    /// including nonexistent relationships here would make this operation
-    /// trivial and useless. This is used as a helper function for variables
-    /// found within `World::solve_for_free_vars`.
-    ///
-    /// If all specified actors within `sentence` are already bound, this will
-    /// return a list with a single value, which will be a clone of `bindings`.
-    /// No extra checks will be performed to make sure that these agents have
-    /// the specified relations, as that is intended to be done later down the
-    /// line.
-    ///
-    /// If there are free symbols, all possible assignments of these free
-    /// symbols, given the existing assignments defined in `bindings`, are
-    /// effectively enumerated. Any valid set of assignments is returned with
-    /// the vector.
-    pub fn find_all_valid_bindings(
-        &self,
-        world: &World,
-        sentence: &Sentence,
-        bindings: &Bindings,
-    ) -> Result<Vec<Bindings>> {
-        let (query, _) = self
-            .build_query(world, &sentence, bindings)
-            .with_context(|| format!("finding valid bindings for sentence {:?}", sentence))?;
-        match &query {
-            RelationQuery::Trait { agent, trait_name } => match agent {
-                AgentRef::Literal(_) => Ok(vec![bindings.clone()]),
-                AgentRef::Free(specifier) => Ok(self
-                    .find_agents_with_trait(world, trait_name)
-                    .into_iter()
-                    .map(|agent_name| {
-                        bindings.with([(specifier.clone(), agent_name.to_string())].into())
-                    })
-                    .collect()),
-            },
-            RelationQuery::Emotion {
-                agent,
-                emotion_name,
-            } => match agent {
-                AgentRef::Literal(_) => Ok(vec![bindings.clone()]),
-                AgentRef::Free(specifier) => Ok(self
-                    .find_agents_with_emotion(world, emotion_name)
-                    .into_iter()
-                    .map(|agent_name| {
-                        bindings.with([(specifier.clone(), agent_name.to_string())].into())
-                    })
-                    .collect()),
-            },
-            RelationQuery::Binary {
-                agent_1,
-                agent_2,
-                type_name,
-            } => match (agent_1, agent_2) {
-                (AgentRef::Literal(_), AgentRef::Literal(_)) => Ok(vec![bindings.clone()]),
-                (AgentRef::Free(specifier), AgentRef::Literal(agent_2_name)) => Ok(self
-                    .find_primary_agents_for_binary_relation(world, type_name, agent_2_name)
-                    .into_iter()
-                    .map(|agent_1_name| {
-                        bindings.with([(specifier.clone(), agent_1_name.to_string())].into())
-                    })
-                    .collect()),
-                (AgentRef::Literal(agent_1_name), AgentRef::Free(specifier)) => Ok(self
-                    .find_secondary_agents_for_binary_relation(world, type_name, agent_1_name)
-                    .into_iter()
-                    .map(|agent_2_name| {
-                        bindings.with([(specifier.clone(), agent_2_name.to_string())].into())
-                    })
-                    .collect()),
-                (AgentRef::Free(specifier_1), AgentRef::Free(specifier_2)) => Ok(self
-                    .find_agents_with_binary_relation(world, type_name)
-                    .into_iter()
-                    .map(|(agent_1_name, agent_2_name)| {
-                        bindings.with(
-                            [
-                                (specifier_1.clone(), agent_1_name.to_string()),
-                                (specifier_2.clone(), agent_2_name.to_string()),
-                            ]
-                            .into(),
-                        )
-                    })
-                    .collect()),
-            },
-            RelationQuery::Practice {
-                participants,
-                type_name,
-            } => {
-                let constraints = participants
-                    .iter()
-                    .map(|p| match p {
-                        AgentRef::Literal(agent_name) => Some(agent_name.as_str()),
-                        AgentRef::Free(_) => None,
-                    })
-                    .collect::<Vec<Option<&str>>>();
-                let participant_sets =
-                    self.find_agents_with_practice(world, type_name, &constraints);
-                // generate bindings using the participant sets and the free variable specifiers
-                let mut result_bindings = Vec::new();
-                for result_agents in participant_sets {
-                    if result_agents.len() != result_agents.len() {
-                        bail!("participant count mismatch for practice {}", type_name);
-                    }
-                    let mut new_bindings = bindings.clone();
-                    for (p, result_agent) in participants.iter().zip(result_agents.iter()) {
-                        if let AgentRef::Free(specifier) = p {
-                            new_bindings.insert(specifier.clone(), result_agent.clone());
-                        }
-                    }
-                    result_bindings.push(new_bindings);
-                }
-                Ok(result_bindings)
-            }
-        }
-    }
-
-    /// Calculates for all possible extensions of `bindings` that allow for
-    /// valid processings of `expression`.
-    ///
-    /// If no free variables (variables with free actor components) exist in
-    /// the expression tree, this will return a list with a single value, which
-    /// will be a clone of `bindings`.
-    ///
-    /// If there are free variables, all possible assignments of these free
-    /// variables, given the existing assignments defined in `bindings`, are
-    /// effectively enumerated. Any valid set of assignments is returned with
-    /// the vector.
-    ///
-    /// Note that this does not evaluate the expression, it simply finds
-    /// bindings that allow for it to be evaluated. Any one of the returned
-    /// binding sets can be used with `World::evaluate_expression(...)` for a
-    /// proper evaluation.
-    pub fn solve_for_free_vars(
-        &self,
-        world: &World,
-        expression: &Expression,
-        bindings: &Bindings,
-    ) -> Result<Vec<Bindings>> {
-        // This is similar to a wave function collapse algorithm, where all
-        // possible bindings are generated for free variables (variables with
-        // free actor components), and then these bindings are combined in
-        // various ways based on the operations between them.
-        match expression {
-            Expression::Value(PraxsmthValue::Variable(s)) => {
-                // This is the main part where bindings get added.
-                self.find_all_valid_bindings(world, s, bindings)
-            }
-            Expression::Value(_) => {
-                // Constant values carry no additional bindings with them; they
-                // have already been resolved.
-                Ok(vec![])
-            }
-            Expression::And(x, y) => {
-                // Symbols on either side are implied to be bound to the same
-                // value. This means that the only bindings that work are ones
-                // that are shared between `x` and `y`. This is just a merge!
-                let x_bindings = self.solve_for_free_vars(world, x, bindings)?;
-                let y_bindings = self.solve_for_free_vars(world, y, bindings)?;
-                Ok(x_bindings
-                    .iter()
-                    .flat_map(|xb| y_bindings.iter().filter_map(|yb| xb.try_merge(yb)))
-                    .collect())
-            }
-            Expression::Or(x, y) => {
-                // Interestingly, the same shared bindings principle applies
-                // here. The "and" vs. "or" distinction is not important, it's
-                // that both sides must have equivalent bindings.
-                let x_bindings = self.solve_for_free_vars(world, x, bindings)?;
-                let y_bindings = self.solve_for_free_vars(world, y, bindings)?;
-                Ok(x_bindings
-                    .iter()
-                    .flat_map(|xb| y_bindings.iter().filter_map(|yb| xb.try_merge(yb)))
-                    .collect())
-            }
-            Expression::Not(e) => {
-                // Similar to the above notes, the only thing that matters is
-                // that whatever is inside the "not" must be bound with the
-                // same bindings as all other expressions. So the bindings can
-                // just be passed through here.
-                self.solve_for_free_vars(world, e, bindings)
-            }
-            Expression::Is(x, y) => {
-                // Again, this is just a binary operation. Same as "and" and
-                // "or".
-                let x_bindings = self.solve_for_free_vars(world, x, bindings)?;
-                let y_bindings = self.solve_for_free_vars(world, y, bindings)?;
-                Ok(x_bindings
-                    .iter()
-                    .flat_map(|xb| y_bindings.iter().filter_map(|yb| xb.try_merge(yb)))
-                    .collect())
-            }
-        }
-    }
-
     /// Evaluates an expression to a single constant value.
     ///
     /// Returns an error if there are any free variable assignments within the
@@ -799,6 +461,14 @@ impl Simulation {
                     other => bail!("Not condition must evaluate to boolean, got {:?}", other),
                 }
             }
+
+            Expression::ForAll(..) => {
+                unimplemented!()
+            }
+
+            Expression::Any(..) => {
+                unimplemented!()
+            }
         }
     }
 
@@ -819,42 +489,11 @@ impl Simulation {
 
     pub fn check_condition(
         &self,
-        world: &World,
-        condition: &Condition,
-        bindings: &Bindings,
+        _world: &World,
+        _condition: &Expression,
+        _bindings: &Bindings,
     ) -> Result<bool> {
-        let possible_bindings = self.solve_for_free_vars(world, &condition.expression, bindings)?;
-        if possible_bindings.is_empty() {
-            // No valid bindings, so condition is false
-            return Ok(false);
-        }
-
-        match condition.resolution_method {
-            ResolutionMethod::Any => {
-                for binding in possible_bindings {
-                    if self.evaluate_expression_as_boolean(
-                        world,
-                        &condition.expression,
-                        &binding,
-                    )? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            ResolutionMethod::All => {
-                for binding in possible_bindings {
-                    if !self.evaluate_expression_as_boolean(
-                        world,
-                        &condition.expression,
-                        &binding,
-                    )? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
-        }
+        unimplemented!()
     }
 
     fn process_print(
@@ -1148,20 +787,10 @@ impl Simulation {
     /// recommend normalizing your values for this; throwing away non-delta
     /// scores would fix this issue, but also throws away potentially useful
     /// information, so I've decided not to do that.
-    fn evaluate_goal(&self, world: &World, goal: &Goal, bindings: &Bindings) -> Result<f64> {
-        let possible_bindings = self.solve_for_free_vars(world, &goal.expression, bindings)?;
-        if possible_bindings.is_empty() {
-            // No valid bindings, so the goal should just evaluate to 0.
-            return Ok(0.0);
-        }
+    fn evaluate_goal(&self, _world: &World, goal: &Goal, _bindings: &Bindings) -> Result<f64> {
+        unimplemented!();
 
-        let evaluations: Vec<PraxsmthConstant> = possible_bindings
-            .iter()
-            .map(|binding| {
-                self.evaluate_expression(world, &goal.expression, binding)
-                    .with_context(|| format!("evaluating expression for goal {:?}", goal))
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let evaluations: Vec<PraxsmthConstant> = vec![];
 
         let mut total_weight = 0.0;
         match goal.measurement {

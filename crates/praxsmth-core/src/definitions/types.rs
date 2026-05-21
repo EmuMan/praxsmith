@@ -75,29 +75,25 @@ impl Serialize for PraxsmthType {
 pub struct PracticeAction {
     pub for_actor: String,
     pub name: String,
-    pub conditions: Vec<Condition>,
+    pub conditions: Vec<Expression>,
     pub effects: Vec<Effect>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Condition {
-    pub resolution_method: ResolutionMethod,
-    pub expression: Expression,
-}
-
-#[derive(Debug, Clone)]
-pub enum ResolutionMethod {
-    All,
-    Any,
 }
 
 #[derive(Debug, Clone)]
 pub enum Expression {
     Value(PraxsmthValue),
+    /// Boolean, Boolean -> Boolean
     And(Box<Expression>, Box<Expression>),
+    /// Boolean, Boolean -> Boolean
     Or(Box<Expression>, Box<Expression>),
+    /// T, T -> Boolean
     Is(Box<Expression>, Box<Expression>),
+    /// Boolean -> Boolean
     Not(Box<Expression>),
+    /// Boolean... -> Boolean (`for all X, Y` = Y must hold for every binding of X)
+    ForAll(String, Box<Expression>),
+    /// Boolean... -> Boolean (`any X where Y` = there exists some binding of X for which Y holds)
+    Any(String, Box<Expression>),
 }
 
 #[derive(Debug, Clone)]
