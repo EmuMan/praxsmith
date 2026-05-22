@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { browser } from "$app/environment";
     import init, { PraxsmthApi } from "praxsmth";
     import type {
         AvailableAction,
@@ -17,8 +18,17 @@
     let wasmReady = $state(false);
     let api: PraxsmthApi | null = $state(null);
 
-    let typesSrc = $state(DEFAULT_TYPES);
-    let worldSrc = $state(DEFAULT_WORLD);
+    const STORAGE_TYPES = "praxsmth:types";
+    const STORAGE_WORLD = "praxsmth:world";
+
+    // Restore saved work at init (browser only) so it's in place before any
+    // effect runs — avoids a default-vs-saved write race.
+    let typesSrc = $state(
+        (browser && localStorage.getItem(STORAGE_TYPES)) || DEFAULT_TYPES,
+    );
+    let worldSrc = $state(
+        (browser && localStorage.getItem(STORAGE_WORLD)) || DEFAULT_WORLD,
+    );
     let buildError: string | null = $state(null);
     let building = $state(false);
 
@@ -34,6 +44,13 @@
     onMount(async () => {
         await init();
         wasmReady = true;
+    });
+
+    // Persist edits so a refresh doesn't lose work. Effects run only in the
+    // browser, so localStorage is always available here.
+    $effect(() => {
+        localStorage.setItem(STORAGE_TYPES, typesSrc);
+        localStorage.setItem(STORAGE_WORLD, worldSrc);
     });
 
     function reportRuntimeError(err: unknown, where: string) {
