@@ -1,5 +1,6 @@
 <script lang="ts">
     import ErrorPane from "./ErrorPane.svelte";
+    import CodeEditor from "./CodeEditor.svelte";
 
     interface Props {
         types: string;
@@ -29,21 +30,11 @@
     <div class="panes">
         <div class="pane">
             <span class="pane-label">types</span>
-            <textarea
-                class="code"
-                spellcheck="false"
-                bind:value={types}
-                placeholder="type definitions…"
-            ></textarea>
+            <CodeEditor bind:value={types} placeholder="type definitions…" />
         </div>
         <div class="pane">
             <span class="pane-label">world</span>
-            <textarea
-                class="code"
-                spellcheck="false"
-                bind:value={world}
-                placeholder="world definition…"
-            ></textarea>
+            <CodeEditor bind:value={world} placeholder="world definition…" />
         </div>
     </div>
 
@@ -109,6 +100,7 @@
         display: flex;
         flex-direction: column;
         gap: 0.4rem;
+        min-width: 0;
     }
 
     .pane-label {
@@ -116,27 +108,6 @@
         letter-spacing: 0.18em;
         text-transform: uppercase;
         color: #7b7264;
-    }
-
-    .code {
-        font-family:
-            "JetBrains Mono", "Fira Code", "SF Mono", "Menlo", "Consolas",
-            monospace;
-        font-size: 0.85rem;
-        line-height: 1.55;
-        background: #fbf7ef;
-        color: #2a2622;
-        border: 1px solid #c9bfae;
-        padding: 0.85rem 0.95rem;
-        min-height: 320px;
-        resize: vertical;
-        outline: none;
-        tab-size: 2;
-    }
-
-    .code:focus {
-        border-color: #7b7264;
-        background: #fffbf3;
     }
 
     @media (max-width: 720px) {
