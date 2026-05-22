@@ -167,6 +167,9 @@
         <p class="subtitle">
             a small demonstration of world state, crossing the boundary
         </p>
+        <a class="docs-link" href="/docs" target="_blank" rel="noopener">
+            docs ↗
+        </a>
     </header>
 
     {#if !api}
@@ -230,9 +233,24 @@
     }
 
     .masthead {
+        position: relative;
         border-bottom: 1px solid #c9bfae;
         padding-bottom: 1.25rem;
         margin-bottom: 2rem;
+    }
+
+    .docs-link {
+        position: absolute;
+        top: 0;
+        right: 0;
+        font-size: 0.8rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #7b7264;
+        text-decoration: none;
+    }
+    .docs-link:hover {
+        color: #2a2622;
     }
 
     .masthead h1 {

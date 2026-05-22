@@ -1,0 +1,105 @@
+<svelte:head>
+    <title>praxsmth · docs</title>
+</svelte:head>
+
+# praxsmth documentation
+
+Welcome to the praxsmth language reference. This page is written in Markdown
+(`src/routes/docs/+page.svx`) and supports a table of contents, linkable
+sections, code blocks, and callouts. Edit it freely.
+
+> [!note]
+> This is a living document for a proof-of-concept project. Expect rough edges.
+
+## Getting started
+
+A world is built from two sources: a set of **type definitions** and a
+**world definition**. Enter them in the two editor panes and press
+**build world**.
+
+```
+trait Curious
+
+agent alice as "Alice" {
+  goal(1): alice.Curious
+}
+```
+
+See [Type definitions](#type-definitions) and
+[World definitions](#world-definitions) below for the full grammar.
+
+## Type definitions
+
+Types describe the *shape* of things that can exist in a world.
+
+### Traits
+
+A trait is a simple tag, optionally carrying fields:
+
+```
+trait Curious
+
+trait Mood {
+  level: 0..10
+}
+```
+
+> [!tip] Field types
+> A field is either a numeric range (`0..10`) or a list of named variants
+> (`calm | tense | furious`).
+
+### Relationships
+
+Directional relationships connect two parties asymmetrically; reciprocal ones
+are mutual.
+
+```
+directional Trusts/TrustedBy
+reciprocal Knows
+```
+
+> [!warning]
+> `exclusive directional` relationships allow only one target at a time. Setting
+> a new one replaces the old.
+
+## World definitions
+
+The world definition populates a world with agents and facts.
+
+### Agents
+
+```
+agent alice as "Alice" {
+  goal(1): any x where x.Curious
+}
+```
+
+The number in `goal(N)` is the priority. Higher priorities are weighed first.
+
+## Expressions
+
+Expressions evaluate to truth values and drive conditions and goals.
+
+| Operator | Meaning |
+| --- | --- |
+| `and`, `or`, `not` | boolean logic |
+| `is` | equality |
+| `for all x, …` | universal quantifier |
+| `any x where …` | existential quantifier |
+| `count x where …` | aggregation |
+
+## Authoring this page
+
+This documentation supports a few conveniences:
+
+- **Code blocks** — fenced with triple backticks.
+- **Callouts** — start a blockquote with `[!note]`, `[!tip]`, `[!warning]`, or
+  `[!info]`. Text after the marker on the same line becomes the title;
+  otherwise the type name is used. For example:
+
+  ```
+  > [!warning] Heads up
+  > Something to watch out for.
+  ```
+- **Section links** — every heading gets an `id`; link to it with `[text](#the-id)`.
+- **Table of contents** — built automatically from the `##` and `###` headings.
