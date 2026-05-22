@@ -17,7 +17,7 @@ practice greet (Greeter, Greeted) {
             for: Greeter
             name: "Greet [Greeted]"
             conditions: [
-                Greeter.is_in.Place and Greeted.is_in.Place
+                any Place where Greeter.is_in.Place and Greeted.is_in.Place
             ]
             outcomes: [
                 say "Hello, [Greeted]!"
@@ -51,7 +51,7 @@ agent house as "House" inactive
 agent street as "Street" inactive
 
 agent jacob as "Jacob" {
-    goal (10): alaina.feels.happy
+    goal (10): delta count Person where Person.feels.happy
 }
 agent alaina as "Alaina"
 

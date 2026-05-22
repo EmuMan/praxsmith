@@ -1,6 +1,14 @@
-- Fix free variables
-- Free variables creating actions?
+Major:
 - Better code editor
-- Comments
 - Documentation
+
+Meh:
+- Type checking
+- Free variables creating actions?
+
+Minor:
+- Perform certain operations (e.g. evaluate expression) by calling from world
+- Rename to Praxsmith
+- Better distribute simulation.rs functions
+- Comments
 - Tests

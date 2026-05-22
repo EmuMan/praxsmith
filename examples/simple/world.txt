@@ -2,7 +2,7 @@ agent house as "House" inactive
 agent street as "Street" inactive
 
 agent jacob as "Jacob" {
-    goal (10): alaina.feels.happy
+    goal (10): delta count Person where Person.feels.happy
 }
 agent alaina as "Alaina"
 
