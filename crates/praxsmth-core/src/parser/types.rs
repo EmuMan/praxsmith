@@ -1,16 +1,15 @@
-use std::collections::HashMap;
-
 use pest::Parser;
 use pest::error::Error;
 use pest::iterators::Pair;
 use pest::pratt_parser::PrattParser;
 
-use crate::definitions::{FieldTypes, types::*};
 use crate::parser::world::parse_declaration;
 use crate::parser::{
     PraxsmthParser, Rule, build_expression_pratt, parse_expression, parse_field, parse_sentence,
     parse_string, parse_value,
 };
+use crate::types::{FieldType, FieldTypes, PracticeAction, RelationType, RelationTypeData};
+use crate::world::simulation::Effect;
 
 fn parse_field_brackets(pair: Pair<Rule>) -> FieldTypes {
     // pair is Rule::field_brackets, contains field_def pairs
@@ -22,10 +21,11 @@ fn parse_field_brackets(pair: Pair<Rule>) -> FieldTypes {
             let field = parse_field(field_def_inner.next().unwrap());
             (field_name, field)
         })
-        .collect()
+        .collect::<Vec<(String, FieldType)>>()
+        .into()
 }
 
-fn parse_trait(pair: Pair<Rule>) -> PraxsmthType {
+fn parse_trait(pair: Pair<Rule>) -> RelationType {
     // pair is Rule::t_trait: "trait" ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -35,17 +35,17 @@ fn parse_trait(pair: Pair<Rule>) -> PraxsmthType {
         // brackets is Rule::field_brackets, contains field_def pairs
         parse_field_brackets(brackets)
     } else {
-        HashMap::new()
+        FieldTypes::new()
     };
 
-    PraxsmthType {
+    RelationType {
         name,
         fields,
-        data: PraxsmthTypeData::Trait,
+        data: RelationTypeData::Trait,
     }
 }
 
-fn parse_directional(pair: Pair<Rule>) -> PraxsmthType {
+fn parse_directional(pair: Pair<Rule>) -> RelationType {
     // pair is Rule::t_directional: t_exclusive? ~ "directional" ~ var_name ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
 
@@ -60,20 +60,20 @@ fn parse_directional(pair: Pair<Rule>) -> PraxsmthType {
     let fields = if let Some(brackets) = inner.next() {
         parse_field_brackets(brackets)
     } else {
-        HashMap::new()
+        FieldTypes::new()
     };
 
-    PraxsmthType {
+    RelationType {
         name: forward_name,
         fields,
-        data: PraxsmthTypeData::Directional {
+        data: RelationTypeData::Directional {
             complement: backward_name,
             exclusive,
         },
     }
 }
 
-fn parse_reciprocal(pair: Pair<Rule>) -> PraxsmthType {
+fn parse_reciprocal(pair: Pair<Rule>) -> RelationType {
     // pair is Rule::t_reciprocal: "reciprocal" ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -83,17 +83,17 @@ fn parse_reciprocal(pair: Pair<Rule>) -> PraxsmthType {
         // brackets is Rule::field_brackets, contains field_def pairs
         parse_field_brackets(brackets)
     } else {
-        HashMap::new()
+        FieldTypes::new()
     };
 
-    PraxsmthType {
+    RelationType {
         name,
         fields,
-        data: PraxsmthTypeData::Reciprocal,
+        data: RelationTypeData::Reciprocal,
     }
 }
 
-fn parse_evaluation(pair: Pair<Rule>) -> PraxsmthType {
+fn parse_evaluation(pair: Pair<Rule>) -> RelationType {
     // pair is Rule::t_evaluation: "evaluation" ~ var_name ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let forward_name = inner.next().unwrap().as_str().to_string();
@@ -104,19 +104,19 @@ fn parse_evaluation(pair: Pair<Rule>) -> PraxsmthType {
         // brackets is Rule::field_brackets, contains field_def pairs
         parse_field_brackets(brackets)
     } else {
-        HashMap::new()
+        FieldTypes::new()
     };
 
-    PraxsmthType {
+    RelationType {
         name: forward_name.clone(),
         fields: fields.clone(),
-        data: PraxsmthTypeData::Evaluation {
+        data: RelationTypeData::Evaluation {
             complement: backward_name.clone(),
         },
     }
 }
 
-fn parse_emotion(pair: Pair<Rule>) -> PraxsmthType {
+fn parse_emotion(pair: Pair<Rule>) -> RelationType {
     // pair is Rule::t_emotion: "emotion" ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -126,13 +126,13 @@ fn parse_emotion(pair: Pair<Rule>) -> PraxsmthType {
         // brackets is Rule::field_brackets, contains field_def pairs
         parse_field_brackets(brackets)
     } else {
-        HashMap::new()
+        FieldTypes::new()
     };
 
-    PraxsmthType {
+    RelationType {
         name,
         fields,
-        data: PraxsmthTypeData::Emotion,
+        data: RelationTypeData::Emotion,
     }
 }
 
@@ -243,7 +243,7 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
     }
 }
 
-fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PraxsmthType {
+fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> RelationType {
     // pair is Rule::t_practice: "practice" ~ var_name ~ t_practice_params ~ t_practice_brackets
     let mut inner = pair.into_inner();
 
@@ -261,7 +261,7 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PraxsmthType {
     let brackets_pair = inner.next().unwrap(); // Rule::t_practice_brackets
 
     let mut actions = Vec::new();
-    let mut fields = HashMap::new();
+    let mut fields = FieldTypes::new();
 
     for field_pair in brackets_pair.into_inner() {
         // field_pair is one of the t_practice_* field rules
@@ -286,14 +286,14 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> PraxsmthType {
         }
     }
 
-    PraxsmthType {
+    RelationType {
         name,
         fields,
-        data: PraxsmthTypeData::Practice { params, actions },
+        data: RelationTypeData::Practice { params, actions },
     }
 }
 
-pub fn parse_types(input_str: &str) -> Result<Vec<PraxsmthType>, Error<Rule>> {
+pub fn parse_types(input_str: &str) -> Result<Vec<RelationType>, Error<Rule>> {
     let pairs = PraxsmthParser::parse(Rule::praxsmth_types, input_str)?;
 
     let practice_pratt = build_expression_pratt();

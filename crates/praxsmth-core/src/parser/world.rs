@@ -1,14 +1,36 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 
 use pest::Parser;
 use pest::error::Error;
 use pest::iterators::Pair;
 use pest::pratt_parser::PrattParser;
 
-use crate::definitions::world::*;
-use crate::parser::{
-    PraxsmthParser, Rule, build_expression_pratt, parse_constant, parse_expression, parse_sentence,
+use crate::{
+    parser::{
+        PraxsmthParser, Rule, build_expression_pratt, parse_constant, parse_expression,
+        parse_sentence,
+    },
+    world::{
+        AgentInitInfo,
+        goals::{Goal, GoalMeasurement},
+        simulation::Declaration,
+    },
 };
+
+#[derive(Debug, Clone)]
+pub enum WorldInitStep {
+    NewAgent(AgentInitInfo),
+    NewRelation(Declaration),
+}
+
+impl fmt::Display for WorldInitStep {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            WorldInitStep::NewAgent(a) => write!(f, "{}", a),
+            WorldInitStep::NewRelation(d) => write!(f, "{}", d),
+        }
+    }
+}
 
 fn parse_agent_goal(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Goal {
     // pair is Rule::w_agent_goal:
@@ -30,7 +52,7 @@ fn parse_agent_goal(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Goal {
     }
 }
 
-fn parse_agent(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> AgentInfo {
+fn parse_agent(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> AgentInitInfo {
     // pair is Rule::w_agent:
     //   "agent" ~ var_name ~ ("as" ~ string)? ~ w_agent_inactive? ~ w_agent_brackets?
     let mut inner = pair.into_inner();
@@ -56,7 +78,7 @@ fn parse_agent(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> AgentInfo {
         }
     }
 
-    AgentInfo {
+    AgentInitInfo {
         id,
         name,
         active,
@@ -87,15 +109,15 @@ pub fn parse_declaration(pair: Pair<Rule>) -> Declaration {
     Declaration { sentence, fields }
 }
 
-pub fn parse_world(input_str: &str) -> Result<Vec<PraxsmthWorldDefinition>, Error<Rule>> {
+pub fn parse_world(input_str: &str) -> Result<Vec<WorldInitStep>, Error<Rule>> {
     let pairs = PraxsmthParser::parse(Rule::praxsmth_world, input_str)?;
     let pratt = build_expression_pratt();
 
     let values = pairs
         .filter(|pair| matches!(pair.as_rule(), Rule::w_agent | Rule::w_declaration))
         .map(|pair| match pair.as_rule() {
-            Rule::w_agent => PraxsmthWorldDefinition::AgentInfo(parse_agent(pair, &pratt)),
-            Rule::w_declaration => PraxsmthWorldDefinition::Declaration(parse_declaration(pair)),
+            Rule::w_agent => WorldInitStep::NewAgent(parse_agent(pair, &pratt)),
+            Rule::w_declaration => WorldInitStep::NewRelation(parse_declaration(pair)),
             _ => unreachable!(),
         })
         .collect();

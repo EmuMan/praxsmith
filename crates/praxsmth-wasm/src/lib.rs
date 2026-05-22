@@ -239,13 +239,13 @@ pub enum PraxsmthConstant {
     String(String),
 }
 
-impl From<core::definitions::PraxsmthConstant> for PraxsmthConstant {
-    fn from(constant: core::definitions::PraxsmthConstant) -> Self {
+impl From<core::values::Constant> for PraxsmthConstant {
+    fn from(constant: core::values::Constant) -> Self {
         match constant {
-            core::definitions::PraxsmthConstant::Number(n) => PraxsmthConstant::Number(n),
-            core::definitions::PraxsmthConstant::Boolean(b) => PraxsmthConstant::Boolean(b),
-            core::definitions::PraxsmthConstant::Variant(v) => PraxsmthConstant::Variant(v),
-            core::definitions::PraxsmthConstant::String(s) => PraxsmthConstant::String(s),
+            core::values::Constant::Number(n) => PraxsmthConstant::Number(n),
+            core::values::Constant::Boolean(b) => PraxsmthConstant::Boolean(b),
+            core::values::Constant::Variant(v) => PraxsmthConstant::Variant(v),
+            core::values::Constant::String(s) => PraxsmthConstant::String(s),
         }
     }
 }

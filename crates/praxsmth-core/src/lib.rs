@@ -1,7 +1,9 @@
 pub mod anyhow_ext;
 pub mod api;
-pub mod definitions;
+pub mod expressions;
 pub mod parser;
+pub mod queries;
 pub mod store;
 pub mod types;
+pub mod values;
 pub mod world;

@@ -8,8 +8,11 @@ use pest::{
 };
 use pest_derive::Parser;
 
-use crate::definitions::{
-    PraxsmthConstant, PraxsmthField, PraxsmthValue, Sentence, Serialize, types::*,
+use crate::{
+    expressions::{AggregateOp, Expression},
+    types::{FieldType, RelationType},
+    values::{Constant, Sentence, Value},
+    world::simulation::Effect,
 };
 
 pub mod types;
@@ -28,35 +31,36 @@ fn parse_sentence(pair: Pair<Rule>) -> Sentence {
     // pair is Rule::sentence
     pair.into_inner()
         .map(|token| token.as_str().to_string())
-        .collect()
+        .collect::<Vec<String>>()
+        .into()
 }
 
-fn parse_value(pair: Pair<Rule>) -> PraxsmthValue {
+fn parse_value(pair: Pair<Rule>) -> Value {
     match pair.as_rule() {
-        Rule::number => PraxsmthValue::Number(pair.as_str().parse().unwrap()),
-        Rule::string => PraxsmthValue::String(parse_string(pair)),
+        Rule::number => Value::Number(pair.as_str().parse().unwrap()),
+        Rule::string => Value::String(parse_string(pair)),
         Rule::sentence => {
             let parts = parse_sentence(pair);
             if parts.len() == 1 {
-                PraxsmthValue::Variant(parts.into_iter().next().unwrap())
+                Value::Variant(parts.into_iter().next().unwrap())
             } else {
-                PraxsmthValue::Variable(parts)
+                Value::Variable(parts)
             }
         }
         _ => unreachable!(),
     }
 }
 
-pub fn parse_constant(pair: Pair<Rule>) -> PraxsmthConstant {
+pub fn parse_constant(pair: Pair<Rule>) -> Constant {
     match pair.as_rule() {
-        Rule::number => PraxsmthConstant::Number(pair.as_str().parse().unwrap()),
-        Rule::string => PraxsmthConstant::String(parse_string(pair)),
-        Rule::var_name => PraxsmthConstant::Variant(pair.as_str().to_string()),
+        Rule::number => Constant::Number(pair.as_str().parse().unwrap()),
+        Rule::string => Constant::String(parse_string(pair)),
+        Rule::var_name => Constant::Variant(pair.as_str().to_string()),
         _ => unreachable!(),
     }
 }
 
-fn parse_field(pair: Pair<Rule>) -> PraxsmthField {
+fn parse_field(pair: Pair<Rule>) -> FieldType {
     // pair is either Rule::number_range or Rule::variant_list
     match pair.as_rule() {
         Rule::number_range => {
@@ -64,7 +68,7 @@ fn parse_field(pair: Pair<Rule>) -> PraxsmthField {
             let mut numbers = pair.into_inner();
             let start: f64 = numbers.next().unwrap().as_str().parse().unwrap();
             let end: f64 = numbers.next().unwrap().as_str().parse().unwrap();
-            PraxsmthField::NumberRange(start, end)
+            FieldType::NumberRange(start, end)
         }
         Rule::variant_list => {
             // variant_list is: var_name ~ ("|" ~ var_name)+
@@ -72,7 +76,7 @@ fn parse_field(pair: Pair<Rule>) -> PraxsmthField {
                 .into_inner()
                 .map(|var| var.as_str().to_string())
                 .collect();
-            PraxsmthField::VariantList(variants)
+            FieldType::VariantList(variants)
         }
         _ => unreachable!(),
     }
@@ -81,14 +85,14 @@ fn parse_field(pair: Pair<Rule>) -> PraxsmthField {
 pub fn test_parse() {
     let unparsed_types = fs::read_to_string("types.txt").expect("cannot read file");
 
-    let values: Vec<PraxsmthType> =
+    let values: Vec<RelationType> =
         types::parse_types(&unparsed_types).expect("unsuccessful parse");
 
     println!(
         "Types Output:\n\n{}",
         values
             .iter()
-            .map(|v| v.serialize())
+            .map(|v| v.to_string())
             .collect::<Vec<_>>()
             .join("\n")
     );
@@ -101,7 +105,7 @@ pub fn test_parse() {
         "\nWorld Output:\n\n{}",
         world_values
             .iter()
-            .map(|v| v.serialize())
+            .map(|v| v.to_string())
             .collect::<Vec<_>>()
             .join("\n")
     );
@@ -146,7 +150,10 @@ fn parse_agg_count(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Expression {
             _ => {} // keyword tokens
         }
     }
-    Expression::Count(var, Box::new(filter.expect("agg_count is missing its filter")))
+    Expression::Count(
+        var,
+        Box::new(filter.expect("agg_count is missing its filter")),
+    )
 }
 
 /// Parses `(sum | average | min | max) BODY across SYM where FILTER`. The two
@@ -222,11 +229,8 @@ mod tests {
         let effect = parse_effect_str("set agent.likes { amount: 5 }").unwrap();
         match effect {
             Effect::Set(decl) => {
-                assert_eq!(decl.sentence, vec!["agent", "likes"]);
-                assert_eq!(
-                    decl.fields.get("amount"),
-                    Some(&PraxsmthConstant::Number(5.0))
-                );
+                assert_eq!(decl.sentence, Sentence::from_strs(&["agent", "likes"]));
+                assert_eq!(decl.fields.get("amount"), Some(&Constant::Number(5.0)));
             }
             other => panic!("expected Effect::Set, got {:?}", other),
         }
@@ -348,8 +352,8 @@ mod tests {
 
     #[test]
     fn parses_sum_across() {
-        let expr =
-            parse_expression_str("sum x.likes.alice.strength across x where x.likes.alice").unwrap();
+        let expr = parse_expression_str("sum x.likes.alice.strength across x where x.likes.alice")
+            .unwrap();
         match expr {
             Expression::Aggregate {
                 op,

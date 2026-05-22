@@ -1,25 +1,24 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 
 use anyhow::{Context, Result, bail};
 
 use crate::{
-    definitions::{
-        FieldTypes, PraxsmthConstant, PraxsmthField, Sentence, Serialize,
-        types::{PraxsmthType, PraxsmthTypeData},
-        world::*,
-    },
-    types::TypeMapping,
+    types::{FieldType, FieldTypes, RelationType, RelationTypeData, RelationTypeMap},
+    values::Constant,
+    world::{bindings::Bindings, goals::Goal},
 };
 
+pub mod bindings;
+pub mod goals;
 pub mod simulation;
 pub mod transactions;
 
-type Fields = HashMap<String, PraxsmthConstant>;
+type Fields = HashMap<String, Constant>;
 
 // TODO: verify this works correctly in all cases, and add more detailed error messages
 fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -> Result<()> {
     if require_all {
-        for field_name in field_types.keys() {
+        for field_name in field_types.iter_names() {
             if !fields.contains_key(field_name) {
                 bail!("field {} is required but not present", field_name);
             }
@@ -28,7 +27,7 @@ fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -
     for (field_name, field_value) in fields {
         match field_types.get(field_name) {
             Some(expected_type) => match (expected_type, field_value) {
-                (PraxsmthField::NumberRange(start, end), PraxsmthConstant::Number(n)) => {
+                (FieldType::NumberRange(start, end), Constant::Number(n)) => {
                     if n < start || n > end {
                         bail!(
                             "field {} value {} is out of range {}..{}",
@@ -39,7 +38,7 @@ fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -
                         );
                     }
                 }
-                (PraxsmthField::VariantList(variants), PraxsmthConstant::Variant(v)) => {
+                (FieldType::VariantList(variants), Constant::Variant(v)) => {
                     if !variants.contains(v) {
                         bail!(
                             "field {} value {} is not in variant list {:?}",
@@ -53,8 +52,8 @@ fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -
                     bail!(
                         "field {} has type mismatch: expected {}, got {}",
                         field_name,
-                        expected_type.serialize(),
-                        field_value.serialize()
+                        expected_type,
+                        field_value
                     );
                 }
             },
@@ -64,95 +63,6 @@ fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -
         }
     }
     Ok(())
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Bindings {
-    variables: HashMap<String, String>,
-    self_id: Option<Sentence>,
-}
-
-impl Bindings {
-    /// Constructs a new `Bindings` instance with the given variable mappings
-    /// and optional self identifier.
-    pub fn new(variables: HashMap<String, String>, self_id: Option<Sentence>) -> Self {
-        Bindings { variables, self_id }
-    }
-
-    /// Retrieves the value of a variable from the bindings, if it exists.
-    pub fn get(&self, var: &str) -> Option<&String> {
-        self.variables.get(var)
-    }
-
-    /// Retrieves the value of a variable from the bindings, or returns the
-    /// variable name itself if it is not found in the bindings.
-    ///
-    /// TODO: COW?
-    pub fn get_or_same(&self, var: &str) -> String {
-        self.get(var).cloned().unwrap_or_else(|| var.to_string())
-    }
-
-    /// Inserts a new variable mapping into the bindings, replacing any
-    /// existing mapping for the same variable name.
-    pub fn insert(&mut self, var: String, value: String) {
-        self.variables.insert(var, value);
-    }
-
-    /// Creates a new `Bindings` instance by extending the current bindings
-    /// with additional variable mappings.
-    pub fn with(&self, additions: HashMap<String, String>) -> Self {
-        let mut new_variables = self.variables.clone();
-        for (var, value) in additions {
-            new_variables.insert(var, value);
-        }
-        Bindings {
-            variables: new_variables,
-            self_id: self.self_id.clone(),
-        }
-    }
-
-    /// Attempts to merge the current bindings with another set of bindings. If
-    /// there are any conflicting variable mappings (i.e. the same variable
-    /// maps to different values in the two sets of bindings), then this method
-    /// returns `None` to indicate that the merge failed. Otherwise, it returns
-    /// a new `Bindings` instance containing the merged variable mappings and a
-    /// self identifier if either of the original bindings had one,
-    /// prioritizing self for that value.
-    pub fn try_merge(&self, other: &Bindings) -> Option<Self> {
-        let mut merged_variables = self.variables.clone();
-        for (var, value) in &other.variables {
-            if let Some(existing_value) = merged_variables.get(var) {
-                if existing_value != value {
-                    return None; // Conflict detected
-                }
-            } else {
-                merged_variables.insert(var.clone(), value.clone());
-            }
-        }
-        // If we get here, there are no conflicts
-        Some(Bindings {
-            variables: merged_variables,
-            self_id: self.self_id.clone().or_else(|| other.self_id.clone()),
-        })
-    }
-}
-
-impl Default for Bindings {
-    fn default() -> Self {
-        Bindings {
-            variables: HashMap::new(),
-            self_id: None,
-        }
-    }
-}
-
-impl<'a> IntoIterator for &'a Bindings {
-    type Item = (&'a String, &'a String);
-    type IntoIter = std::collections::hash_map::Iter<'a, String, String>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.variables.iter()
-    }
 }
 
 /// Represents an edge from an agent to a relation.
@@ -399,6 +309,29 @@ impl RelationStore {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct AgentInitInfo {
+    pub id: String,
+    pub name: String,
+    pub active: bool,
+    pub goals: Vec<Goal>,
+}
+
+impl fmt::Display for AgentInitInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.goals.is_empty() {
+            write!(f, "{}", self.name)
+        } else {
+            let goals_str: Vec<_> = self
+                .goals
+                .iter()
+                .map(|g| format!("goal({}): {:?}", g.weight, g.expression))
+                .collect();
+            write!(f, "{} {{{}}}", self.name, goals_str.join(", "))
+        }
+    }
+}
+
 pub struct Agent {
     pub name: String,
     pub edges: Vec<AgentToRelation>,
@@ -409,13 +342,13 @@ pub struct Agent {
 }
 
 impl Agent {
-    pub fn new(info: &AgentInfo) -> Self {
+    pub fn new(name: String, is_active: bool, goals: Vec<Goal>) -> Self {
         Agent {
-            name: info.name.clone(),
+            name,
             edges: Vec::new(),
             emotion: None,
-            is_active: info.active,
-            goals: info.goals.clone(),
+            is_active,
+            goals,
         }
     }
 
@@ -459,17 +392,21 @@ pub enum WorldMutation {
 
 pub struct World {
     agents: HashMap<String, Agent>,
-    type_mapping: TypeMapping,
+    type_mapping: RelationTypeMap,
     relation_store: RelationStore,
 }
 
 impl World {
-    pub fn new(type_mapping: TypeMapping) -> Self {
+    pub fn new(type_mapping: RelationTypeMap) -> Self {
         World {
             agents: HashMap::new(),
             type_mapping,
             relation_store: RelationStore::new(),
         }
+    }
+
+    pub fn get_type_mapping(&self) -> &RelationTypeMap {
+        &self.type_mapping
     }
 
     pub fn iter_relations(&self) -> impl Iterator<Item = (RelationHandle, &Relation)> {
@@ -521,11 +458,14 @@ impl World {
             .unwrap_or_else(|| string.to_string())
     }
 
-    pub fn add_agent(&mut self, info: &AgentInfo) -> Result<()> {
+    pub fn add_agent(&mut self, info: &AgentInitInfo) -> Result<()> {
         if self.agents.contains_key(&info.id) {
-            bail!("agent with id {} already exists", info.id);
+            bail!("agent with id {} already exists", &info.id);
         }
-        self.agents.insert(info.id.clone(), Agent::new(info));
+        self.agents.insert(
+            info.id.clone(),
+            Agent::new(info.name.clone(), info.active, info.goals.clone()),
+        );
         Ok(())
     }
 
@@ -597,7 +537,7 @@ impl World {
                 .with_context(|| format!("updating fields on relation {:?}", handle))?,
             RelationData::Evaluation { reason, .. } => {
                 if let Some(new_reason) = new_fields.get("reason") {
-                    let PraxsmthConstant::String(reason_str) = new_reason else {
+                    let Constant::String(reason_str) = new_reason else {
                         bail!("evaluation edge 'reason' field must be a string");
                     };
                     *reason = reason_str.clone();
@@ -680,8 +620,8 @@ impl World {
         &'a self,
         type_id: &str,
         label: &str,
-        check: impl Fn(&PraxsmthTypeData) -> bool,
-    ) -> Result<&'a PraxsmthType> {
+        check: impl Fn(&RelationTypeData) -> bool,
+    ) -> Result<&'a RelationType> {
         let t = self
             .type_mapping
             .get_type(type_id)
@@ -712,7 +652,7 @@ impl World {
     ) -> Result<RelationCreated> {
         let trait_ctx = || format!("adding trait {} to agent {}", type_id, agent_id);
 
-        self.expect_type(type_id, "trait", |d| matches!(d, PraxsmthTypeData::Trait))
+        self.expect_type(type_id, "trait", |d| matches!(d, RelationTypeData::Trait))
             .with_context(trait_ctx)?;
 
         self.validate_type_fields(type_id, &fields)
@@ -758,7 +698,7 @@ impl World {
     ) -> Result<Option<(&AgentToRelation, &Relation)>> {
         let trait_ctx = || format!("getting trait {} from agent {}", type_id, agent_id);
 
-        self.expect_type(type_id, "trait", |d| matches!(d, PraxsmthTypeData::Trait))
+        self.expect_type(type_id, "trait", |d| matches!(d, RelationTypeData::Trait))
             .with_context(trait_ctx)?;
 
         self.validate_agent(agent_id).with_context(trait_ctx)?;
@@ -797,7 +737,7 @@ impl World {
         let emotion_ctx = || format!("adding emotion {} to agent {}", type_id, agent_id);
 
         self.expect_type(type_id, "emotion", |d| {
-            matches!(d, PraxsmthTypeData::Emotion)
+            matches!(d, RelationTypeData::Emotion)
         })
         .with_context(emotion_ctx)?;
 
@@ -861,7 +801,7 @@ impl World {
         let emotion_ctx = || format!("getting emotion {} from agent {}", type_id, agent_id);
 
         self.expect_type(type_id, "emotion", |d| {
-            matches!(d, PraxsmthTypeData::Emotion)
+            matches!(d, RelationTypeData::Emotion)
         })
         .with_context(emotion_ctx)?;
 
@@ -907,7 +847,7 @@ impl World {
         };
 
         self.expect_type(type_id, "directional", |d| {
-            matches!(d, PraxsmthTypeData::Directional { .. })
+            matches!(d, RelationTypeData::Directional { .. })
         })
         .with_context(directional_ctx)?;
 
@@ -919,7 +859,7 @@ impl World {
 
         let exclusive = matches!(
             self.type_mapping.get_type(type_id),
-            Some(t) if matches!(&t.data, PraxsmthTypeData::Directional { exclusive: true, .. })
+            Some(t) if matches!(&t.data, RelationTypeData::Directional { exclusive: true, .. })
         );
 
         let existing = if exclusive {
@@ -1027,7 +967,7 @@ impl World {
         };
 
         self.expect_type(type_id, "directional", |d| {
-            matches!(d, PraxsmthTypeData::Directional { .. })
+            matches!(d, RelationTypeData::Directional { .. })
         })
         .with_context(directional_ctx)?;
 
@@ -1079,7 +1019,7 @@ impl World {
         };
 
         self.expect_type(type_id, "reciprocal", |d| {
-            matches!(d, PraxsmthTypeData::Reciprocal { .. })
+            matches!(d, RelationTypeData::Reciprocal { .. })
         })
         .with_context(reciprocal_ctx)?;
 
@@ -1160,7 +1100,7 @@ impl World {
         };
 
         self.expect_type(type_id, "reciprocal", |d| {
-            matches!(d, PraxsmthTypeData::Reciprocal { .. })
+            matches!(d, RelationTypeData::Reciprocal { .. })
         })
         .with_context(reciprocal_ctx)?;
 
@@ -1221,7 +1161,7 @@ impl World {
         };
 
         self.expect_type(type_id, "evaluation", |d| {
-            matches!(d, PraxsmthTypeData::Evaluation { .. })
+            matches!(d, RelationTypeData::Evaluation { .. })
         })
         .with_context(evaluation_ctx)?;
 
@@ -1308,7 +1248,7 @@ impl World {
         };
 
         self.expect_type(type_id, "evaluation", |d| {
-            matches!(d, PraxsmthTypeData::Evaluation { .. })
+            matches!(d, RelationTypeData::Evaluation { .. })
         })
         .with_context(evaluation_ctx)?;
 
@@ -1362,7 +1302,7 @@ impl World {
         };
 
         self.expect_type(type_id, "practice", |d| {
-            matches!(d, PraxsmthTypeData::Practice { .. })
+            matches!(d, RelationTypeData::Practice { .. })
         })
         .with_context(practice_ctx)?;
 
@@ -1377,7 +1317,7 @@ impl World {
             .get_type(type_id)
             .with_context(practice_ctx)?;
 
-        let PraxsmthTypeData::Practice { params, .. } = &type_def.data else {
+        let RelationTypeData::Practice { params, .. } = &type_def.data else {
             bail!("type {} is not a practice type", type_id);
         };
 
@@ -1398,7 +1338,7 @@ impl World {
         let mut self_id = vec!["practice".to_string()];
         self_id.push(type_id.to_string());
         self_id.extend(participant_ids.iter().cloned().map(String::from));
-        let bindings = Bindings::new(variables, Some(self_id));
+        let bindings = Bindings::new(variables, Some(self_id.into()));
 
         let edges = participant_ids
             .iter()
@@ -1457,7 +1397,7 @@ impl World {
         };
 
         self.expect_type(type_id, "practice", |d| {
-            matches!(d, PraxsmthTypeData::Practice { .. })
+            matches!(d, RelationTypeData::Practice { .. })
         })
         .with_context(practice_ctx)?;
 
@@ -1527,17 +1467,17 @@ impl World {
             )
         })?;
         match edge_type.data {
-            PraxsmthTypeData::Directional { .. } => {
+            RelationTypeData::Directional { .. } => {
                 self.add_directional(from_id, to_id, edge_type_id, fields)
             }
-            PraxsmthTypeData::Reciprocal => {
+            RelationTypeData::Reciprocal => {
                 self.add_reciprocal(from_id, to_id, edge_type_id, fields)
             }
-            PraxsmthTypeData::Evaluation { .. } => {
+            RelationTypeData::Evaluation { .. } => {
                 let reason = fields
                     .get_mut("reason")
                     .context("evaluation edges require a 'reason' field")?;
-                let PraxsmthConstant::String(reason_str) = reason else {
+                let Constant::String(reason_str) = reason else {
                     bail!("evaluation edge 'reason' field must be a string");
                 };
                 // TODO: Definitely some way to avoid this clone...
@@ -1571,11 +1511,11 @@ impl World {
     ) -> Result<Option<(&AgentToRelation, &Relation)>> {
         match self.type_mapping.get_type(edge_type_name) {
             Some(edge_type) => match edge_type.data {
-                PraxsmthTypeData::Directional { .. } => {
+                RelationTypeData::Directional { .. } => {
                     self.get_directional(from, to, edge_type_name)
                 }
-                PraxsmthTypeData::Reciprocal => self.get_reciprocal(from, to, edge_type_name),
-                PraxsmthTypeData::Evaluation { .. } => {
+                RelationTypeData::Reciprocal => self.get_reciprocal(from, to, edge_type_name),
+                RelationTypeData::Evaluation { .. } => {
                     self.get_evaluation(from, to, edge_type_name)
                 }
                 _ => bail!(

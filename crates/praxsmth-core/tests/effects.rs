@@ -3,7 +3,7 @@
 //! then read the result back with `evaluate_expression`.
 
 use praxsmth::api::PraxsmthApi;
-use praxsmth::definitions::PraxsmthConstant;
+use praxsmth::values::Constant;
 
 const TYPES: &str = "\
 trait rich { amount: 0..100 }
@@ -28,7 +28,7 @@ fn update_changes_field() {
         .unwrap();
     assert_eq!(
         api.evaluate_expression("alice.is.rich.amount").unwrap(),
-        PraxsmthConstant::Number(8.0),
+        Constant::Number(8.0),
     );
 }
 
@@ -40,7 +40,7 @@ fn set_creates_relation() {
         .unwrap();
     assert_eq!(
         api.evaluate_expression("bob.is.rich.amount").unwrap(),
-        PraxsmthConstant::Number(42.0),
+        Constant::Number(42.0),
     );
 }
 
@@ -63,6 +63,6 @@ fn delete_removes_relation() {
     api.process_effect("alice", "delete alice.is.rich").unwrap();
     assert_eq!(
         api.evaluate_expression("alice.is.rich").unwrap(),
-        PraxsmthConstant::Boolean(false),
+        Constant::Boolean(false),
     );
 }
