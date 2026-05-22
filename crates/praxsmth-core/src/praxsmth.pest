@@ -48,7 +48,22 @@ not         = @{ "not" ~ !ASCII_ALPHANUMERIC }
 // matched as `any`) while `var_name` is still captured as an inner token.
 forall       = ${ "for" ~ WHITESPACE+ ~ "all" ~ WHITESPACE+ ~ var_name ~ WHITESPACE* ~ "," }
 any_where    = ${ "any" ~ WHITESPACE+ ~ var_name ~ WHITESPACE+ ~ "where" ~ !ASCII_ALPHANUMERIC }
-expr_primary = _{ value }
+expr_primary = _{ aggregate | value }
+
+// Aggregations: numeric reductions over the bindings of a variable. They are
+// primaries (they yield numbers), so they compose with the usual operators.
+//   count SYM where FILTER
+//   (sum | average | min | max) BODY across SYM where FILTER
+// The trailing FILTER / BODY are full nested expressions and are greedy. The
+// keyword helpers are atomic so boundaries are exact (e.g. `counter` is not
+// matched as `count`).
+aggregate  = _{ agg_count | agg_reduce }
+agg_count  = { kw_count ~ var_name ~ kw_where ~ expression }
+agg_reduce = { agg_op ~ expression ~ kw_across ~ var_name ~ kw_where ~ expression }
+agg_op     = @{ ("sum" | "average" | "min" | "max") ~ !ASCII_ALPHANUMERIC }
+kw_count   = @{ "count" ~ !ASCII_ALPHANUMERIC }
+kw_across  = @{ "across" ~ !ASCII_ALPHANUMERIC }
+kw_where   = @{ "where" ~ !ASCII_ALPHANUMERIC }
 
 // ================
 // TYPE DEFINITIONS

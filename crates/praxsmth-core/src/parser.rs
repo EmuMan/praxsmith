@@ -134,9 +134,61 @@ pub fn build_expression_pratt() -> PrattParser<Rule> {
         .op(Op::prefix(Rule::not))
 }
 
+/// Parses `count SYM where FILTER`. Inner pairs are the keyword tokens
+/// (skipped), the bound `var_name`, and the FILTER `expression`.
+fn parse_agg_count(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Expression {
+    let mut var = String::new();
+    let mut filter = None;
+    for inner in pair.into_inner() {
+        match inner.as_rule() {
+            Rule::var_name => var = inner.as_str().to_string(),
+            Rule::expression => filter = Some(parse_expression(inner, pratt)),
+            _ => {} // keyword tokens
+        }
+    }
+    Expression::Count(var, Box::new(filter.expect("agg_count is missing its filter")))
+}
+
+/// Parses `(sum | average | min | max) BODY across SYM where FILTER`. The two
+/// `expression` children appear in source order: BODY first, then FILTER.
+fn parse_agg_reduce(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Expression {
+    let mut op = None;
+    let mut var = String::new();
+    let mut exprs = Vec::with_capacity(2);
+    for inner in pair.into_inner() {
+        match inner.as_rule() {
+            Rule::agg_op => {
+                op = Some(match inner.as_str() {
+                    "sum" => AggregateOp::Sum,
+                    "average" => AggregateOp::Average,
+                    "min" => AggregateOp::Min,
+                    "max" => AggregateOp::Max,
+                    other => unreachable!("unexpected aggregate op {:?}", other),
+                });
+            }
+            Rule::var_name => var = inner.as_str().to_string(),
+            Rule::expression => exprs.push(parse_expression(inner, pratt)),
+            _ => {} // keyword tokens
+        }
+    }
+    let mut exprs = exprs.into_iter();
+    let body = exprs.next().expect("agg_reduce is missing its body");
+    let filter = exprs.next().expect("agg_reduce is missing its filter");
+    Expression::Aggregate {
+        op: op.expect("agg_reduce is missing its operator"),
+        body: Box::new(body),
+        var,
+        filter: Box::new(filter),
+    }
+}
+
 pub fn parse_expression(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Expression {
     pratt
-        .map_primary(|primary| Expression::Value(parse_value(primary)))
+        .map_primary(|primary| match primary.as_rule() {
+            Rule::agg_count => parse_agg_count(primary, pratt),
+            Rule::agg_reduce => parse_agg_reduce(primary, pratt),
+            _ => Expression::Value(parse_value(primary)),
+        })
         .map_prefix(|op, rhs| match op.as_rule() {
             Rule::not => Expression::Not(Box::new(rhs)),
             Rule::forall => {
@@ -280,5 +332,82 @@ mod tests {
         // value, so the whole input has no operator and parses as a value.
         let expr = parse_expression_str("anything").unwrap();
         assert!(matches!(expr, Expression::Value(_)));
+    }
+
+    #[test]
+    fn parses_count() {
+        let expr = parse_expression_str("count x where x.likes.alice").unwrap();
+        match expr {
+            Expression::Count(var, filter) => {
+                assert_eq!(var, "x");
+                assert!(matches!(*filter, Expression::Value(_)));
+            }
+            other => panic!("expected Count, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_sum_across() {
+        let expr =
+            parse_expression_str("sum x.likes.alice.strength across x where x.likes.alice").unwrap();
+        match expr {
+            Expression::Aggregate {
+                op,
+                body,
+                var,
+                filter,
+            } => {
+                assert_eq!(op, AggregateOp::Sum);
+                assert_eq!(var, "x");
+                assert!(matches!(*body, Expression::Value(_)));
+                assert!(matches!(*filter, Expression::Value(_)));
+            }
+            other => panic!("expected Aggregate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_all_reduce_ops() {
+        for (kw, expected) in [
+            ("sum", AggregateOp::Sum),
+            ("average", AggregateOp::Average),
+            ("min", AggregateOp::Min),
+            ("max", AggregateOp::Max),
+        ] {
+            let src = format!("{} a.b across x where x.c", kw);
+            match parse_expression_str(&src).unwrap() {
+                Expression::Aggregate { op, .. } => assert_eq!(op, expected),
+                other => panic!("expected Aggregate for {:?}, got {:?}", kw, other),
+            }
+        }
+    }
+
+    #[test]
+    fn aggregate_composes_with_operators() {
+        // Aggregates are numeric primaries, so they sit as an operand of `is`.
+        // The `where` filter is greedy, so the comparison must come before it:
+        // `count x where y` then `is 3` would bind `is 3` into the filter, so
+        // here we put the aggregate on the right of `is`.
+        let expr = parse_expression_str("3 is count x where x.c").unwrap();
+        match expr {
+            Expression::Is(lhs, rhs) => {
+                assert!(matches!(*lhs, Expression::Value(_)));
+                assert!(matches!(*rhs, Expression::Count(_, _)));
+            }
+            other => panic!("expected Is wrapping Count, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn aggregate_keywords_do_not_swallow_identifiers() {
+        // `counter` / `summary` must not be lexed as `count` / `sum`.
+        assert!(matches!(
+            parse_expression_str("counter").unwrap(),
+            Expression::Value(_)
+        ));
+        assert!(matches!(
+            parse_expression_str("summary").unwrap(),
+            Expression::Value(_)
+        ));
     }
 }

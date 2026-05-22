@@ -6,7 +6,7 @@ use crate::{
     anyhow_ext::ResultOptionExt,
     definitions::{
         PraxsmthConstant, PraxsmthValue, Sentence,
-        types::{Effect, Expression, PraxsmthTypeData},
+        types::{AggregateOp, Effect, Expression, PraxsmthTypeData},
         world::{Declaration, Goal, GoalMeasurement},
     },
     world::{
@@ -613,6 +613,73 @@ impl Simulation {
                 }
                 Ok(PraxsmthConstant::Boolean(false))
             }
+
+            Expression::Count(new_symbol, inner) => {
+                let mut count = 0;
+                for (agent_id, _) in world.iter_agents() {
+                    let new_bindings =
+                        bindings.with([(new_symbol.clone(), agent_id.clone())].into());
+                    match self.evaluate_expression(world, inner.as_ref(), &new_bindings)? {
+                        PraxsmthConstant::Boolean(true) => count += 1,
+                        PraxsmthConstant::Boolean(false) => continue,
+                        other => {
+                            bail!("Count condition must evaluate to boolean, got {:?}", other)
+                        }
+                    }
+                }
+                Ok(PraxsmthConstant::Number(count.into()))
+            }
+
+            Expression::Aggregate {
+                op,
+                body,
+                var,
+                filter,
+            } => {
+                let mut values = vec![];
+
+                for (agent_id, _) in world.iter_agents() {
+                    let new_bindings = bindings.with([(var.clone(), agent_id.clone())].into());
+                    match self.evaluate_expression(world, filter.as_ref(), &new_bindings)? {
+                        PraxsmthConstant::Boolean(true) => {
+                            let value =
+                                self.evaluate_expression(world, body.as_ref(), &new_bindings)?;
+                            match value {
+                                PraxsmthConstant::Number(n) => values.push(n),
+                                other => {
+                                    bail!("Aggregate body must evaluate to number, got {:?}", other)
+                                }
+                            }
+                        }
+                        PraxsmthConstant::Boolean(false) => continue,
+                        other => {
+                            bail!("Aggregate filter must evaluate to boolean, got {:?}", other)
+                        }
+                    }
+                }
+
+                Ok(match op {
+                    AggregateOp::Sum => PraxsmthConstant::Number(values.into_iter().sum()),
+                    AggregateOp::Average => {
+                        let count = values.len();
+                        if count == 0 {
+                            PraxsmthConstant::Number(0.0)
+                        } else {
+                            PraxsmthConstant::Number(values.into_iter().sum::<f64>() / count as f64)
+                        }
+                    }
+                    AggregateOp::Min => values
+                        .into_iter()
+                        .min_by(|a, b| a.partial_cmp(b).unwrap())
+                        .map(PraxsmthConstant::Number)
+                        .unwrap_or(PraxsmthConstant::Number(0.0)),
+                    AggregateOp::Max => values
+                        .into_iter()
+                        .max_by(|a, b| a.partial_cmp(b).unwrap())
+                        .map(PraxsmthConstant::Number)
+                        .unwrap_or(PraxsmthConstant::Number(0.0)),
+                })
+            }
         }
     }
 
@@ -933,38 +1000,30 @@ impl Simulation {
     /// scores would fix this issue, but also throws away potentially useful
     /// information, so I've decided not to do that.
     fn evaluate_goal(&self, world: &World, goal: &Goal, bindings: &Bindings) -> Result<f64> {
-        let evaluations: Vec<PraxsmthConstant> = vec![];
+        let evaluation = self.evaluate_expression(world, &goal.expression, bindings)?;
 
         let mut total_weight = 0.0;
         match goal.measurement {
-            GoalMeasurement::Exists => {
-                for evaluation in evaluations {
-                    match evaluation {
-                        PraxsmthConstant::Boolean(b) => {
-                            if b {
-                                total_weight += goal.weight;
-                            }
-                        }
-                        other => bail!(
-                            "goal expression must evaluate to boolean for Exists measurement, got {:?}",
-                            other
-                        ),
+            GoalMeasurement::Exists => match evaluation {
+                PraxsmthConstant::Boolean(b) => {
+                    if b {
+                        total_weight += goal.weight;
                     }
                 }
-            }
-            GoalMeasurement::Delta => {
-                for evaluation in evaluations {
-                    match evaluation {
-                        PraxsmthConstant::Number(n) => {
-                            total_weight += n * goal.weight;
-                        }
-                        other => bail!(
-                            "goal expression must evaluate to number for Increase/Decrease measurement, got {:?}",
-                            other
-                        ),
-                    }
+                other => bail!(
+                    "goal expression must evaluate to boolean for Exists measurement, got {:?}",
+                    other
+                ),
+            },
+            GoalMeasurement::Delta => match evaluation {
+                PraxsmthConstant::Number(n) => {
+                    total_weight += n * goal.weight;
                 }
-            }
+                other => bail!(
+                    "goal expression must evaluate to number for Increase/Decrease measurement, got {:?}",
+                    other
+                ),
+            },
         }
 
         Ok(total_weight)

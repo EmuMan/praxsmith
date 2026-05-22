@@ -94,6 +94,27 @@ pub enum Expression {
     ForAll(String, Box<Expression>),
     /// Boolean... -> Boolean (`any X where Y` = there exists some binding of X for which Y holds)
     Any(String, Box<Expression>),
+    /// Number (`count SYM where FILTER` = how many bindings of SYM satisfy FILTER)
+    Count(String, Box<Expression>),
+    /// Number (`OP BODY across SYM where FILTER` = reduce BODY over the bindings
+    /// of SYM that satisfy FILTER). With no matching bindings, evaluates to 0.
+    Aggregate {
+        op: AggregateOp,
+        /// Numeric expression evaluated once per matching binding of `var`.
+        body: Box<Expression>,
+        /// The bound variable iterated over.
+        var: String,
+        /// Boolean expression selecting which bindings of `var` contribute.
+        filter: Box<Expression>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AggregateOp {
+    Sum,
+    Average,
+    Min,
+    Max,
 }
 
 #[derive(Debug, Clone)]
