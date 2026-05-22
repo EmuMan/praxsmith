@@ -24,6 +24,171 @@ pub struct ActionRef {
 }
 
 #[derive(Debug, Clone)]
+pub enum Query {
+    Fielded(RelationQuery, String),
+    Unfielded(RelationQuery),
+}
+
+impl Query {
+    pub fn relation_query(&self) -> &RelationQuery {
+        match self {
+            Query::Fielded(relation_query, _) => relation_query,
+            Query::Unfielded(relation_query) => relation_query,
+        }
+    }
+
+    pub fn try_new_with_fields(relation_query: RelationQuery, fields: &[String]) -> Result<Self> {
+        if fields.len() > 1 {
+            bail!(
+                "too many fields specified for relation query {:?}, got {}",
+                relation_query,
+                fields.len()
+            );
+        } else if fields.len() == 1 {
+            Ok(Query::Fielded(relation_query, fields[0].clone()))
+        } else {
+            Ok(Query::Unfielded(relation_query))
+        }
+    }
+
+    pub fn parse(world: &World, sentence: &Sentence, bindings: &Bindings) -> Result<Self> {
+        match sentence.as_slice() {
+            [self_keyword, rest @ ..] if self_keyword == "self" => {
+                let self_sentence = bindings
+                    .self_id
+                    .as_ref()
+                    .with_context(|| "sentence starting with 'self' has no self context")?;
+                // Can't simply recurse because we would lose rest, so just recurse to
+                // build the query for the self context and then re-attach the rest.
+                let query = Self::parse(world, self_sentence, bindings).with_context(|| {
+                    format!(
+                        "parsing sentence starting with 'self' using self context {:?}",
+                        self_sentence
+                    )
+                })?;
+                Query::try_new_with_fields(query.relation_query().clone(), rest)
+            }
+            [agent, verb, trait_name, rest @ ..] if verb == "is" => {
+                let relation_type = world
+                    .type_mapping
+                    .get_type(trait_name)
+                    .with_context(|| format!("looking up trait type {}", trait_name))?;
+                let PraxsmthTypeData::Trait { .. } = &relation_type.data else {
+                    bail!("type {} is not a trait", trait_name);
+                };
+                Query::try_new_with_fields(
+                    RelationQuery::Trait {
+                        agent: AgentRef::new(agent, bindings)?,
+                        trait_name: trait_name.clone(),
+                    },
+                    rest,
+                )
+            }
+            [agent, verb, emotion_name, rest @ ..] if verb == "feels" => {
+                let relation_type = world
+                    .type_mapping
+                    .get_type(emotion_name)
+                    .with_context(|| format!("looking up emotion type {}", emotion_name))?;
+                let PraxsmthTypeData::Emotion { .. } = &relation_type.data else {
+                    bail!("type {} is not an emotion", emotion_name);
+                };
+                Query::try_new_with_fields(
+                    RelationQuery::Emotion {
+                        agent: AgentRef::new(agent, bindings)?,
+                        emotion_name: emotion_name.clone(),
+                    },
+                    rest,
+                )
+            }
+            [practice, practice_name, rest @ ..] if practice == "practice" => {
+                let relation_type = world
+                    .type_mapping
+                    .get_type(practice_name)
+                    .with_context(|| format!("looking up practice type {}", practice_name))?;
+                let PraxsmthTypeData::Practice { params, .. } = &relation_type.data else {
+                    bail!("type {} is not a practice", practice_name);
+                };
+                let participants_count = params.len();
+                if rest.len() < participants_count {
+                    bail!(
+                        "practice {} expects {} participants, got {}",
+                        practice_name,
+                        participants_count,
+                        rest.len()
+                    );
+                }
+                let participants = rest[..participants_count]
+                    .iter()
+                    .map(|a| AgentRef::new(a, bindings))
+                    .collect::<Result<Vec<AgentRef>>>()?;
+                Query::try_new_with_fields(
+                    RelationQuery::Practice {
+                        participants,
+                        type_name: practice_name.clone(),
+                    },
+                    &rest[participants_count..],
+                )
+            }
+            [agent_1, relation_name, agent_2, rest @ ..] => {
+                let relation_type =
+                    world
+                        .type_mapping
+                        .get_type(relation_name)
+                        .with_context(|| {
+                            format!("looking up binary relation type {}", relation_name)
+                        })?;
+                match &relation_type.data {
+                    PraxsmthTypeData::Directional { .. } => {}
+                    PraxsmthTypeData::Reciprocal { .. } => {}
+                    PraxsmthTypeData::Evaluation { .. } => {}
+                    _ => bail!("type {} is not a binary relation", relation_name),
+                }
+                Query::try_new_with_fields(
+                    RelationQuery::Binary {
+                        agent_1: AgentRef::new(agent_1, bindings)?,
+                        agent_2: AgentRef::new(agent_2, bindings)?,
+                        type_name: relation_name.clone(),
+                    },
+                    rest,
+                )
+            }
+            _ => bail!(
+                "could not parse sentence {:?} into a relation query",
+                sentence
+            ),
+        }
+    }
+
+    pub fn get_agent_refs(&self) -> Vec<&AgentRef> {
+        match self.relation_query() {
+            RelationQuery::Trait { agent, .. } => vec![agent],
+            RelationQuery::Emotion { agent, .. } => vec![agent],
+            RelationQuery::Binary {
+                agent_1, agent_2, ..
+            } => vec![agent_1, agent_2],
+            RelationQuery::Practice { participants, .. } => participants.iter().collect(),
+        }
+    }
+
+    pub fn is_any_agent_free(&self) -> bool {
+        self.get_agent_refs()
+            .iter()
+            .any(|agent_ref| agent_ref.is_free())
+    }
+
+    pub fn apply_bindings(&self, bindings: &Bindings) -> Self {
+        match self {
+            Query::Fielded(relation_query, field_name) => {
+                Query::Fielded(relation_query.apply_bindings(bindings), field_name.clone())
+            }
+            Query::Unfielded(relation_query) => {
+                Query::Unfielded(relation_query.apply_bindings(bindings))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum RelationQuery {
     Trait {
         agent: AgentRef,
@@ -42,6 +207,43 @@ pub enum RelationQuery {
         participants: Vec<AgentRef>,
         type_name: String,
     },
+}
+
+impl RelationQuery {
+    pub fn apply_bindings(&self, bindings: &Bindings) -> Self {
+        match self {
+            RelationQuery::Trait { agent, trait_name } => RelationQuery::Trait {
+                agent: agent.bind_or_same(bindings),
+                trait_name: trait_name.clone(),
+            },
+            RelationQuery::Emotion {
+                agent,
+                emotion_name,
+            } => RelationQuery::Emotion {
+                agent: agent.bind_or_same(bindings),
+                emotion_name: emotion_name.clone(),
+            },
+            RelationQuery::Binary {
+                agent_1,
+                agent_2,
+                type_name,
+            } => RelationQuery::Binary {
+                agent_1: agent_1.bind_or_same(bindings),
+                agent_2: agent_2.bind_or_same(bindings),
+                type_name: type_name.clone(),
+            },
+            RelationQuery::Practice {
+                participants,
+                type_name,
+            } => RelationQuery::Practice {
+                participants: participants
+                    .iter()
+                    .map(|p| p.bind_or_same(bindings))
+                    .collect(),
+                type_name: type_name.clone(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +279,20 @@ impl AgentRef {
             )),
         }
     }
+
+    pub fn is_free(&self) -> bool {
+        matches!(self, Self::Free(_))
+    }
+
+    pub fn bind_or_same(&self, bindings: &Bindings) -> AgentRef {
+        match self {
+            Self::Literal(_) => self.clone(),
+            Self::Free(specifier) => match bindings.get(specifier) {
+                Some(id) => AgentRef::Literal(id.into()),
+                None => self.clone(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -109,130 +325,6 @@ impl Simulation {
         Self {}
     }
 
-    /// Parses a sentence into a relation query, returning the query and any
-    /// remaining arguments. Verifies the type of the relation and the number
-    /// of parameters, but does not verify the agents involved.
-    ///
-    /// If the sentence is just ["self"], recurses on `bindings.self_id` if it
-    /// exists.
-    ///
-    /// Returns the relation query, plus any extra arguments at the end of the
-    /// sentence.
-    pub fn build_query(
-        &self,
-        world: &World,
-        sentence: &Sentence,
-        bindings: &Bindings,
-    ) -> Result<(RelationQuery, Box<[String]>)> {
-        match sentence.as_slice() {
-            [self_keyword, rest @ ..] if self_keyword == "self" => {
-                let self_sentence = bindings
-                    .self_id
-                    .as_ref()
-                    .with_context(|| "sentence starting with 'self' has no self context")?;
-                // Can't simply recurse because we would lose rest, so just recurse to
-                // build the query for the self context and then re-attach the rest.
-                let (query, _) = self
-                    .build_query(world, self_sentence, bindings)
-                    .with_context(|| {
-                        format!(
-                            "parsing sentence starting with 'self' using self context {:?}",
-                            self_sentence
-                        )
-                    })?;
-                Ok((query, rest.into()))
-            }
-            [agent, verb, trait_name, rest @ ..] if verb == "is" => {
-                let relation_type = world
-                    .type_mapping
-                    .get_type(trait_name)
-                    .with_context(|| format!("looking up trait type {}", trait_name))?;
-                let PraxsmthTypeData::Trait { .. } = &relation_type.data else {
-                    bail!("type {} is not a trait", trait_name);
-                };
-                Ok((
-                    RelationQuery::Trait {
-                        agent: AgentRef::new(agent, bindings)?,
-                        trait_name: trait_name.clone(),
-                    },
-                    rest.into(),
-                ))
-            }
-            [agent, verb, emotion_name, rest @ ..] if verb == "feels" => {
-                let relation_type = world
-                    .type_mapping
-                    .get_type(emotion_name)
-                    .with_context(|| format!("looking up emotion type {}", emotion_name))?;
-                let PraxsmthTypeData::Emotion { .. } = &relation_type.data else {
-                    bail!("type {} is not an emotion", emotion_name);
-                };
-                Ok((
-                    RelationQuery::Emotion {
-                        agent: AgentRef::new(agent, bindings)?,
-                        emotion_name: emotion_name.clone(),
-                    },
-                    rest.into(),
-                ))
-            }
-            [practice, practice_name, rest @ ..] if practice == "practice" => {
-                let relation_type = world
-                    .type_mapping
-                    .get_type(practice_name)
-                    .with_context(|| format!("looking up practice type {}", practice_name))?;
-                let PraxsmthTypeData::Practice { params, .. } = &relation_type.data else {
-                    bail!("type {} is not a practice", practice_name);
-                };
-                let participants_count = params.len();
-                if rest.len() < participants_count {
-                    bail!(
-                        "practice {} expects {} participants, got {}",
-                        practice_name,
-                        participants_count,
-                        rest.len()
-                    );
-                }
-                let participants = rest[..participants_count]
-                    .iter()
-                    .map(|a| AgentRef::new(a, bindings))
-                    .collect::<Result<Vec<AgentRef>>>()?;
-                Ok((
-                    RelationQuery::Practice {
-                        participants: participants,
-                        type_name: practice_name.clone(),
-                    },
-                    rest[participants_count..].into(),
-                ))
-            }
-            [agent_1, relation_name, agent_2, rest @ ..] => {
-                let relation_type =
-                    world
-                        .type_mapping
-                        .get_type(relation_name)
-                        .with_context(|| {
-                            format!("looking up binary relation type {}", relation_name)
-                        })?;
-                match &relation_type.data {
-                    PraxsmthTypeData::Directional { .. } => {}
-                    PraxsmthTypeData::Reciprocal { .. } => {}
-                    PraxsmthTypeData::Evaluation { .. } => {}
-                    _ => bail!("type {} is not a binary relation", relation_name),
-                }
-                Ok((
-                    RelationQuery::Binary {
-                        agent_1: AgentRef::new(agent_1, bindings)?,
-                        agent_2: AgentRef::new(agent_2, bindings)?,
-                        type_name: relation_name.clone(),
-                    },
-                    rest.into(),
-                ))
-            }
-            _ => bail!(
-                "could not parse sentence {:?} into a relation query",
-                sentence
-            ),
-        }
-    }
-
     /// Adds the information contained within a declaration to the world state.
     ///
     /// The sentence within the declaration must match a query. An error will
@@ -243,14 +335,17 @@ impl Simulation {
         declaration: &Declaration,
         bindings: &Bindings,
     ) -> Result<RelationHandle> {
-        let (query, args) = self
-            .build_query(world.inner(), &declaration.sentence, bindings)
+        let query = Query::parse(world.inner(), &declaration.sentence, bindings)
             .with_context(|| format!("processing declaration {:?}", declaration.sentence))?;
+
         // TODO: relations with one parameter should be initializable this way!
-        if !args.is_empty() {
+        let Query::Unfielded(relation_query) = &query else {
             bail!("extra parameters in declaration {:?}", declaration.sentence);
-        }
-        match query {
+        };
+
+        let relation_query = relation_query.apply_bindings(bindings);
+
+        match relation_query {
             RelationQuery::Trait { agent, trait_name } => {
                 world.add_trait(agent.as_literal()?, &trait_name, declaration.fields.clone())
             }
@@ -288,22 +383,23 @@ impl Simulation {
 
     /// Uses a relation query to retrieve the associated relation. Will return
     /// an error if there is a free variable in the query.
+    ///
+    /// Returns `Ok(None)` if the relation specified in the query does not
+    /// exist, and `Ok(Some(...))` if it does.
     pub fn lookup_relation<'a>(
         &self,
         world: &'a World,
-        query: RelationQuery,
-    ) -> Result<(&'a AgentToRelation, &'a Relation)> {
+        query: &RelationQuery,
+    ) -> Result<Option<(&'a AgentToRelation, &'a Relation)>> {
         match query {
             RelationQuery::Trait { agent, trait_name } => {
                 let agent_lit = agent.as_literal()?;
-                world
-                    .get_trait(agent_lit, &trait_name)
-                    .require_with_context(|| {
-                        format!(
-                            "could not find trait with agent: {}, trait name: {}",
-                            agent_lit, trait_name
-                        )
-                    })
+                world.get_trait(agent_lit, &trait_name).with_context(|| {
+                    format!(
+                        "could not find trait with agent: {}, trait name: {}",
+                        agent_lit, trait_name
+                    )
+                })
             }
             RelationQuery::Emotion {
                 agent,
@@ -312,7 +408,7 @@ impl Simulation {
                 let agent_lit = agent.as_literal()?;
                 world
                     .get_emotion(agent_lit, &emotion_name)
-                    .require_with_context(|| {
+                    .with_context(|| {
                         format!(
                             "could not find emotion with agent: {}, emotion name: {}",
                             agent_lit, emotion_name
@@ -326,7 +422,7 @@ impl Simulation {
             } => {
                 let agent_1_lit = agent_1.as_literal()?;
                 let agent_2_lit = agent_2.as_literal()?;
-                world.get_binary_relation(agent_1_lit, agent_2_lit, &type_name).require_with_context(|| {
+                world.get_binary_relation(agent_1_lit, agent_2_lit, &type_name).with_context(|| {
                     format!(
                         "could not find binary relation with agent 1: {}, agent 2: {}, type name: {}",
                         agent_1_lit, agent_2_lit, type_name
@@ -343,7 +439,7 @@ impl Simulation {
                     .collect::<Result<Vec<&str>>>()?;
                 world
                     .get_practice(participants_lit, &type_name)
-                    .require_with_context(|| {
+                    .with_context(|| {
                         format!(
                             "could not find practice with participants: {:?}, practice name: {}",
                             participants, type_name
@@ -353,46 +449,59 @@ impl Simulation {
         }
     }
 
-    /// Turns a variable (sentence defining a world query) into a constant
-    /// value. If the relation specified within the variable does not exist,
-    /// evaluates to `PraxsmthConstant::Boolean(false)`. If there is no field
-    /// specified but the relationship does exist, evaluates to
-    /// `PraxsmthConstant::Boolean(true)`.
-    ///
-    /// Returns an error if there are any free variables in the sentence. All
-    /// variables must be defined within `bindings`.
-    pub fn resolve_variable(
+    /// Resolves a fielded query to the value of the specified field. Will
+    /// return an error if there is a free variable in the relation query, or
+    /// if the specified relation or field does not exist.
+    pub fn evaluate_fielded_query(
+        &self,
+        world: &World,
+        relation_query: &RelationQuery,
+        field_name: &str,
+    ) -> Result<PraxsmthConstant> {
+        let (_, relation) = self
+            .lookup_relation(world, relation_query)
+            .require_with_context(|| {
+                format!(
+                    "evaluating query for relation {:?} with field {:?}",
+                    relation_query, field_name
+                )
+            })?;
+
+        // An argument was specified, so pull it from the relation's fields
+        relation
+            .fields
+            .get(field_name)
+            .cloned()
+            .with_context(|| format!("field '{}' not found in relation", field_name))
+    }
+
+    /// Evaluates a variable (i.e. a sentence) to a constant value. The
+    /// sentence must be parsable into a relation query. Bindings will be
+    /// applied to the query before evaluation, so free variables can be used
+    /// in the sentence as long as they are bound in the provided bindings.
+    /// Returns an error if the sentence cannot be parsed into a relation
+    /// if there are any free variables in the query after bindings are
+    /// applied, or if a fielded query specifies a relation that does not exist
+    /// in the world.
+    pub fn evaluate_variable(
         &self,
         world: &World,
         sentence: &Sentence,
         bindings: &Bindings,
     ) -> Result<PraxsmthConstant> {
-        let (query, args) = self
-            .build_query(world, &sentence, bindings)
-            .with_context(|| format!("resolving variable {:?}", sentence))?;
-
-        // TODO: propagate relation not found, but NOT free variable errors!!!!
-        let Ok((_, relation)) = self.lookup_relation(world, query) else {
-            // No relation found, so this evaluates to false
-            return Ok(PraxsmthConstant::Boolean(false));
-        };
-
-        if args.is_empty() {
-            // No parameters specified but there is a relationship, so return true
-            return Ok(PraxsmthConstant::Boolean(true));
+        let query = Query::parse(world, sentence, bindings)?.apply_bindings(bindings);
+        match &query {
+            Query::Fielded(relation_query, field_name) => {
+                // Look into the actual field
+                self.evaluate_fielded_query(world, relation_query, field_name)
+            }
+            Query::Unfielded(relation_query) => {
+                // Existence check
+                Ok(PraxsmthConstant::Boolean(
+                    self.lookup_relation(world, relation_query)?.is_some(),
+                ))
+            }
         }
-
-        if args.len() > 1 {
-            bail!("too many parameters specified in variable {:?}", sentence);
-        }
-
-        // An argument was specified, so pull it from the relation's fields
-        let arg_name = &args[0];
-        relation
-            .fields
-            .get(arg_name)
-            .cloned()
-            .with_context(|| format!("parameter '{}' not found in relation", arg_name))
     }
 
     /// Evaluates an expression to a single constant value.
@@ -413,38 +522,47 @@ impl Simulation {
                 PraxsmthValue::Boolean(b) => Ok(PraxsmthConstant::Boolean(*b)),
                 PraxsmthValue::Variant(v) => Ok(PraxsmthConstant::Variant(v.clone())),
                 PraxsmthValue::String(s) => Ok(PraxsmthConstant::String(s.clone())),
-                PraxsmthValue::Variable(sentence) => {
-                    self.resolve_variable(world, &sentence, bindings)
-                }
+                PraxsmthValue::Variable(sentence) => self
+                    .evaluate_variable(world, sentence, bindings)
+                    .with_context(|| {
+                        format!(
+                            "evaluating variable for expression with sentence {:?}",
+                            sentence
+                        )
+                    }),
             },
 
             Expression::And(x, y) => {
                 let x = self.evaluate_expression(world, x.as_ref(), bindings)?;
+                let PraxsmthConstant::Boolean(x) = x else {
+                    bail!("And conditions must evaluate to boolean, got {:?}", x);
+                };
+                if !x {
+                    // Short circuit, important behavior!
+                    return Ok(PraxsmthConstant::Boolean(false));
+                }
+
                 let y = self.evaluate_expression(world, y.as_ref(), bindings)?;
-                match (x, y) {
-                    (PraxsmthConstant::Boolean(x), PraxsmthConstant::Boolean(y)) => {
-                        Ok(PraxsmthConstant::Boolean(x && y))
-                    }
-                    (x, y) => bail!(
-                        "And conditions must evaluate to boolean, got {:?} and {:?}",
-                        x,
-                        y
-                    ),
+                match y {
+                    PraxsmthConstant::Boolean(y) => Ok(PraxsmthConstant::Boolean(y)),
+                    other => bail!("And conditions must evaluate to boolean, got {:?}", other),
                 }
             }
 
             Expression::Or(x, y) => {
                 let x = self.evaluate_expression(world, x.as_ref(), bindings)?;
+                let PraxsmthConstant::Boolean(x) = x else {
+                    bail!("Or conditions must evaluate to boolean, got {:?}", x);
+                };
+                if x {
+                    // Short circuit, important behavior!
+                    return Ok(PraxsmthConstant::Boolean(true));
+                }
+
                 let y = self.evaluate_expression(world, y.as_ref(), bindings)?;
-                match (x, y) {
-                    (PraxsmthConstant::Boolean(x), PraxsmthConstant::Boolean(y)) => {
-                        Ok(PraxsmthConstant::Boolean(x || y))
-                    }
-                    (x, y) => bail!(
-                        "Or conditions must evaluate to boolean, got {:?} and {:?}",
-                        x,
-                        y
-                    ),
+                match y {
+                    PraxsmthConstant::Boolean(y) => Ok(PraxsmthConstant::Boolean(y)),
+                    other => bail!("Or conditions must evaluate to boolean, got {:?}", other),
                 }
             }
 
@@ -462,17 +580,43 @@ impl Simulation {
                 }
             }
 
-            Expression::ForAll(..) => {
-                unimplemented!()
+            Expression::ForAll(new_symbol, inner) => {
+                for (agent_id, _) in world.iter_agents() {
+                    let new_bindings =
+                        bindings.with([(new_symbol.clone(), agent_id.clone())].into());
+                    match self.evaluate_expression(world, inner.as_ref(), &new_bindings)? {
+                        PraxsmthConstant::Boolean(true) => continue,
+                        PraxsmthConstant::Boolean(false) => {
+                            return Ok(PraxsmthConstant::Boolean(false));
+                        }
+                        other => {
+                            bail!("ForAll condition must evaluate to boolean, got {:?}", other)
+                        }
+                    }
+                }
+                Ok(PraxsmthConstant::Boolean(true))
             }
 
-            Expression::Any(..) => {
-                unimplemented!()
+            Expression::Any(new_symbol, inner) => {
+                for (agent_id, _) in world.iter_agents() {
+                    let new_bindings =
+                        bindings.with([(new_symbol.clone(), agent_id.clone())].into());
+                    match self.evaluate_expression(world, inner.as_ref(), &new_bindings)? {
+                        PraxsmthConstant::Boolean(true) => {
+                            return Ok(PraxsmthConstant::Boolean(true));
+                        }
+                        PraxsmthConstant::Boolean(false) => continue,
+                        other => {
+                            bail!("Any condition must evaluate to boolean, got {:?}", other)
+                        }
+                    }
+                }
+                Ok(PraxsmthConstant::Boolean(false))
             }
         }
     }
 
-    fn evaluate_expression_as_boolean(
+    pub fn check_condition(
         &self,
         world: &World,
         expression: &Expression,
@@ -485,15 +629,6 @@ impl Simulation {
                 other
             ),
         }
-    }
-
-    pub fn check_condition(
-        &self,
-        _world: &World,
-        _condition: &Expression,
-        _bindings: &Bindings,
-    ) -> Result<bool> {
-        unimplemented!()
     }
 
     fn process_print(
@@ -521,16 +656,20 @@ impl Simulation {
         sentence: &Sentence,
         bindings: &Bindings,
     ) -> Result<()> {
-        let (query, args) = self
-            .build_query(world.inner(), sentence, bindings)
+        let query = Query::parse(world.inner(), sentence, bindings)
             .with_context(|| format!("processing delete outcome {:?}", sentence))?;
-        if !args.is_empty() {
+
+        let Query::Unfielded(relation_query) = &query else {
             bail!("extra parameters in delete outcome {:?}", sentence);
-        }
+        };
+
+        let relation_query = relation_query.apply_bindings(bindings);
 
         let (edge, _) = self
-            .lookup_relation(world.inner(), query)
-            .with_context(|| format!("relation not found in delete outcome {:?}", sentence))?;
+            .lookup_relation(world.inner(), &relation_query)
+            .require_with_context(|| {
+                format!("relation not found in delete outcome {:?}", sentence)
+            })?;
         world
             .remove_relation(edge.relation_handle.clone())
             .with_context(|| format!("removing relation in delete outcome {:?}", sentence))
@@ -543,42 +682,48 @@ impl Simulation {
         value: &PraxsmthValue,
         bindings: &Bindings,
     ) -> Result<()> {
-        let (query, args) = self
-            .build_query(world.inner(), sentence, bindings)
-            .with_context(|| format!("processing set outcome {:?}", sentence))?;
-        if args.len() != 1 {
+        let query = Query::parse(world.inner(), sentence, bindings)
+            .with_context(|| format!("processing update outcome {:?}", sentence))?;
+        let Query::Fielded(relation_query, field_name) = &query else {
             // TODO: Support bracket syntax so this is actually usable!!!
             // (Currently you can't initialize anything with >1 fields)
             // Just needs to be added to parser and the logic flow here,
             // the update functions should already support it.
             bail!(
-                "exactly one parameter must be specified in set outcome {:?}, got {}",
-                sentence,
-                args.len()
+                "update outcome must specify a field to update {:?}",
+                sentence
             );
-        }
-        let arg_name = &args[0];
+        };
+
+        let relation_query = relation_query.apply_bindings(bindings);
 
         let (edge, _) = self
-            .lookup_relation(world.inner(), query)
-            .with_context(|| format!("relation not found in set outcome {:?}", sentence))?;
+            .lookup_relation(world.inner(), &relation_query)
+            .require_with_context(|| {
+                format!("relation not found in update outcome {:?}", sentence)
+            })?;
 
         let constant_value = match value {
             PraxsmthValue::Number(n) => PraxsmthConstant::Number(*n),
             PraxsmthValue::Boolean(b) => PraxsmthConstant::Boolean(*b),
             PraxsmthValue::Variant(v) => PraxsmthConstant::Variant(v.clone()),
             PraxsmthValue::String(s) => PraxsmthConstant::String(s.clone()),
-            PraxsmthValue::Variable(sentence) => self
-                .resolve_variable(world.inner(), sentence, bindings)
-                .context("resolving variable for set outcome")?,
+            PraxsmthValue::Variable(new_val_sentence) => self
+                .evaluate_variable(world.inner(), new_val_sentence, bindings)
+                .with_context(|| {
+                    format!(
+                        "evaluating variable for new value in update outcome with sentence {:?}",
+                        new_val_sentence
+                    )
+                })?,
         };
 
         world
             .update_relation(
                 edge.relation_handle.clone(),
-                HashMap::from([(arg_name.clone(), constant_value)]),
+                HashMap::from([(field_name.clone(), constant_value)]),
             )
-            .with_context(|| format!("applying set outcome {:?}", sentence))
+            .with_context(|| format!("applying update outcome {:?}", sentence))
     }
 
     fn process_increase(
@@ -787,9 +932,7 @@ impl Simulation {
     /// recommend normalizing your values for this; throwing away non-delta
     /// scores would fix this issue, but also throws away potentially useful
     /// information, so I've decided not to do that.
-    fn evaluate_goal(&self, _world: &World, goal: &Goal, _bindings: &Bindings) -> Result<f64> {
-        unimplemented!();
-
+    fn evaluate_goal(&self, world: &World, goal: &Goal, bindings: &Bindings) -> Result<f64> {
         let evaluations: Vec<PraxsmthConstant> = vec![];
 
         let mut total_weight = 0.0;
