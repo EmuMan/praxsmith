@@ -300,7 +300,7 @@ pub fn get_available_actions(world: &World, agent_name: &str) -> Result<Vec<Acti
         match &relation.data {
             RelationData::Practice { bindings, .. } => {
                 let relation_type = world
-                    .type_mapping
+                    .relation_type_map
                     .get_type(&relation.type_name)
                     .with_context(|| {
                         format!("type {} not found for practice action", relation.type_name)
@@ -370,7 +370,7 @@ pub fn process_available_action(
     };
     let relation_type = world
         .inner()
-        .type_mapping
+        .relation_type_map
         .get_type(&relation.type_name)
         .with_context(|| format!("type {} not found for available action", relation.type_name))?;
     let RelationTypeData::Practice { actions, .. } = &relation_type.data else {

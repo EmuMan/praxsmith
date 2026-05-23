@@ -1,3 +1,5 @@
+use std::fmt;
+
 use anyhow::{Context, Result, bail};
 
 use crate::{
@@ -215,6 +217,35 @@ impl Expression {
                         .map(Constant::Number)
                         .unwrap_or(Constant::Number(0.0)),
                 })
+            }
+        }
+    }
+}
+
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Expression::Value(value) => write!(f, "{}", value),
+            Expression::And(x, y) => write!(f, "({} and {})", x, y),
+            Expression::Or(x, y) => write!(f, "({} or {})", x, y),
+            Expression::Is(x, y) => write!(f, "({} is {})", x, y),
+            Expression::Not(x) => write!(f, "(not {})", x),
+            Expression::ForAll(var, inner) => write!(f, "(for all {}, {})", var, inner),
+            Expression::Any(var, inner) => write!(f, "(any {} where {})", var, inner),
+            Expression::Count(var, filter) => write!(f, "(count {} where {})", var, filter),
+            Expression::Aggregate {
+                op,
+                body,
+                var,
+                filter,
+            } => {
+                let op_str = match op {
+                    AggregateOp::Sum => "sum",
+                    AggregateOp::Average => "average",
+                    AggregateOp::Min => "min",
+                    AggregateOp::Max => "max",
+                };
+                write!(f, "({} {} across {} where {})", op_str, body, var, filter)
             }
         }
     }

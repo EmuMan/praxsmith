@@ -1,3 +1,5 @@
+use std::fmt;
+
 use anyhow::{Context, Result, bail};
 
 use crate::{
@@ -54,7 +56,7 @@ impl Query {
             }
             [agent, verb, trait_name, rest @ ..] if verb == "is" => {
                 let relation_type = world
-                    .get_type_mapping()
+                    .get_relation_type_map()
                     .get_type(trait_name)
                     .with_context(|| format!("looking up trait type {}", trait_name))?;
                 let RelationTypeData::Trait { .. } = &relation_type.data else {
@@ -70,7 +72,7 @@ impl Query {
             }
             [agent, verb, emotion_name, rest @ ..] if verb == "feels" => {
                 let relation_type = world
-                    .get_type_mapping()
+                    .get_relation_type_map()
                     .get_type(emotion_name)
                     .with_context(|| format!("looking up emotion type {}", emotion_name))?;
                 let RelationTypeData::Emotion { .. } = &relation_type.data else {
@@ -86,7 +88,7 @@ impl Query {
             }
             [practice, practice_name, rest @ ..] if practice == "practice" => {
                 let relation_type = world
-                    .get_type_mapping()
+                    .get_relation_type_map()
                     .get_type(practice_name)
                     .with_context(|| format!("looking up practice type {}", practice_name))?;
                 let RelationTypeData::Practice { params, .. } = &relation_type.data else {
@@ -115,7 +117,7 @@ impl Query {
             }
             [agent_1, relation_name, agent_2, rest @ ..] => {
                 let relation_type = world
-                    .get_type_mapping()
+                    .get_relation_type_map()
                     .get_type(relation_name)
                     .with_context(|| {
                         format!("looking up binary relation type {}", relation_name)
@@ -201,7 +203,7 @@ impl Query {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RelationQuery {
     Trait {
         agent: AgentRef,
@@ -324,9 +326,59 @@ impl RelationQuery {
             }
         }
     }
+
+    pub fn get_all_agents(&self) -> Vec<&AgentRef> {
+        match self {
+            RelationQuery::Trait { agent, .. } => vec![agent],
+            RelationQuery::Emotion { agent, .. } => vec![agent],
+            RelationQuery::Binary {
+                agent_1, agent_2, ..
+            } => vec![agent_1, agent_2],
+            RelationQuery::Practice { participants, .. } => participants.iter().collect(),
+        }
+    }
+
+    pub fn type_name(&self) -> &str {
+        match self {
+            RelationQuery::Trait { trait_name, .. } => trait_name,
+            RelationQuery::Emotion { emotion_name, .. } => emotion_name,
+            RelationQuery::Binary { type_name, .. } => type_name,
+            RelationQuery::Practice { type_name, .. } => type_name,
+        }
+    }
 }
 
-#[derive(Debug, Clone)]
+impl fmt::Display for RelationQuery {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RelationQuery::Trait { agent, trait_name } => {
+                write!(f, "{}.is.{}", agent.symbol(), trait_name)
+            }
+            RelationQuery::Emotion {
+                agent,
+                emotion_name,
+            } => write!(f, "{}.feels.{}", agent.symbol(), emotion_name),
+            RelationQuery::Binary {
+                agent_1,
+                agent_2,
+                type_name,
+            } => write!(f, "{}.{}.{}", agent_1.symbol(), type_name, agent_2.symbol()),
+            RelationQuery::Practice {
+                participants,
+                type_name,
+            } => {
+                let participants_str = participants
+                    .iter()
+                    .map(|p| p.symbol())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "practice.{} with.{}", type_name, participants_str)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AgentRef {
     Literal(String),
     Free(String),
@@ -371,6 +423,13 @@ impl AgentRef {
                 Some(id) => AgentRef::Literal(id.into()),
                 None => self.clone(),
             },
+        }
+    }
+
+    pub fn symbol(&self) -> &str {
+        match self {
+            Self::Literal(id) => id,
+            Self::Free(specifier) => specifier,
         }
     }
 }

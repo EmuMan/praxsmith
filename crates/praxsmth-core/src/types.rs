@@ -4,6 +4,8 @@ use anyhow::{Context, Result, bail};
 
 use crate::{expressions::Expression, world::simulation::Effect};
 
+pub mod checking;
+
 #[derive(Debug, Clone)]
 pub struct RelationType {
     pub name: String,
@@ -279,5 +281,15 @@ impl RelationTypeMap {
         self.types
             .insert(t.name.clone(), RelationTypeMapEntry::Type(t));
         Ok(())
+    }
+
+    pub fn iter_types(&self) -> impl Iterator<Item = &RelationType> {
+        self.types.values().filter_map(|entry| {
+            if let RelationTypeMapEntry::Type(t) = entry {
+                Some(t)
+            } else {
+                None
+            }
+        })
     }
 }
