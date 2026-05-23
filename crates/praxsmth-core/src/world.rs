@@ -392,21 +392,21 @@ pub enum WorldMutation {
 
 pub struct World {
     agents: HashMap<String, Agent>,
-    type_mapping: RelationTypeMap,
+    relation_type_map: RelationTypeMap,
     relation_store: RelationStore,
 }
 
 impl World {
-    pub fn new(type_mapping: RelationTypeMap) -> Self {
+    pub fn new(type_map: RelationTypeMap) -> Self {
         World {
             agents: HashMap::new(),
-            type_mapping,
+            relation_type_map: type_map,
             relation_store: RelationStore::new(),
         }
     }
 
-    pub fn get_type_mapping(&self) -> &RelationTypeMap {
-        &self.type_mapping
+    pub fn get_relation_type_map(&self) -> &RelationTypeMap {
+        &self.relation_type_map
     }
 
     pub fn iter_relations(&self) -> impl Iterator<Item = (RelationHandle, &Relation)> {
@@ -516,7 +516,7 @@ impl World {
             .get_mut(handle.clone())
             .with_context(|| format!("looking up relation {:?} for update", handle))?;
         let relation_type = self
-            .type_mapping
+            .relation_type_map
             .get_type(&relation.type_name)
             .with_context(|| {
                 format!(
@@ -609,7 +609,7 @@ impl World {
 
     fn validate_type_fields(&self, type_name: &str, fields: &Fields) -> Result<()> {
         let edge_type = self
-            .type_mapping
+            .relation_type_map
             .get_type(type_name)
             .with_context(|| format!("looking up type {} in type mapping", type_name))?;
         verify_fields(fields, &edge_type.fields, true)
@@ -623,7 +623,7 @@ impl World {
         check: impl Fn(&RelationTypeData) -> bool,
     ) -> Result<&'a RelationType> {
         let t = self
-            .type_mapping
+            .relation_type_map
             .get_type(type_id)
             .with_context(|| format!("type {} not found in type mapping", type_id))?;
         if !check(&t.data) {
@@ -858,7 +858,7 @@ impl World {
             .with_context(directional_ctx)?;
 
         let exclusive = matches!(
-            self.type_mapping.get_type(type_id),
+            self.relation_type_map.get_type(type_id),
             Some(t) if matches!(&t.data, RelationTypeData::Directional { exclusive: true, .. })
         );
 
@@ -954,7 +954,7 @@ impl World {
         // If the edge is a complement, perform a search on the primary type
         // with the from and to reversed. This allows us to find the edge
         // regardless of which direction it's referred to as.
-        if let Some(primary_type_name) = self.type_mapping.get_complement_entry(type_id) {
+        if let Some(primary_type_name) = self.relation_type_map.get_complement_entry(type_id) {
             return self.get_directional(to_id, from_id, primary_type_name);
         }
 
@@ -1235,7 +1235,7 @@ impl World {
         // If the edge is a complement, perform a search on the primary type
         // with the from and to reversed. This allows us to find the edge
         // regardless of which direction it's referred to as.
-        if let Some(primary_type_name) = self.type_mapping.get_complement_entry(type_id) {
+        if let Some(primary_type_name) = self.relation_type_map.get_complement_entry(type_id) {
             return self.get_evaluation(to_id, from_id, primary_type_name);
         }
 
@@ -1313,7 +1313,7 @@ impl World {
             .with_context(practice_ctx)?;
 
         let type_def = self
-            .type_mapping
+            .relation_type_map
             .get_type(type_id)
             .with_context(practice_ctx)?;
 
@@ -1460,12 +1460,15 @@ impl World {
         edge_type_id: &str,
         mut fields: Fields,
     ) -> Result<RelationCreated> {
-        let edge_type = self.type_mapping.get_type(edge_type_id).with_context(|| {
-            format!(
-                "looking up edge type {} for binary relation {} -> {}",
-                edge_type_id, from_id, to_id
-            )
-        })?;
+        let edge_type = self
+            .relation_type_map
+            .get_type(edge_type_id)
+            .with_context(|| {
+                format!(
+                    "looking up edge type {} for binary relation {} -> {}",
+                    edge_type_id, from_id, to_id
+                )
+            })?;
         match edge_type.data {
             RelationTypeData::Directional { .. } => {
                 self.add_directional(from_id, to_id, edge_type_id, fields)
@@ -1509,7 +1512,7 @@ impl World {
         to: &str,
         edge_type_name: &str,
     ) -> Result<Option<(&AgentToRelation, &Relation)>> {
-        match self.type_mapping.get_type(edge_type_name) {
+        match self.relation_type_map.get_type(edge_type_name) {
             Some(edge_type) => match edge_type.data {
                 RelationTypeData::Directional { .. } => {
                     self.get_directional(from, to, edge_type_name)

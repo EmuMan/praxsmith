@@ -282,4 +282,14 @@ impl RelationTypeMap {
             .insert(t.name.clone(), RelationTypeMapEntry::Type(t));
         Ok(())
     }
+
+    pub fn iter_types(&self) -> impl Iterator<Item = &RelationType> {
+        self.types.values().filter_map(|entry| {
+            if let RelationTypeMapEntry::Type(t) = entry {
+                Some(t)
+            } else {
+                None
+            }
+        })
+    }
 }

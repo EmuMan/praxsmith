@@ -6,7 +6,7 @@ use crate::{
         types::parse_types,
         world::{WorldInitStep, parse_world},
     },
-    types::RelationTypeMap,
+    types::{RelationTypeMap, checking::type_check_world},
     values::Constant,
     world::{
         Relation, RelationHandle, World,
@@ -77,6 +77,8 @@ impl PraxsmthApi {
                 }
             }
         }
+
+        type_check_world(&world).with_context(|| "type checking world after initialization")?;
 
         Ok(Self::new(world))
     }

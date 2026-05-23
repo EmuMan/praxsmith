@@ -1,11 +1,13 @@
+use std::fmt;
+
 use anyhow::{Context, Result, bail};
 
 use crate::{
     expressions::Expression,
     queries::{Query, RelationQuery},
-    types::FieldType,
+    types::{FieldType, RelationTypeData},
     values::Value,
-    world::{World, bindings::Bindings},
+    world::{World, bindings::Bindings, goals::GoalMeasurement},
 };
 
 #[derive(Debug, Clone)]
@@ -119,16 +121,36 @@ impl ResultType {
     }
 }
 
-pub fn type_check(expression: &Expression, world: &World) -> Result<ResultType> {
+impl fmt::Display for ResultType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResultType::Boolean { .. } => write!(f, "Boolean"),
+            ResultType::Number => write!(f, "Number"),
+            ResultType::String => write!(f, "String"),
+            ResultType::Variant => write!(f, "Variant"),
+        }
+    }
+}
+
+pub fn type_check(
+    expression: &Expression,
+    world: &World,
+    extra_bindings: &[String],
+) -> Result<ResultType> {
     let world_entity_ids: Vec<String> = world
         .iter_agents()
         .map(|(agent_id, _)| agent_id.clone())
+        .collect();
+    let all_bindings = extra_bindings
+        .iter()
+        .cloned()
+        .chain(world_entity_ids.iter().cloned())
         .collect();
     type_check_helper(
         expression,
         world,
         &mut Guarantees::default(),
-        &mut ValidAgents::new(world_entity_ids),
+        &mut ValidAgents::new(all_bindings),
     )
 }
 
@@ -158,7 +180,7 @@ fn type_check_helper(
                 ..
             } = x
             else {
-                bail!("And conditions must be boolean, got {:?}", x);
+                bail!("And conditions must be boolean, got {}", x);
             };
 
             // We can evaluate the second condition under the assumption that
@@ -179,7 +201,7 @@ fn type_check_helper(
                     true_guarantees: x_true_guarantees.merged_with(&y_true_guarantees),
                     false_guarantees: Guarantees::default(),
                 }),
-                other => bail!("And conditions must be boolean, got {:?}", other),
+                other => bail!("And conditions must be boolean, got {}", other),
             }
         }
         Expression::Or(x, y) => {
@@ -189,7 +211,7 @@ fn type_check_helper(
                 ..
             } = x
             else {
-                bail!("Or conditions must be boolean, got {:?}", x);
+                bail!("Or conditions must be boolean, got {}", x);
             };
 
             // We can evaluate the second condition under the assumption that
@@ -210,7 +232,7 @@ fn type_check_helper(
                     true_guarantees: Guarantees::default(),
                     false_guarantees: x_false_guarantees.merged_with(&y_false_guarantees),
                 }),
-                other => bail!("Or conditions must be boolean, got {:?}", other),
+                other => bail!("Or conditions must be boolean, got {}", other),
             }
         }
         Expression::Is(x, y) => {
@@ -219,7 +241,7 @@ fn type_check_helper(
             // The only condition is that they are the same type
             if std::mem::discriminant(&x) != std::mem::discriminant(&y) {
                 bail!(
-                    "Is conditions must compare values of the same type, got {:?} and {:?}",
+                    "Is conditions must compare values of the same type, got {} and {:?}",
                     x,
                     y
                 );
@@ -240,7 +262,7 @@ fn type_check_helper(
                     true_guarantees: false_guarantees,
                     false_guarantees: true_guarantees,
                 }),
-                other => bail!("Not conditions must be boolean, got {:?}", other),
+                other => bail!("Not conditions must be boolean, got {}", other),
             }
         }
         Expression::ForAll(new_symbol, expression) => {
@@ -250,7 +272,7 @@ fn type_check_helper(
             valid_agents.pop();
             match res {
                 ResultType::Boolean { .. } => Ok(ResultType::empty_boolean()),
-                other => bail!("ForAll conditions must be boolean, got {:?}", other),
+                other => bail!("ForAll conditions must be boolean, got {}", other),
             }
         }
         Expression::Any(new_symbol, expression) => {
@@ -260,7 +282,7 @@ fn type_check_helper(
             valid_agents.pop();
             match res {
                 ResultType::Boolean { .. } => Ok(ResultType::empty_boolean()),
-                other => bail!("Any conditions must be boolean, got {:?}", other),
+                other => bail!("Any conditions must be boolean, got {}", other),
             }
         }
         Expression::Count(new_symbol, expression) => {
@@ -269,8 +291,8 @@ fn type_check_helper(
             let res = type_check_helper(expression, world, guarantees, valid_agents)?;
             valid_agents.pop();
             match res {
-                ResultType::Boolean { .. } => Ok(ResultType::empty_boolean()),
-                other => bail!("Any conditions must be boolean, got {:?}", other),
+                ResultType::Boolean { .. } => Ok(ResultType::Number),
+                other => bail!("Any conditions must be boolean, got {}", other),
             }
         }
         Expression::Aggregate {
@@ -278,14 +300,14 @@ fn type_check_helper(
         } => {
             // The new symbol represents a new valid agent binding
             valid_agents.push(var.clone())?;
-            let filter_res = type_check_helper(expression, world, guarantees, valid_agents)?;
+            let filter_res = type_check_helper(filter, world, guarantees, valid_agents)?;
             valid_agents.pop();
 
-            let ResultType::Boolean {
-                true_guarantees, ..
-            } = filter_res
-            else {
-                bail!("Aggregate filter must be boolean, got {:?}", filter);
+            let true_guarantees = match filter_res {
+                ResultType::Boolean {
+                    true_guarantees, ..
+                } => true_guarantees,
+                other => bail!("Aggregate filter must be boolean, got {}", other),
             };
 
             // We can evaluate the aggregate body under the assumptions of the
@@ -299,7 +321,7 @@ fn type_check_helper(
 
             match body_res {
                 ResultType::Number => Ok(ResultType::Number),
-                other => bail!("Aggregate bodies must be numeric, got {:?}", other),
+                other => bail!("Aggregate bodies must be numeric, got {}", other),
             }
         }
     }
@@ -326,7 +348,7 @@ fn type_check_query(
             }
 
             let relation_type = world
-                .get_type_mapping()
+                .get_relation_type_map()
                 .get_type(relation_query.type_name())
                 .unwrap();
 
@@ -353,4 +375,88 @@ fn type_check_query(
             })
         }
     }
+}
+
+/// Runs a type check on the world to ensure that all conditions in practices
+/// and agent goals are well-formed.
+pub fn type_check_world(world: &World) -> Result<()> {
+    for relation_type in world.get_relation_type_map().iter_types() {
+        match &relation_type.data {
+            RelationTypeData::Practice { actions, params } => {
+                for action in actions.iter() {
+                    expect_all_to_be_type(
+                        &action.conditions,
+                        world,
+                        params,
+                        ResultType::empty_boolean(),
+                    )
+                    .with_context(|| {
+                        format!(
+                            "type checking conditions of action {:?} in practice {}",
+                            action.name, relation_type.name
+                        )
+                    })?;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    for (agent_id, agent) in world.iter_agents() {
+        for goal in agent.goals.iter() {
+            match goal.measurement {
+                GoalMeasurement::Exists => {
+                    expect_type(&goal.expression, world, &[], ResultType::empty_boolean())
+                }
+                GoalMeasurement::Delta => {
+                    expect_type(&goal.expression, world, &[], ResultType::Number)
+                }
+            }
+            .with_context(|| {
+                format!(
+                    "type checking expression of goal {:?} for agent {}",
+                    &goal.expression, agent_id
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+fn expect_type(
+    expression: &Expression,
+    world: &World,
+    extra_bindings: &[String],
+    expected: ResultType,
+) -> Result<()> {
+    let actual = type_check(expression, world, extra_bindings).with_context(|| {
+        format!(
+            "type checking expression {:?} expected to be {}",
+            expression, expected
+        )
+    })?;
+
+    if std::mem::discriminant(&actual) != std::mem::discriminant(&expected) {
+        bail!(
+            "expected expression {:?} to be of type {}, but got {}",
+            expression,
+            expected,
+            actual
+        );
+    }
+
+    Ok(())
+}
+
+fn expect_all_to_be_type(
+    expressions: &[Expression],
+    world: &World,
+    extra_bindings: &[String],
+    expected: ResultType,
+) -> Result<()> {
+    for expression in expressions.iter() {
+        expect_type(expression, world, extra_bindings, expected.clone())?;
+    }
+    Ok(())
 }

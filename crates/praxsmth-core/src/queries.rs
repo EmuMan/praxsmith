@@ -54,7 +54,7 @@ impl Query {
             }
             [agent, verb, trait_name, rest @ ..] if verb == "is" => {
                 let relation_type = world
-                    .get_type_mapping()
+                    .get_relation_type_map()
                     .get_type(trait_name)
                     .with_context(|| format!("looking up trait type {}", trait_name))?;
                 let RelationTypeData::Trait { .. } = &relation_type.data else {
@@ -70,7 +70,7 @@ impl Query {
             }
             [agent, verb, emotion_name, rest @ ..] if verb == "feels" => {
                 let relation_type = world
-                    .get_type_mapping()
+                    .get_relation_type_map()
                     .get_type(emotion_name)
                     .with_context(|| format!("looking up emotion type {}", emotion_name))?;
                 let RelationTypeData::Emotion { .. } = &relation_type.data else {
@@ -86,7 +86,7 @@ impl Query {
             }
             [practice, practice_name, rest @ ..] if practice == "practice" => {
                 let relation_type = world
-                    .get_type_mapping()
+                    .get_relation_type_map()
                     .get_type(practice_name)
                     .with_context(|| format!("looking up practice type {}", practice_name))?;
                 let RelationTypeData::Practice { params, .. } = &relation_type.data else {
@@ -115,7 +115,7 @@ impl Query {
             }
             [agent_1, relation_name, agent_2, rest @ ..] => {
                 let relation_type = world
-                    .get_type_mapping()
+                    .get_relation_type_map()
                     .get_type(relation_name)
                     .with_context(|| {
                         format!("looking up binary relation type {}", relation_name)
