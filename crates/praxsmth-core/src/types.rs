@@ -4,6 +4,8 @@ use anyhow::{Context, Result, bail};
 
 use crate::{expressions::Expression, world::simulation::Effect};
 
+pub mod checking;
+
 #[derive(Debug, Clone)]
 pub struct RelationType {
     pub name: String,

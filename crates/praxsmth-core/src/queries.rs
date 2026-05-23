@@ -201,7 +201,7 @@ impl Query {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RelationQuery {
     Trait {
         agent: AgentRef,
@@ -324,9 +324,29 @@ impl RelationQuery {
             }
         }
     }
+
+    pub fn get_all_agents(&self) -> Vec<&AgentRef> {
+        match self {
+            RelationQuery::Trait { agent, .. } => vec![agent],
+            RelationQuery::Emotion { agent, .. } => vec![agent],
+            RelationQuery::Binary {
+                agent_1, agent_2, ..
+            } => vec![agent_1, agent_2],
+            RelationQuery::Practice { participants, .. } => participants.iter().collect(),
+        }
+    }
+
+    pub fn type_name(&self) -> &str {
+        match self {
+            RelationQuery::Trait { trait_name, .. } => trait_name,
+            RelationQuery::Emotion { emotion_name, .. } => emotion_name,
+            RelationQuery::Binary { type_name, .. } => type_name,
+            RelationQuery::Practice { type_name, .. } => type_name,
+        }
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AgentRef {
     Literal(String),
     Free(String),
@@ -371,6 +391,13 @@ impl AgentRef {
                 Some(id) => AgentRef::Literal(id.into()),
                 None => self.clone(),
             },
+        }
+    }
+
+    pub fn symbol(&self) -> &str {
+        match self {
+            Self::Literal(id) => id,
+            Self::Free(specifier) => specifier,
         }
     }
 }
