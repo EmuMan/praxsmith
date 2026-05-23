@@ -15,7 +15,7 @@
 
     onMount(() => {
         const nodes = Array.from(
-            article.querySelectorAll<HTMLHeadingElement>("h2, h3"),
+            article.querySelectorAll<HTMLHeadingElement>("h1, h2, h3"),
         );
         headings = nodes.map((el) => ({
             id: el.id,
@@ -23,32 +23,42 @@
             level: Number(el.tagName[1]),
         }));
 
-        // Highlight the section currently in view.
-        const observer = new IntersectionObserver(
-            (entries) => {
-                for (const entry of entries) {
-                    if (entry.isIntersecting) activeId = entry.target.id;
+        // Highlight whichever heading was most recently scrolled past. Using a
+        // scroll handler instead of IntersectionObserver guarantees every
+        // heading gets its turn — observers can skip headings that are clustered
+        // together or that never reach the active zone near the page bottom.
+        const THRESHOLD = 80; // px from top of viewport
+        const update = () => {
+            let current = nodes[0]?.id ?? null;
+            for (const el of nodes) {
+                if (el.getBoundingClientRect().top - THRESHOLD <= 0) {
+                    current = el.id;
+                } else {
+                    break;
                 }
-            },
-            { rootMargin: "0px 0px -75% 0px", threshold: 0 },
-        );
-        for (const el of nodes) observer.observe(el);
-        return () => observer.disconnect();
+            }
+            activeId = current;
+        };
+        update();
+        const onScroll = () => requestAnimationFrame(update);
+        window.addEventListener("scroll", onScroll, { passive: true });
+        window.addEventListener("resize", onScroll);
+        return () => {
+            window.removeEventListener("scroll", onScroll);
+            window.removeEventListener("resize", onScroll);
+        };
     });
 </script>
 
 <div class="docs">
     <aside class="toc">
-        <a class="toc-home" href="/">← teahouse</a>
+        <a class="toc-home" href="/">← simulator</a>
         <span class="toc-label">on this page</span>
         <nav>
             <ul>
                 {#each headings as h (h.id)}
-                    <li class:sub={h.level === 3}>
-                        <a
-                            href={`#${h.id}`}
-                            class:active={activeId === h.id}
-                        >
+                    <li class:top={h.level === 1} class:sub={h.level === 3}>
+                        <a href={`#${h.id}`} class:active={activeId === h.id}>
                             {h.text}
                         </a>
                     </li>
@@ -115,6 +125,16 @@
     }
 
     .toc li.sub {
+        padding-left: 1.8rem;
+    }
+    .toc li.top {
+        font-weight: 600;
+        margin-top: 0.5rem;
+    }
+    .toc li.top:first-child {
+        margin-top: 0;
+    }
+    .toc li:not(.top):not(.sub) {
         padding-left: 0.9rem;
     }
 
@@ -124,7 +144,9 @@
         color: #6b6356;
         text-decoration: none;
         border-left: 2px solid transparent;
-        transition: color 120ms ease, border-color 120ms ease;
+        transition:
+            color 120ms ease,
+            border-color 120ms ease;
     }
     .toc a:hover {
         color: #2a2622;
@@ -170,6 +192,7 @@
         opacity: 0;
         transition: opacity 120ms ease;
     }
+    .docs-content :global(h1:hover .heading-anchor),
     .docs-content :global(h2:hover .heading-anchor),
     .docs-content :global(h3:hover .heading-anchor) {
         opacity: 1;

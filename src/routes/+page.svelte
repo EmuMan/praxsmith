@@ -163,10 +163,8 @@
 
 <main class="page">
     <header class="masthead">
-        <h1>the check in</h1>
-        <p class="subtitle">
-            a small demonstration of world state, crossing the boundary
-        </p>
+        <h1>praxsmith simulator</h1>
+        <p class="subtitle">a web implementation of the praxsmith framework</p>
         <a class="docs-link" href="/docs" target="_blank" rel="noopener">
             docs ↗
         </a>
@@ -214,18 +212,6 @@
 </main>
 
 <style>
-    :global(html, body) {
-        margin: 0;
-        padding: 0;
-        background: #f5f0e8;
-        color: #2a2622;
-        font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-    }
-
-    :global(*) {
-        box-sizing: border-box;
-    }
-
     .page {
         max-width: 1100px;
         margin: 0 auto;
