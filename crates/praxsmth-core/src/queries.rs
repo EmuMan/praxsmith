@@ -1,3 +1,5 @@
+use std::fmt;
+
 use anyhow::{Context, Result, bail};
 
 use crate::{
@@ -342,6 +344,36 @@ impl RelationQuery {
             RelationQuery::Emotion { emotion_name, .. } => emotion_name,
             RelationQuery::Binary { type_name, .. } => type_name,
             RelationQuery::Practice { type_name, .. } => type_name,
+        }
+    }
+}
+
+impl fmt::Display for RelationQuery {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RelationQuery::Trait { agent, trait_name } => {
+                write!(f, "{}.is.{}", agent.symbol(), trait_name)
+            }
+            RelationQuery::Emotion {
+                agent,
+                emotion_name,
+            } => write!(f, "{}.feels.{}", agent.symbol(), emotion_name),
+            RelationQuery::Binary {
+                agent_1,
+                agent_2,
+                type_name,
+            } => write!(f, "{}.{}.{}", agent_1.symbol(), type_name, agent_2.symbol()),
+            RelationQuery::Practice {
+                participants,
+                type_name,
+            } => {
+                let participants_str = participants
+                    .iter()
+                    .map(|p| p.symbol())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "practice.{} with.{}", type_name, participants_str)
+            }
         }
     }
 }

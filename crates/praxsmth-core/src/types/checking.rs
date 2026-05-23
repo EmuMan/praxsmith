@@ -73,7 +73,7 @@ impl ValidAgents {
         for agent in query.get_all_agents() {
             if !self.is_valid(agent.symbol()) {
                 bail!(
-                    "agent {} is not in scope for query {:?}",
+                    "agent {} is not in scope for query {}",
                     agent.symbol(),
                     query
                 );
@@ -241,7 +241,7 @@ fn type_check_helper(
             // The only condition is that they are the same type
             if std::mem::discriminant(&x) != std::mem::discriminant(&y) {
                 bail!(
-                    "Is conditions must compare values of the same type, got {} and {:?}",
+                    "Is conditions must compare values of the same type, got {} and {}",
                     x,
                     y
                 );
@@ -341,7 +341,7 @@ fn type_check_query(
             // not possible with a nonexistent relationship.
             if !guarantees.is_guaranteed(&relation_query) {
                 bail!(
-                    "cannot access field {} of {:?} without guarantee that it exists",
+                    "cannot access field {} of {} without guarantee that it exists",
                     field_name,
                     relation_query
                 );
@@ -392,7 +392,7 @@ pub fn type_check_world(world: &World) -> Result<()> {
                     )
                     .with_context(|| {
                         format!(
-                            "type checking conditions of action {:?} in practice {}",
+                            "type checking conditions of action {} in practice {}",
                             action.name, relation_type.name
                         )
                     })?;
@@ -414,8 +414,8 @@ pub fn type_check_world(world: &World) -> Result<()> {
             }
             .with_context(|| {
                 format!(
-                    "type checking expression of goal {:?} for agent {}",
-                    &goal.expression, agent_id
+                    "type checking expression of goal {} for agent {}",
+                    goal, agent_id
                 )
             })?;
         }
@@ -432,14 +432,14 @@ fn expect_type(
 ) -> Result<()> {
     let actual = type_check(expression, world, extra_bindings).with_context(|| {
         format!(
-            "type checking expression {:?} expected to be {}",
+            "type checking expression {} expected to be {}",
             expression, expected
         )
     })?;
 
     if std::mem::discriminant(&actual) != std::mem::discriminant(&expected) {
         bail!(
-            "expected expression {:?} to be of type {}, but got {}",
+            "expected expression {} to be of type {}, but got {}",
             expression,
             expected,
             actual
