@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { browser } from "$app/environment";
     import init, { PraxsmthApi } from "praxsmth";
     import type {
         AvailableAction,
@@ -17,8 +18,17 @@
     let wasmReady = $state(false);
     let api: PraxsmthApi | null = $state(null);
 
-    let typesSrc = $state(DEFAULT_TYPES);
-    let worldSrc = $state(DEFAULT_WORLD);
+    const STORAGE_TYPES = "praxsmth:types";
+    const STORAGE_WORLD = "praxsmth:world";
+
+    // Restore saved work at init (browser only) so it's in place before any
+    // effect runs — avoids a default-vs-saved write race.
+    let typesSrc = $state(
+        (browser && localStorage.getItem(STORAGE_TYPES)) || DEFAULT_TYPES,
+    );
+    let worldSrc = $state(
+        (browser && localStorage.getItem(STORAGE_WORLD)) || DEFAULT_WORLD,
+    );
     let buildError: string | null = $state(null);
     let building = $state(false);
 
@@ -34,6 +44,13 @@
     onMount(async () => {
         await init();
         wasmReady = true;
+    });
+
+    // Persist edits so a refresh doesn't lose work. Effects run only in the
+    // browser, so localStorage is always available here.
+    $effect(() => {
+        localStorage.setItem(STORAGE_TYPES, typesSrc);
+        localStorage.setItem(STORAGE_WORLD, worldSrc);
     });
 
     function reportRuntimeError(err: unknown, where: string) {
@@ -146,10 +163,11 @@
 
 <main class="page">
     <header class="masthead">
-        <h1>the check in</h1>
-        <p class="subtitle">
-            a small demonstration of world state, crossing the boundary
-        </p>
+        <h1>praxsmith simulator</h1>
+        <p class="subtitle">a web implementation of the praxsmith framework</p>
+        <a class="docs-link" href="/docs" target="_blank" rel="noopener">
+            docs ↗
+        </a>
     </header>
 
     {#if !api}
@@ -194,18 +212,6 @@
 </main>
 
 <style>
-    :global(html, body) {
-        margin: 0;
-        padding: 0;
-        background: #f5f0e8;
-        color: #2a2622;
-        font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-    }
-
-    :global(*) {
-        box-sizing: border-box;
-    }
-
     .page {
         max-width: 1100px;
         margin: 0 auto;
@@ -213,9 +219,24 @@
     }
 
     .masthead {
+        position: relative;
         border-bottom: 1px solid #c9bfae;
         padding-bottom: 1.25rem;
         margin-bottom: 2rem;
+    }
+
+    .docs-link {
+        position: absolute;
+        top: 0;
+        right: 0;
+        font-size: 0.8rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #7b7264;
+        text-decoration: none;
+    }
+    .docs-link:hover {
+        color: #2a2622;
     }
 
     .masthead h1 {

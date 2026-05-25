@@ -1,0 +1,53 @@
+<svelte:head>
+    <title>praxsmith docs</title>
+</svelte:head>
+
+# Welcome!
+
+Welcome to the praxsmith language reference!
+
+Based off Praxis, blah blah blah
+
+# Getting Started
+
+# The World Representation
+
+## Actors
+
+## Relations
+
+## Sentences
+
+## Expressions
+
+# Relation Types
+
+## Traits
+
+## Emotions
+
+## Directionals
+
+## Evaluations
+
+## Reciprocals
+
+## Practices
+
+### Action Conditions
+
+### Action Outcomes
+
+# World Initialization
+
+## Actor Initialization
+
+## Declarations
+
+# Examples
+
+## Simple Example
+
+## Escalating Argument
+
+## Gossip Chain
