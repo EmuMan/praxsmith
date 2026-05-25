@@ -62,7 +62,8 @@ not         = @{ "not" ~ !ASCII_ALPHANUMERIC }
 // matched as `any`) while `var_name` is still captured as an inner token.
 forall       = ${ "for" ~ WHITESPACE+ ~ "all" ~ WHITESPACE+ ~ var_name ~ WHITESPACE* ~ "," }
 any_where    = ${ "any" ~ WHITESPACE+ ~ var_name ~ WHITESPACE+ ~ "where" ~ !ASCII_ALPHANUMERIC }
-expr_primary = _{ aggregate | value }
+expr_primary = _{ paren_group | aggregate | value }
+paren_group  =  { "(" ~ expression ~ ")" }
 
 // Aggregations: numeric reductions over the bindings of a variable. They are
 // primaries (they yield numbers), so they compose with the usual operators.

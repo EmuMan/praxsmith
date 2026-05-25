@@ -200,6 +200,7 @@ pub fn parse_expression(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Express
         .map_primary(|primary| match primary.as_rule() {
             Rule::agg_count => parse_agg_count(primary, pratt),
             Rule::agg_reduce => parse_agg_reduce(primary, pratt),
+            Rule::paren_group => parse_expression(primary.into_inner().next().unwrap(), pratt),
             _ => Expression::Value(parse_value(primary)),
         })
         .map_prefix(|op, rhs| match op.as_rule() {
@@ -515,6 +516,43 @@ mod tests {
             }
             other => panic!("expected Multiply, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn parses_parenthesized_expression() {
+        // Parens around a single expression are transparent — the AST is the
+        // inner expression, with no wrapper node.
+        match parse_expression_str("(a is b)").unwrap() {
+            Expression::Is(_, _) => {}
+            other => panic!("expected Is, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parens_override_precedence() {
+        // Without parens, `*` binds tighter than `+`: `a + b * c` is Add(a, Mult).
+        // With parens, `(a + b) * c` must be Multiply(Add(a, b), c).
+        match parse_expression_str("(a + b) * c").unwrap() {
+            Expression::Multiply(lhs, rhs) => {
+                assert!(matches!(*lhs, Expression::Add(_, _)));
+                assert!(matches!(*rhs, Expression::Value(_)));
+            }
+            other => panic!("expected Multiply wrapping Add, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_nested_parens() {
+        match parse_expression_str("((a and b))").unwrap() {
+            Expression::And(_, _) => {}
+            other => panic!("expected And, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn rejects_unbalanced_parens() {
+        assert!(parse_expression_str("(a is b").is_err());
+        assert!(parse_expression_str("a is b)").is_err());
     }
 
     #[test]
