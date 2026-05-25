@@ -250,6 +250,36 @@ fn type_check_helper(
             // complicated for my tired brain right now.
             Ok(ResultType::empty_boolean())
         }
+        Expression::LessThan(x, y)
+        | Expression::GreaterThan(x, y)
+        | Expression::LessThanOrEqual(x, y)
+        | Expression::GreaterThanOrEqual(x, y) => {
+            let x = type_check_helper(x, world, guarantees, valid_agents)?;
+            let y = type_check_helper(y, world, guarantees, valid_agents)?;
+            // Both sides must be numbers
+            if !matches!(x, ResultType::Number) {
+                bail!("comparison conditions must be numeric, got {}", x);
+            }
+            if !matches!(y, ResultType::Number) {
+                bail!("comparison conditions must be numeric, got {}", y);
+            }
+            Ok(ResultType::empty_boolean())
+        }
+        Expression::Multiply(x, y)
+        | Expression::Divide(x, y)
+        | Expression::Add(x, y)
+        | Expression::Subtract(x, y) => {
+            let x = type_check_helper(x, world, guarantees, valid_agents)?;
+            let y = type_check_helper(y, world, guarantees, valid_agents)?;
+            // Both sides must be numbers
+            if !matches!(x, ResultType::Number) {
+                bail!("arithmetic expressions must be numeric, got {}", x);
+            }
+            if !matches!(y, ResultType::Number) {
+                bail!("arithmetic expressions must be numeric, got {}", y);
+            }
+            Ok(ResultType::Number)
+        }
         Expression::Not(expr) => {
             let res = type_check_helper(expr, world, guarantees, valid_agents)?;
             match res {

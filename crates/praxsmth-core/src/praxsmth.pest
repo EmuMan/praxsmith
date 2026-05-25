@@ -11,6 +11,12 @@ parse_effect     = _{ SOI ~ effect ~ EOI }
 parse_expression = _{ SOI ~ expression ~ EOI }
 
 // Common rules
+// Negative number literals require no whitespace between `-` and the digits
+// (the atomic `@` forbids interior WHITESPACE). The `sub` infix below mirrors
+// this with `!ASCII_ALPHANUMERIC`, so `-` directly adjacent to digits is never
+// parsed as subtraction. Net effect: `a - 5` is sub, `-5` is a literal, and
+// `a * -1` works as multiply-by-negative. There is no prefix-negate operator;
+// to negate an expression, multiply by `-1`.
 number       = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 string       = ${ "\"" ~ string_inner ~ "\"" }
 string_inner = @{ char* }
@@ -36,10 +42,18 @@ expression = {
     expr_prefix* ~ expr_primary ~ (expr_infix ~ expr_prefix* ~ expr_primary)*
 }
 
-expr_infix  = _{ and | or | is }
+expr_infix  = _{ and | or | is | ge | le | gt | lt | mult | div | add | sub }
 and         = @{ "and" ~ !ASCII_ALPHANUMERIC }
 or          = @{ "or" ~ !ASCII_ALPHANUMERIC }
 is          = @{ "is" ~ !ASCII_ALPHANUMERIC }
+gt          = @{ ">" ~ !ASCII_ALPHANUMERIC }
+lt          = @{ "<" ~ !ASCII_ALPHANUMERIC }
+ge          = @{ ">=" ~ !ASCII_ALPHANUMERIC }
+le          = @{ "<=" ~ !ASCII_ALPHANUMERIC }
+mult        = @{ "*" ~ !ASCII_ALPHANUMERIC }
+div         = @{ "/" ~ !ASCII_ALPHANUMERIC }
+add         = @{ "+" ~ !ASCII_ALPHANUMERIC }
+sub         = @{ "-" ~ !ASCII_ALPHANUMERIC }
 expr_prefix = _{ not | forall | any_where }
 not         = @{ "not" ~ !ASCII_ALPHANUMERIC }
 // Quantifiers: prefix operators that bind a variable. The body is the
@@ -52,14 +66,14 @@ expr_primary = _{ aggregate | value }
 
 // Aggregations: numeric reductions over the bindings of a variable. They are
 // primaries (they yield numbers), so they compose with the usual operators.
-//   count SYM where FILTER
-//   (sum | average | min | max) BODY across SYM where FILTER
+// count SYM where FILTER
+// (sum | average | min | max) BODY across SYM where FILTER
 // The trailing FILTER / BODY are full nested expressions and are greedy. The
 // keyword helpers are atomic so boundaries are exact (e.g. `counter` is not
 // matched as `count`).
 aggregate  = _{ agg_count | agg_reduce }
-agg_count  = { kw_count ~ var_name ~ kw_where ~ expression }
-agg_reduce = { agg_op ~ expression ~ kw_across ~ var_name ~ kw_where ~ expression }
+agg_count  =  { kw_count ~ var_name ~ kw_where ~ expression }
+agg_reduce =  { agg_op ~ expression ~ kw_across ~ var_name ~ kw_where ~ expression }
 agg_op     = @{ ("sum" | "average" | "min" | "max") ~ !ASCII_ALPHANUMERIC }
 kw_count   = @{ "count" ~ !ASCII_ALPHANUMERIC }
 kw_across  = @{ "across" ~ !ASCII_ALPHANUMERIC }

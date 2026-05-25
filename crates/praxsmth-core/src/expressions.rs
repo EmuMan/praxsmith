@@ -19,6 +19,22 @@ pub enum Expression {
     Is(Box<Expression>, Box<Expression>),
     /// Boolean -> Boolean
     Not(Box<Expression>),
+    /// Number, Number -> Boolean
+    LessThan(Box<Expression>, Box<Expression>),
+    /// Number, Number -> Boolean
+    GreaterThan(Box<Expression>, Box<Expression>),
+    /// Number, Number -> Boolean
+    LessThanOrEqual(Box<Expression>, Box<Expression>),
+    /// Number, Number -> Boolean
+    GreaterThanOrEqual(Box<Expression>, Box<Expression>),
+    /// Number, Number -> Number
+    Multiply(Box<Expression>, Box<Expression>),
+    /// Number, Number -> Number
+    Divide(Box<Expression>, Box<Expression>),
+    /// Number, Number -> Number
+    Add(Box<Expression>, Box<Expression>),
+    /// Number, Number -> Number
+    Subtract(Box<Expression>, Box<Expression>),
     /// Boolean... -> Boolean (`for all X, Y` = Y must hold for every binding of X)
     ForAll(String, Box<Expression>),
     /// Boolean... -> Boolean (`any X where Y` = there exists some binding of X for which Y holds)
@@ -44,6 +60,64 @@ pub enum AggregateOp {
     Average,
     Min,
     Max,
+}
+
+fn evaluate_inequality<F>(
+    world: &World,
+    bindings: &Bindings,
+    x: &Expression,
+    y: &Expression,
+    cmp_fn: F,
+) -> Result<Constant>
+where
+    F: Fn(f64, f64) -> bool,
+{
+    let x = x.evaluate(world, bindings)?;
+    let y = y.evaluate(world, bindings)?;
+
+    let Constant::Number(x) = x else {
+        bail!(
+            "Left-hand side of inequality must evaluate to number, got {:?}",
+            x
+        );
+    };
+    let Constant::Number(y) = y else {
+        bail!(
+            "Right-hand side of inequality must evaluate to number, got {:?}",
+            y
+        );
+    };
+
+    Ok(Constant::Boolean(cmp_fn(x, y)))
+}
+
+fn evaluate_binary_numeric_op<F>(
+    world: &World,
+    bindings: &Bindings,
+    x: &Expression,
+    y: &Expression,
+    op_fn: F,
+) -> Result<Constant>
+where
+    F: Fn(f64, f64) -> f64,
+{
+    let x = x.evaluate(world, bindings)?;
+    let y = y.evaluate(world, bindings)?;
+
+    let Constant::Number(x) = x else {
+        bail!(
+            "Left-hand side of numeric operation must evaluate to number, got {:?}",
+            x
+        );
+    };
+    let Constant::Number(y) = y else {
+        bail!(
+            "Right-hand side of numeric operation must evaluate to number, got {:?}",
+            y
+        );
+    };
+
+    Ok(Constant::Number(op_fn(x, y)))
 }
 
 impl Expression {
@@ -109,6 +183,30 @@ impl Expression {
                 let x = x.evaluate(world, bindings)?;
                 let y = y.evaluate(world, bindings)?;
                 Ok(Constant::Boolean(x == y))
+            }
+
+            Expression::LessThan(x, y) => evaluate_inequality(world, bindings, x, y, |a, b| a < b),
+            Expression::GreaterThan(x, y) => {
+                evaluate_inequality(world, bindings, x, y, |a, b| a > b)
+            }
+            Expression::LessThanOrEqual(x, y) => {
+                evaluate_inequality(world, bindings, x, y, |a, b| a <= b)
+            }
+            Expression::GreaterThanOrEqual(x, y) => {
+                evaluate_inequality(world, bindings, x, y, |a, b| a >= b)
+            }
+
+            Expression::Multiply(x, y) => {
+                evaluate_binary_numeric_op(world, bindings, x, y, |a, b| a * b)
+            }
+            Expression::Divide(x, y) => {
+                evaluate_binary_numeric_op(world, bindings, x, y, |a, b| a / b)
+            }
+            Expression::Add(x, y) => {
+                evaluate_binary_numeric_op(world, bindings, x, y, |a, b| a + b)
+            }
+            Expression::Subtract(x, y) => {
+                evaluate_binary_numeric_op(world, bindings, x, y, |a, b| a - b)
             }
 
             Expression::Not(x) => {
@@ -229,6 +327,14 @@ impl fmt::Display for Expression {
             Expression::And(x, y) => write!(f, "({} and {})", x, y),
             Expression::Or(x, y) => write!(f, "({} or {})", x, y),
             Expression::Is(x, y) => write!(f, "({} is {})", x, y),
+            Expression::LessThan(x, y) => write!(f, "({} < {})", x, y),
+            Expression::GreaterThan(x, y) => write!(f, "({} > {})", x, y),
+            Expression::LessThanOrEqual(x, y) => write!(f, "({} <= {})", x, y),
+            Expression::GreaterThanOrEqual(x, y) => write!(f, "({} >= {})", x, y),
+            Expression::Multiply(x, y) => write!(f, "({} * {})", x, y),
+            Expression::Divide(x, y) => write!(f, "({} / {})", x, y),
+            Expression::Add(x, y) => write!(f, "({} + {})", x, y),
+            Expression::Subtract(x, y) => write!(f, "({} - {})", x, y),
             Expression::Not(x) => write!(f, "(not {})", x),
             Expression::ForAll(var, inner) => write!(f, "(for all {}, {})", var, inner),
             Expression::Any(var, inner) => write!(f, "(any {} where {})", var, inner),

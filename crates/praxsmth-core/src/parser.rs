@@ -135,6 +135,12 @@ pub fn build_expression_pratt() -> PrattParser<Rule> {
         .op(Op::prefix(Rule::forall) | Op::prefix(Rule::any_where))
         .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left))
         .op(Op::infix(Rule::is, Assoc::Left))
+        .op(Op::infix(Rule::gt, Assoc::Left)
+            | Op::infix(Rule::lt, Assoc::Left)
+            | Op::infix(Rule::ge, Assoc::Left)
+            | Op::infix(Rule::le, Assoc::Left))
+        .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
+        .op(Op::infix(Rule::mult, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
         .op(Op::prefix(Rule::not))
 }
 
@@ -214,6 +220,14 @@ pub fn parse_expression(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Express
             Rule::and => Expression::And(Box::new(lhs), Box::new(rhs)),
             Rule::or => Expression::Or(Box::new(lhs), Box::new(rhs)),
             Rule::is => Expression::Is(Box::new(lhs), Box::new(rhs)),
+            Rule::gt => Expression::GreaterThan(Box::new(lhs), Box::new(rhs)),
+            Rule::lt => Expression::LessThan(Box::new(lhs), Box::new(rhs)),
+            Rule::ge => Expression::GreaterThanOrEqual(Box::new(lhs), Box::new(rhs)),
+            Rule::le => Expression::LessThanOrEqual(Box::new(lhs), Box::new(rhs)),
+            Rule::add => Expression::Add(Box::new(lhs), Box::new(rhs)),
+            Rule::sub => Expression::Subtract(Box::new(lhs), Box::new(rhs)),
+            Rule::mult => Expression::Multiply(Box::new(lhs), Box::new(rhs)),
+            Rule::div => Expression::Divide(Box::new(lhs), Box::new(rhs)),
             _ => unreachable!(),
         })
         .parse(pairs.into_inner())
@@ -400,6 +414,116 @@ mod tests {
             }
             other => panic!("expected Is wrapping Count, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn parses_addition() {
+        let expr = parse_expression_str("a + b").unwrap();
+        assert!(matches!(expr, Expression::Add(_, _)));
+    }
+
+    #[test]
+    fn parses_subtraction() {
+        let expr = parse_expression_str("a - b").unwrap();
+        assert!(matches!(expr, Expression::Subtract(_, _)));
+    }
+
+    #[test]
+    fn parses_comparisons() {
+        assert!(matches!(
+            parse_expression_str("a > b").unwrap(),
+            Expression::GreaterThan(_, _)
+        ));
+        assert!(matches!(
+            parse_expression_str("a < b").unwrap(),
+            Expression::LessThan(_, _)
+        ));
+        assert!(matches!(
+            parse_expression_str("a >= b").unwrap(),
+            Expression::GreaterThanOrEqual(_, _)
+        ));
+        assert!(matches!(
+            parse_expression_str("a <= b").unwrap(),
+            Expression::LessThanOrEqual(_, _)
+        ));
+    }
+
+    #[test]
+    fn ge_le_not_shadowed_by_gt_lt() {
+        // `>=` must not match `gt` (`>`) and leave `=` dangling.
+        match parse_expression_str("a >= b").unwrap() {
+            Expression::GreaterThanOrEqual(_, _) => {}
+            other => panic!("expected GreaterThanOrEqual, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn arithmetic_precedence_mult_over_add() {
+        // `a + b * c` should parse as `a + (b * c)`.
+        match parse_expression_str("a + b * c").unwrap() {
+            Expression::Add(lhs, rhs) => {
+                assert!(matches!(*lhs, Expression::Value(_)));
+                assert!(matches!(*rhs, Expression::Multiply(_, _)));
+            }
+            other => panic!("expected Add wrapping Multiply, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn comparison_binds_tighter_than_and() {
+        // `a > b and c < d` should parse as `(a > b) and (c < d)`.
+        match parse_expression_str("a > b and c < d").unwrap() {
+            Expression::And(lhs, rhs) => {
+                assert!(matches!(*lhs, Expression::GreaterThan(_, _)));
+                assert!(matches!(*rhs, Expression::LessThan(_, _)));
+            }
+            other => panic!("expected And wrapping comparisons, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn add_binds_tighter_than_comparison() {
+        // `a + b > c` should parse as `(a + b) > c`.
+        match parse_expression_str("a + b > c").unwrap() {
+            Expression::GreaterThan(lhs, rhs) => {
+                assert!(matches!(*lhs, Expression::Add(_, _)));
+                assert!(matches!(*rhs, Expression::Value(_)));
+            }
+            other => panic!("expected GreaterThan wrapping Add, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_negative_number_literal() {
+        // Standalone `-5` is a negative literal, not a sub op.
+        match parse_expression_str("-5").unwrap() {
+            Expression::Value(Value::Number(n)) => assert_eq!(n, -5.0),
+            other => panic!("expected negative number literal, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn multiply_by_negative_one_idiom() {
+        // The negation idiom: `a * -1` parses as Multiply(a, -1).
+        match parse_expression_str("a * -1").unwrap() {
+            Expression::Multiply(lhs, rhs) => {
+                assert!(matches!(*lhs, Expression::Value(_)));
+                match *rhs {
+                    Expression::Value(Value::Number(n)) => assert_eq!(n, -1.0),
+                    other => panic!("expected -1 literal on rhs, got {:?}", other),
+                }
+            }
+            other => panic!("expected Multiply, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn subtraction_requires_space_before_digit() {
+        // `-` immediately adjacent to digits is reserved for negative literals,
+        // so `a-5` has no infix between the two operands and fails to parse.
+        // Subtraction must be written with whitespace: `a - 5`.
+        assert!(parse_expression_str("a-5").is_err());
+        assert!(parse_expression_str("a - 5").is_ok());
     }
 
     #[test]
