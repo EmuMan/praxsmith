@@ -2,12 +2,12 @@ agent house as "House" inactive
 agent street as "Street" inactive
 
 agent jacob as "Jacob" {
-    goal (10): delta count Person where Person.feels.happy
+  goal (10): delta count Person where Person.feels.happy
 }
 agent alaina as "Alaina"
 
 jacob.is_married_to.alaina {
-    since: 2024
+  since: 2024
 }
 
 jacob.is_in.house

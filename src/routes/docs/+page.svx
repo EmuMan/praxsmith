@@ -6,48 +6,667 @@
 
 Welcome to the praxsmith language reference!
 
-Based off Praxis, blah blah blah
+Praxsmith is a language designed to recreate the Praxis language that was
+present as a part of [Versu](https://versu.com/), a narrative game engine
+created by Richard Evans and Emily Short. This project is a proof-of-concept
+for a research project on the design of narrative game engines, and therefore
+may contain rough edges and incomplete features. If there is something you are
+not certain about or would like to see added, please contact me at
+[jacob.kelleran@outlook.com](mailto:jacob.kelleran@outlook.com).
 
 # Getting Started
+
+This website is a playground for using the system, complete with editors for
+both types and worlds and type checking to make sure your code will not break
+during runtime. To get started, head over to the [playground](/) and start
+writing! There are some examples at the bottom of this page, and the playground
+starts pre-loaded with the simple example, so you can jump in and see how the
+system works without building too much boilerplate yourself.
+
+**One important design note:** Praxsmith operates on a character logic basis,
+meaning that you aren't necessarily writing narratives but rather describing
+how the characters within your story should behave. You will define characters
+as actors with certain traits, relations, and goals, and then the system will
+determine how they should act in different social practices to achieve those
+goals. You may jump inside the decision-making process of any character, or you
+can mark them as automated so that they make decisions for themselves. This is
+the power of the system: the story writes itself!
 
 # The World Representation
 
 ## Actors
 
+Actors can take the shape of any entity within your world:
+
+- **Characters within your story:** Any character that acts autonomously and
+has individual desires or goals. This is the most common use of actors, and in
+a simple social scenario it may be all you need.
+- **Static objects in your world:** For example, a house that characters can
+enter and exit. The simple example that comes pre-loaded in the playground and
+shown below uses this approach.
+- **Games or other systems within your world:** Theoretically, you could even
+represent a dynamic chess board within your world as an actor with certain
+relation states inside of it! Or you could keep it simple, like a jukebox that
+can play from a set number of songs. This language is by design very powerful;
+it is how easy it is to use that is being evaluated.
+- **Drama managers or other meta-entities:** You could introduce an
+all-powerful deistic entity that is able to create drama within character
+relations when things get too stale. This is commonly implemented within
+similarly structured projects as a "drama manager", but here it would be just
+another actor within the world. All information is globally accessible after
+all!
+
+### Defining Actors
+
+Actors can be defined as such in the world script, with an internal ID and a
+display name in quotes:
+
+```
+agent michelle as "Michelle"
+```
+
+Any actor defined this way will appear as an entity that has an emotion and can
+make decisions within the interface. If you want to exclude an entity from that
+list, you can mark them as inactive as such:
+
+```
+agent house as "House" inactive
+```
+
+These characters will still exist within the world and can perform actions, but
+they will be hidden to the player on the frontend.
+
+> [!warning] Initialization only!
+> Actrors can only be defined during world initialization and cannot be
+> modified as a result of actions or practices. This is a design choice to keep
+> the system stable and predictable over time. You can toggle whether actors
+> display on the frontend by using the `activate` and `deactivate` effects, as
+> described in the [Action Outcomes](#action-outcomes) section below.
+
+### Goals
+
+Actors can have goals that will influence their decision-making. Praxsmith uses
+a planning system to determine which action an actor should take in order to
+maximize the achievement of their goals, so goal definition is crucial in
+getting them to behave how you want.
+
+Goals are defined as such, with one on each line:
+
+```
+agent michelle as "Michelle" {
+  goal(1): any Person where Person.feels.Happy
+}
+```
+
+The `(1)` represents the weight this goal has. The action will be weighted by
+the sum of all goal weights that it satisfies, so higher numbers will be given
+more priority in the decision-making process. The [Expressions](#expressions)
+section below describes how to write these goals, but for now, just understand
+`any Person where Person.feels.Happy` as "Michelle wants any person to be
+happy". This is a boolean value, either true or false, so the weight will
+either be 10 or 0 based on whether or not this condition is true.
+
+You can also track the change in a value over time with the `delta` keyword:
+
+```
+agent michelle as "Michelle" {
+  goal(1): delta count Person where Person.feels.Happy
+}
+```
+
+In this case, `count Person where Person.feels.Happy` counts the number of
+happy people in the world, and `delta` specifies that this number should be
+multiplied by the weight for a final score. So if the number of happy people in
+the world would increase by 2 for one action, this goal would contribute a
+score of 2 * 1 = 2 to that action.
+
+See [Expressions](#expressions) for more information on how to write these
+conditions and evaluations.
+
 ## Relations
+
+Relations are the primary method of tying actors together in the world. They
+can represent actual human relations, such as "Alice trusts Bob", but they can
+also represent other concepts, like "Michelle is in the house". Definitions
+vary from type to type, but generally look like this (this goes in your type
+script):
+
+```
+directional trusts / is_trusted_by
+```
+
+Any relation can have fields, which give more information on that particular
+relation. For example, Alice may trust Bob more strongly than she does Carol.
+You could represent this by adding a "level" field to the relation:
+
+```
+directional trusts / is_trusted_by {
+  level: 0..10
+}
+```
+
+Then, `Alice.trusts.Bob.level` would evaluate to a number between 0 and 10
+representing how much Alice trusts Bob, which would be more than
+`Alice.trusts.Carol.level` in this example. See the [Field Types](#field-types)
+section below for more information on what fields can look like.
+
+> [!tip] Naming conventions
+> Naming relations is up to you, but I would **strongly recommend** following
+> conventional English verb patterns. Just as you would say "Alice trusts Bob"
+> and "Bob is trusted by Alice", you should name your relation
+> `trusts / is_trusted_by`. This makes reading and writing the world easier and
+> more intuitive.
+
+After you define a relation, you can apply it to actors in your world script:
+
+```
+alice.trusts.bob {
+  level: 7
+}
+```
+
+Relations can also be modified as a result of action outcomes, which is the
+primary way in which the world changes over time. See the
+[Action Outcomes](#action-outcomes) section for more information about this.
+
+One special kind of relation to note are practices, which represent social
+practices that actors can engage in and have more rigid structures. They are
+the mechanism that gives characters the ability to act and influence the world.
+See the [Practices](#practices) section below for more information.
 
 ## Sentences
 
+Sentences represent queries about the world state, and are used in
+[expressions](#expressions) to pull information from the world for use in
+various other mechanisms. For example, if I wanted to see how much Alice trusts
+Bob, I could write the sentence:
+
+```
+alice.trusts.bob.level
+```
+
+This is one of the features from Praxis that this project adopted, although in
+this case it is much more rigid and limited in scope.
+
+If there is no such relation between Alice and Bob, this will throw an error.
+However, you can drop the field and use the relation itself as an existence
+check:
+
+```
+alice.trusts.bob
+```
+
+This will return true if there is such a relationship, and false otherwise. The
+[Expressions](#expressions) section below describes how this is used by the
+type checker to ensure valid processing and default states, but it can also be
+used practically, as in the first goal example in [Goals](#goals) section
+above.
+
 ## Expressions
+
+Expressions are the logical glue that allows for you to reason about the state
+of the world. [Sentences](#sentences) extract that information, and expressions
+allow you to ask more complex questions about it.
+
+You can think of these as mathematical equations. Just as you can say
+`x + y > 3`, you can write the following to check if there are more than 3
+happy or excited people in the world:
+
+```
+(count Person where Person.feels.happy) + (count Person where Person.feels.excited) > 3
+```
+
+Expressions can be chained together in any way, although sometimes you will
+have to place parenthesis around them to explicitly group them together. I
+recommend leaning towards doing this for whatever you can, as I did with the
+above example, since it also helps improve readability.
+
+### Available Operators
+
+| Operator | Example | Meaning |
+| --- | --- | --- |
+| `and` | `Greeter.is_in.Room and Greeted.is_in.Room` | Requires both sides to be booleans, and will evaluate to `true` if both sides are `true`, and false in any other case. In `x and y`, both `x` **and** `y` must be `true` for the statement to evaluate to `true`. This operator **short-circuits**, which you can learn more about in [Conditionals](#conditionals) and [Appeasing the Type Checker](#appeasing-the-type-checker), including why this is important. |
+| `or` | `Person.feels.sad or Person.feels.angry` | Requires both sides to be booleans, and will evaluate to `true` if either side or both sides are `true`, and false if both are `false`. In `x or y`, either `x` or `y`, or both, must be `true` for the statement to evaluate to `true`. If you want to exclude the case in which both are `true`, use the `xor` operator instead. This operator **short-circuits**, which you can learn more about in [Conditionals](#conditionals) and [Appeasing the Type Checker](#appeasing-the-type-checker), including why this is important. |
+| `not` | `not Person.is.lactose_intolerant` | Requires its operand to be a boolean, and negates its value. `true` will become `false`, and `false` will become `true`. |
+| `is` | `Person.trusts.Other.amount is high` | Requires both sides to be of the same type (e.g. number and number, variant and variant), and returns `true` if they are equal and `false` otherwise. For example, `5 is 5` evaluates to `true`, `5 is 3` to false, and `5 is high` throws an error. Variants can be compared across types, so `high` will always equal `high` regardless of if it comes from `Person.trusts.Other.amount` or `Person.admires.Other.amount` |
+| `for all _` | `for all Other, Other.likes.Person` | Evaluates to `true` only if its operand evaluates to `true` for every possible value of `_`, which means every agent in the world. In the example, every agent must like `Person` for it to evaluate to `true`.<br />**Warning:** This cares about *every* entity. If there is a house, it will get checked as well. Consider adding an `a_person` trait relation so you can use the following instead: `for all Other, Other.is.a_person and Other.likes.Person`. TODO: allow for comparisons between agents to exclude self-comparisons. |
+| `any _ where` | `any Other where Other.likes.Person` | Evaluates to `true` if its operand evaluates to `true` for any possible value of `_`, which means any agent in the world. In the example, any singular agent can like `Person` for the whole expression to evaluate to `true`. |
+| `count _ where` | `count Other where Other.likes.Person` | Counts the number of values of `_` for which its operand evaluates to `true` for. The example will count the number of people that like `Person`. |
+| Aggregations (`sum`, `average`, `min`, `max`) | `sum Person.is.rich.amount across Person where Person.is.rich` | Aggregate operators are designed to combine many numbers, and they take the form of `OP BODY across SYM where FILTER`. `OP` can be one of `sum`, `average`, `min`, or `max`, and it determines how the numbers are combined. `SYM` is the name of the variable that will be substituted for all actors, and behaves the same as the `_` in `for all _` queries. `BODY` describes what numbers to grab and is a normal expression that must evaluate to a number, such as `Person.is.rich.amount` in the example. `FILTER` must evaluate to a boolean, and is designed to limit which actors are summed together. In the example, people are only considered if they have the `rich` trait, which is actually necessary for the statement to work at all. In fact, **the filter in general is required by design.** You can read more about this in the following [Appeasing the Type Checker](#appeasing-the-type-checker) section. |
+
+### Appeasing the Type Checker
+
+When you build your world, your scripts first pass through a type checker. This
+might seem annoying at times, but in a story where it is virtually impossible
+for you to individually test all narrative paths, it is one guarantee that
+makes sure nothing goes horribly wrong due to a mistyped or logically malformed
+expression.
+
+All expressions are type-checked, which includes conditions and goals. If any
+does not pass, your world will not compile. [Action](#actions) conditions
+must always evaluate to a boolean (true/false) type, and [Goals](#goals) must
+evaluate to boolean (true/false) if they are standard goals, or a number if
+they are `delta` goals.
+
+**There is one particular case that the type checker handles that I would like
+to point out: short-circuit guarantees.**
+
+Consider the following condition:
+
+```
+Other.trusts.Person.level is high
+```
+
+Given the correct relation type definitions, this seems as though it should
+work. However, the type checker will complain and throw the following error:
+
+```
+cannot access field level of Other.trusts.Person without guarantee that it exists
+```
+
+This error pops up because we are trying to access the `level` field of
+`Other.trusts.Person`, but there is a chance that it doesn't exist, in which
+case the behavior is undefined. Should an error be thrown? This is a pretty
+common situation and is all but unavoidable in `for all _` and `any _ where`
+expressions, so that's not an acceptable solution. How about a default case?
+That also leads to unpredictable behavior, and it's not like we can just
+evaluate the entire expression to `false`; it would work in this case but only
+by coincidence.
+
+Consider the following statement instead:
+
+```
+Other.trusts.Person and Other.trusts.Person.level is high
+```
+
+`and` expressions only evaluate to `true` if both sides are `true`. That means
+if the first side is `false`, we can skip the second side entirely because we
+know that the entire expression will evaluate to `false` no matter what the
+second side evaluates to. This behavior is called **short-circuiting**, and it
+is present in effectively any modern programming language.
+
+As a side effect of this optimization, we know that **the second side will only
+evalute if the first side evaluates to `true`**. Suddenly, in this example,
+`Other.trusts.Person` (which is an existence check, see
+[Sentences](#sentences)) **guarantees** that the relation exists first, and the
+second side **only runs** if this statement has evaluated to `true` first,
+meaning we can guarantee that `Other.trusts.Person.level` will access a valid
+field.
+
+If you are familiar with other programming languages, you can think of this as
+a sort of boolean logic if-statement: "if `Other.trusts.Person` exists, then
+evaluate `Other.trusts.Person.level is high`, else false."
+
+This excludes anyone who does not trust `Person`, but what if you want to
+include them? It turns out this logic works with other expressions in the
+system:
+
+```
+not Other.trusts.Person or Other.trusts.Person.level is low
+```
+
+Instead of evaluating to `false` if the relation does not exist, this one
+evaluates to `true`! This is because `or` short-circuits if the first statement
+is `true` instead, and we can use the `not` operator to negate the existence
+check. It reads out as "if `Other.trusts.Person` does not exist, evaluate to
+`true`, otherwise evaluate to `Other.trusts.Person.level is low`." In other
+words, "count anyone who either doesn't have a `trusts` relation at all or has
+a low level of trust."
+
+Hopefully you can see that this grants you the power of defining a sort of
+default or fallback case to your expressions that would otherwise throw errors.
+It is unfortunately a necessary complication for the language to function, but
+it is also very powerful and may take some getting used to. This is **the one
+instance** in which I would suggest turning to LLMs if you have a logical
+statement in mind and need help forming it to predicate logic. Give it the
+[Available Operators](#available-operators) and it should be able to give some
+guidance; just make sure you add a detailed comment and/or fully understand the
+outcome so that it doesn't become confusing later on!
 
 # Relation Types
 
+Relations can be defined as one of many variants, which determine how they
+behave within the simulation. A relation's type is defined at initialization
+and cannot be changed at runtime. **Any relation types must be declared in the
+types script.**
+
+As a reminder, any relation can have fields attached to it by adding a
+bracketed block after its declaration. You can read more about this in the
+[Relations](#relations) section above.
+
 ## Traits
+
+```
+// Defining
+trait curious
+
+// Applying / querying
+michelle.is.curious
+```
+
+Traits define a property that an actor can have. They only ever have one
+connected actor, which is the actor expressing that trait.
+
+An actor can have many traits, and they can be added or removed at any time.
 
 ## Emotions
 
+```
+// Defining
+emotion happy
+
+// Applying / querying
+michelle.feels.happy
+```
+
+Emotions define a short-lived feeling an actor can have. Similarly to traits,
+they only ever have one connected actor, which is the actor expressing that
+emotion.
+
+Unlike traits, **an actor can only ever have one emotion at a time.** If you
+want long-term effects, this is not the option for you. Emotions are intended
+as a quick way to represent how a character is feeling in the moment, and can
+be easily queried and displayed by the frontend for the player to see.
+
 ## Directionals
+
+```
+// Defining
+directional trusts / is_trusted_by
+exclusive directional is_in / contains
+
+// Applying / querying
+alice.trusts.bob
+house.contains.michelle
+```
+
+Directional relations connect two actors asymmetrically. In the first example,
+Alice trusts Bob, but that does not necessarily mean that Bob trusts Alice.
+Most relations present this way, in which one character feels a certain way
+about another, but that feeling is not necessarily mutual.
+
+Praxsmith allows this type of relation to be accessed in both directions, which
+you can see being used in the second example. `michelle.is_in.house` and
+`house.contains.michelle` are two ways of expressing the same thing, and may be
+more convenient in different contexts. Adding one edge will automatically
+create and maintain a link to the other, and removing one will also remove the
+other.
+
+By adding `exclusive` to the type definition, you can make it so that the
+primary actor (in this case, Alice or Michelle) can only have one outgoing
+relation of this type at a time. For example, Michelle can only be in one place
+at a time, so it doesn't make sense for her to have more than one `is_in`
+relations. If you set a new one, it will automatically remove the old one. This
+is very useful in contexts where you want to switch the state of a character,
+such as them moving from one room to another. Without this, you would have to
+manually remove their old location relation every time they moved, which would
+get very tedious and is prone to error.
 
 ## Evaluations
 
+```
+// Defining
+evaluation trusts / is_trusted_by
+
+// Applying / querying
+alice.trusts.bob
+bob.is_trusted_by.alice
+```
+
+Evaluations are just [directional relations](#directionals) with a mandatory
+`reason` field that is a string. This field is automatically added to the type,
+so you don't need to define it explicitly. This is intended to use when
+characters feel a certain way about another and want to express that reason in
+the frontend. You can see this in action in the
+[Gossip Chain example](#gossip-chain) below.
+
+> [!tip]
+> Evaluations **cannot be exclusive.**
+
 ## Reciprocals
+
+```
+// Defining
+reciprocal is_married_to
+
+// Applying / querying
+alice.is_married_to.bob
+bob.is_married_to.alice
+```
+
+Sometimes, relationships are inherently mutual. For example, if Alice is
+married to Bob, then Bob is married to Alice. Reciprocal relations are designed
+for this case, and the engine will ensure that if and only if one edge exists,
+the other does as well. Any fields attached to a reciprocal relation are shared
+between the two edges, so `alice.is_married_to.bob.strength` and
+`bob.is_married_to.alice.strength` will always be the same value.
 
 ## Practices
 
-### Action Conditions
+Practices are a special type of relationship that give your characters to
+perform actions. Throughout this section, I'm going to be referring to the
+following example practice that allows for one character to greet another and
+make them feel happy:
+
+```
+emotion happy
+
+exclusive directional is_in / contains
+
+practice greet (Greeter, Greeted) {
+  actions: [
+    {
+      for: Greeter
+      name: "Greet [Greeted]"
+      conditions: [
+        any Place where Greeter.is_in.Place and Greeted.is_in.Place
+      ]
+      outcomes: [
+        say "Hello, [Greeted]!"
+        set Greeted.feels.happy
+        broadcast "[Greeter]'s greeting has made [Greeted] happy!"
+        delete self
+      ]
+    }
+  ]
+}
+```
+
+All practices have participants. In this case, there are two: `Greeter` and
+`Greeted`, and each will play a unique role in the practice. This behavior is
+common across all practices. As this defines a relation type, it will not be
+applicable to any actors in your world by default, and **you must explicitly
+instantiate it** as such: `practice.greet.jacob.alaina`. This will create a new
+relation of the `greet` practice where `jacob` is the `Greeter` and `alaina` is
+being `Greeted`.
+
+These parameters (`Greeter` and `Greeted`) will then become
+**bound** to `jacob` and `alaina` respectively for any expressions or strings
+within that particular instance, as you can see throughout the example, where
+`Greeter` and `Greeted` are treated as regular actors in the expression despite
+not being defined in the world.
+
+### Actions
+
+Each practice provides a set of `actions` that allow actors involved in that
+practice to act. Each action will only be available if all of its conditions
+evaluate to `true`, as dictated by the mandatory `conditions` field.
+
+There are three other mandatory fields in actions:
+- `for` - specifies which participant the action should be available for; in
+this case, greeting is an action available to the `Greeter`. You can only make
+an action available to one participant, so if you want another similar action,
+you must write it explicitly with the participants flipped.
+- `name` - the display name of the practice, as it will appear to the player.
+You can insert the actual names of parameters here by putting them in square
+brackets, as shown in the example.
+- `outcomes` - detailed in [Action Outcomes](#action-outcomes).
+
+The example only has one action listed, but practices may have as many as they
+would like, and in more complex scenarios, you will find this to be useful.
 
 ### Action Outcomes
 
-# World Initialization
+When the player performs an action, it must affect the world in some way. This
+is done through the outcomes associated with this action, which may be any of
+the following:
 
-## Actor Initialization
+```
+| Outcome Type | Example | Meaning |
+| --- | --- | --- |
+| `broadcast` | `broadcast "[Greeter]'s greeting has made [Greeted] happy!"` | Sends a message into the chat log that has no particular sender. In other places, this may be referred to as a system message. Use it to inform the user of important updates to the world that it doesn't make sense for an actor to say out loud. |
+| `say` | `say "Hello, [Greeted]!"` | Sends a message in the chat log from a particular character. Use this for dialog between characters, as it implies that the phrase is being "said" within the world. |
+| `activate` | `activate Actor` | Sets an actor to active, which displays them to the player. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
+| `deactivate` | `deactivate Actor` | Sets an actor to inactive, which prevents them from being shown to the player. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
+| `delete` | `delete Person.is.tired` | Removes the specified relation from the world. `delete self` is a common pattern for practices that provide a single-use action, like `greet` in the above example. See [The `self` Binding](#the-self-binding) below for more info. |
+| `set` | `set Person.trusts.Other { level: high }` | Adds a new relation to the world. What appears to the right of `set` is exactly the same as declarations in the [World Script](#world-script). If the relation has fields, they must be specified within curly brackets and delimited by newlines. Otherwise, the brackets may be omitted. **Note:** This is how relations create other relations, which is an important mechanism in keeping the world running. For example, if an `argue` practice escalates to a high degree, an action may become available for one of the participants that allows for them to initiate a `divorce` practice if they are married. |
+| `update` | `update Person.trusts.Other.level to high` | Updates a single field of a relation to a new value. **This is currently not type checked, so use with caution.** An error will be thrown if the relation does not exist. (TODO) |
+| `increase` | `increase Person.trusts.Other.level` | Coming soon... |
+| `cycle` | `cycle Person.trusts.Other.level` | Coming soon... |
+```
 
-## Declarations
+### The `self` Binding
+
+One additional binding that will be available within practices is `self`. This
+refers to the practice instance itself, and behind-the-scenes gets replaced
+with an actual reference to the practice before evaluation. For example, if I
+create a practice with `practice.greet.jacob.alaina`, `self` will refer to
+`practice.greet.jacob.alaina`, and I can access fields with `self.field` or
+delete it with `delete self`, etc. as I would if it was explicitly referenced.
+
+## Field Types
+
+There are currently just two types a field can be:
+
+- **Numeric ranges:** A field can be defined as a numeric range, such as
+`0..10`. This means that the field can take on any value between 0 and 10,
+inclusive. Numbers are stored as decimal values. TODO: use epsilons in all
+operations.
+- **Variant lists:** A field can also be defined as a list of named variants,
+such as `calm | tense | furious`. This means that the field can only take on
+one of those three values. If you are familiar with other programming
+languages, this is essentially an `enum`.
+
+TODO: add support for booleans and strings as field types.
+
+# The Two Scripts
+
+Praxsmith worlds are built from two sources: a script representing the
+different types of relations that exist within the world, and a script
+representing the initial state of that world. These can easily be opened side
+by side in the playground so that you can refer to the relation types you have
+defined while building your world.
+
+## Type Script
+
+The type script is simply a list of relation types, plus optional fields, as
+they are described in the [Relation Types](#relation-types) and
+[Field Types](#field-types) sections. This is where you define the structure of
+your world, including the different social practices that characters follow.
+
+## World Script
+
+The world script includes two things:
+
+- **Actor definitions:** This is where you define the different actors that
+exist within your world, including their display names and goals.
+- **Declarations:** This is where you initialize certain relations between
+agents, as well as social practices that the agents start engaged in. These
+behave exactly the same as the `set` effect, described in the
+[Action Outcomes](#action-outcomes) section, but they are run at initialization
+to set up the world.
 
 # Examples
 
 ## Simple Example
 
+This example is meant to showcase a few core parts of the language in a
+condensed manner. It includes two characters, Jacob and Alaina, who are married
+to each other. Jacob wants to make people happy, but can only do so by greeting
+Alaina, which he can only do if they are in the same place. Alaina starts off
+feeling sad and is on the street, while Jacob is in the house. To end the
+simulation, Alaina must first move to the house (which is permitted via the
+`practice.move.alaina.street.house` declaration that puts her in that practice
+at initialization), and then Jacob can greet her to make her happy, which
+satisfies one of her goals.
+
+**Type script:**
+
+```
+emotion sad
+emotion happy
+
+exclusive directional is_in / contains
+
+reciprocal is_married_to {
+  since: 0..3000
+}
+
+evaluation likes / liked_by
+
+practice greet (Greeter, Greeted) {
+  actions: [
+    {
+      for: Greeter
+      name: "Greet [Greeted]"
+      conditions: [
+        any Place where Greeter.is_in.Place and Greeted.is_in.Place
+      ]
+      outcomes: [
+        say "Hello, [Greeted]!"
+        set Greeted.feels.happy
+        broadcast "[Greeter]'s greeting has made [Greeted] happy!"
+        delete self
+      ]
+    }
+  ]
+}
+
+practice move (Agent, From, To) {
+  actions: [
+    {
+      for: Agent
+      name: "Move from [From] to [To]"
+      conditions: [
+        Agent.is_in.From
+      ]
+      outcomes: [
+        set Agent.is_in.To
+        broadcast "[Agent] moves from [From] to [To]."
+      ]
+    }
+  ]
+}
+```
+
+**World script:**
+
+```
+agent house as "House" inactive
+agent street as "Street" inactive
+
+agent jacob as "Jacob" {
+  goal (10): delta count Person where Person.feels.happy
+}
+agent alaina as "Alaina"
+
+jacob.is_married_to.alaina {
+  since: 2024
+}
+
+jacob.is_in.house
+alaina.is_in.street
+
+alaina.feels.sad
+
+practice.greet.jacob.alaina
+practice.move.alaina.street.house
+```
+
 ## Escalating Argument
 
+TODO
+
 ## Gossip Chain
+
+TODO
