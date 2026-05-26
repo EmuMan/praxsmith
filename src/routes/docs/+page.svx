@@ -511,7 +511,6 @@ When the player performs an action, it must affect the world in some way. This
 is done through the outcomes associated with this action, which may be any of
 the following:
 
-```
 | Outcome Type | Example | Meaning |
 | --- | --- | --- |
 | `broadcast` | `broadcast "[Greeter]'s greeting has made [Greeted] happy!"` | Sends a message into the chat log that has no particular sender. In other places, this may be referred to as a system message. Use it to inform the user of important updates to the world that it doesn't make sense for an actor to say out loud. |
@@ -523,7 +522,6 @@ the following:
 | `update` | `update Person.trusts.Other.level to high` | Updates a single field of a relation to a new value. **This is currently not type checked, so use with caution.** An error will be thrown if the relation does not exist. (TODO) |
 | `increase` | `increase Person.trusts.Other.level` | Coming soon... |
 | `cycle` | `cycle Person.trusts.Other.level` | Coming soon... |
-```
 
 ### The `self` Binding
 
