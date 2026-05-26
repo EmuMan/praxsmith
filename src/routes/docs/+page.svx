@@ -204,7 +204,124 @@ above.
 
 ## Expressions
 
-TODO
+Expressions are the logical glue that allows for you to reason about the state
+of the world. [Sentences](#sentences) extract that information, and expressions
+allow you to ask more complex questions about it.
+
+You can think of these as mathematical equations. Just as you can say
+`x + y > 3`, you can write the following to check if there are more than 3
+happy or excited people in the world:
+
+```
+(count Person where Person.feels.happy) + (count Person where Person.feels.excited) > 3
+```
+
+Expressions can be chained together in any way, although sometimes you will
+have to place parenthesis around them to explicitly group them together. I
+recommend leaning towards doing this for whatever you can, as I did with the
+above example, since it also helps improve readability.
+
+### Available Operators
+
+| Operator | Example | Meaning |
+| --- | --- | --- |
+| `and` | `Greeter.is_in.Room and Greeted.is_in.Room` | Requires both sides to be booleans, and will evaluate to `true` if both sides are `true`, and false in any other case. In `x and y`, both `x` **and** `y` must be `true` for the statement to evaluate to `true`. This operator **short-circuits**, which you can learn more about in [Conditionals](#conditionals) and [Appeasing the Type Checker](#appeasing-the-type-checker), including why this is important. |
+| `or` | `Person.feels.sad or Person.feels.angry` | Requires both sides to be booleans, and will evaluate to `true` if either side or both sides are `true`, and false if both are `false`. In `x or y`, either `x` or `y`, or both, must be `true` for the statement to evaluate to `true`. If you want to exclude the case in which both are `true`, use the `xor` operator instead. This operator **short-circuits**, which you can learn more about in [Conditionals](#conditionals) and [Appeasing the Type Checker](#appeasing-the-type-checker), including why this is important. |
+| `not` | `not Person.is.lactose_intolerant` | Requires its operand to be a boolean, and negates its value. `true` will become `false`, and `false` will become `true`. |
+| `is` | `Person.trusts.Other.amount is high` | Requires both sides to be of the same type (e.g. number and number, variant and variant), and returns `true` if they are equal and `false` otherwise. For example, `5 is 5` evaluates to `true`, `5 is 3` to false, and `5 is high` throws an error. Variants can be compared across types, so `high` will always equal `high` regardless of if it comes from `Person.trusts.Other.amount` or `Person.admires.Other.amount` |
+| `for all _` | `for all Other, Other.likes.Person` | Evaluates to `true` only if its operand evaluates to `true` for every possible value of `_`, which means every agent in the world. In the example, every agent must like `Person` for it to evaluate to `true`.<br />**Warning:** This cares about *every* entity. If there is a house, it will get checked as well. Consider adding an `a_person` trait relation so you can use the following instead: `for all Other, Other.is.a_person and Other.likes.Person`. TODO: allow for comparisons between agents to exclude self-comparisons. |
+| `any _ where` | `any Other where Other.likes.Person` | Evaluates to `true` if its operand evaluates to `true` for any possible value of `_`, which means any agent in the world. In the example, any singular agent can like `Person` for the whole expression to evaluate to `true`. |
+| `count _ where` | `count Other where Other.likes.Person` | Counts the number of values of `_` for which its operand evaluates to `true` for. The example will count the number of people that like `Person`. |
+| Aggregations (`sum`, `average`, `min`, `max`) | `sum Person.is.rich.amount across Person where Person.is.rich` | Aggregate operators are designed to combine many numbers, and they take the form of `OP BODY across SYM where FILTER`. `OP` can be one of `sum`, `average`, `min`, or `max`, and it determines how the numbers are combined. `SYM` is the name of the variable that will be substituted for all actors, and behaves the same as the `_` in `for all _` queries. `BODY` describes what numbers to grab and is a normal expression that must evaluate to a number, such as `Person.is.rich.amount` in the example. `FILTER` must evaluate to a boolean, and is designed to limit which actors are summed together. In the example, people are only considered if they have the `rich` trait, which is actually necessary for the statement to work at all. In fact, **the filter in general is required by design.** You can read more about this in the following [Appeasing the Type Checker](#appeasing-the-type-checker) section. |
+
+### Appeasing the Type Checker
+
+When you build your world, your scripts first pass through a type checker. This
+might seem annoying at times, but in a story where it is virtually impossible
+for you to individually test all narrative paths, it is one guarantee that
+makes sure nothing goes horribly wrong due to a mistyped or logically malformed
+expression.
+
+All expressions are type-checked, which includes conditions and goals. If any
+does not pass, your world will not compile. [Action](#actions) conditions
+must always evaluate to a boolean (true/false) type, and [Goals](#goals) must
+evaluate to boolean (true/false) if they are standard goals, or a number if
+they are `delta` goals.
+
+**There is one particular case that the type checker handles that I would like
+to point out: short-circuit guarantees.**
+
+Consider the following condition:
+
+```
+Other.trusts.Person.level is high
+```
+
+Given the correct relation type definitions, this seems as though it should
+work. However, the type checker will complain and throw the following error:
+
+```
+cannot access field level of Other.trusts.Person without guarantee that it exists
+```
+
+This error pops up because we are trying to access the `level` field of
+`Other.trusts.Person`, but there is a chance that it doesn't exist, in which
+case the behavior is undefined. Should an error be thrown? This is a pretty
+common situation and is all but unavoidable in `for all _` and `any _ where`
+expressions, so that's not an acceptable solution. How about a default case?
+That also leads to unpredictable behavior, and it's not like we can just
+evaluate the entire expression to `false`; it would work in this case but only
+by coincidence.
+
+Consider the following statement instead:
+
+```
+Other.trusts.Person and Other.trusts.Person.level is high
+```
+
+`and` expressions only evaluate to `true` if both sides are `true`. That means
+if the first side is `false`, we can skip the second side entirely because we
+know that the entire expression will evaluate to `false` no matter what the
+second side evaluates to. This behavior is called **short-circuiting**, and it
+is present in effectively any modern programming language.
+
+As a side effect of this optimization, we know that **the second side will only
+evalute if the first side evaluates to `true`**. Suddenly, in this example,
+`Other.trusts.Person` (which is an existence check, see
+[Sentences](#sentences)) **guarantees** that the relation exists first, and the
+second side **only runs** if this statement has evaluated to `true` first,
+meaning we can guarantee that `Other.trusts.Person.level` will access a valid
+field.
+
+If you are familiar with other programming languages, you can think of this as
+a sort of boolean logic if-statement: "if `Other.trusts.Person` exists, then
+evaluate `Other.trusts.Person.level is high`, else false."
+
+This excludes anyone who does not trust `Person`, but what if you want to
+include them? It turns out this logic works with other expressions in the
+system:
+
+```
+not Other.trusts.Person or Other.trusts.Person.level is low
+```
+
+Instead of evaluating to `false` if the relation does not exist, this one
+evaluates to `true`! This is because `or` short-circuits if the first statement
+is `true` instead, and we can use the `not` operator to negate the existence
+check. It reads out as "if `Other.trusts.Person` does not exist, evaluate to
+`true`, otherwise evaluate to `Other.trusts.Person.level is low`." In other
+words, "count anyone who either doesn't have a `trusts` relation at all or has
+a low level of trust."
+
+Hopefully you can see that this grants you the power of defining a sort of
+default or fallback case to your expressions that would otherwise throw errors.
+It is unfortunately a necessary complication for the language to function, but
+it is also very powerful and may take some getting used to. This is **the one
+instance** in which I would suggest turning to LLMs if you have a logical
+statement in mind and need help forming it to predicate logic. Give it the
+[Available Operators](#available-operators) and it should be able to give some
+guidance; just make sure you add a detailed comment and/or fully understand the
+outcome so that it doesn't become confusing later on!
 
 # Relation Types
 
@@ -326,11 +443,96 @@ between the two edges, so `alice.is_married_to.bob.strength` and
 
 ## Practices
 
-TODO
+Practices are a special type of relationship that give your characters to
+perform actions. Throughout this section, I'm going to be referring to the
+following example practice that allows for one character to greet another and
+make them feel happy:
 
-### Action Conditions
+```
+emotion happy
+
+exclusive directional is_in / contains
+
+practice greet (Greeter, Greeted) {
+  actions: [
+    {
+      for: Greeter
+      name: "Greet [Greeted]"
+      conditions: [
+        any Place where Greeter.is_in.Place and Greeted.is_in.Place
+      ]
+      outcomes: [
+        say "Hello, [Greeted]!"
+        set Greeted.feels.happy
+        broadcast "[Greeter]'s greeting has made [Greeted] happy!"
+        delete self
+      ]
+    }
+  ]
+}
+```
+
+All practices have participants. In this case, there are two: `Greeter` and
+`Greeted`, and each will play a unique role in the practice. This behavior is
+common across all practices. As this defines a relation type, it will not be
+applicable to any actors in your world by default, and **you must explicitly
+instantiate it** as such: `practice.greet.jacob.alaina`. This will create a new
+relation of the `greet` practice where `jacob` is the `Greeter` and `alaina` is
+being `Greeted`.
+
+These parameters (`Greeter` and `Greeted`) will then become
+**bound** to `jacob` and `alaina` respectively for any expressions or strings
+within that particular instance, as you can see throughout the example, where
+`Greeter` and `Greeted` are treated as regular actors in the expression despite
+not being defined in the world.
+
+### Actions
+
+Each practice provides a set of `actions` that allow actors involved in that
+practice to act. Each action will only be available if all of its conditions
+evaluate to `true`, as dictated by the mandatory `conditions` field.
+
+There are three other mandatory fields in actions:
+- `for` - specifies which participant the action should be available for; in
+this case, greeting is an action available to the `Greeter`. You can only make
+an action available to one participant, so if you want another similar action,
+you must write it explicitly with the participants flipped.
+- `name` - the display name of the practice, as it will appear to the player.
+You can insert the actual names of parameters here by putting them in square
+brackets, as shown in the example.
+- `outcomes` - detailed in [Action Outcomes](#action-outcomes).
+
+The example only has one action listed, but practices may have as many as they
+would like, and in more complex scenarios, you will find this to be useful.
 
 ### Action Outcomes
+
+When the player performs an action, it must affect the world in some way. This
+is done through the outcomes associated with this action, which may be any of
+the following:
+
+```
+| Outcome Type | Example | Meaning |
+| --- | --- | --- |
+| `broadcast` | `broadcast "[Greeter]'s greeting has made [Greeted] happy!"` | Sends a message into the chat log that has no particular sender. In other places, this may be referred to as a system message. Use it to inform the user of important updates to the world that it doesn't make sense for an actor to say out loud. |
+| `say` | `say "Hello, [Greeted]!"` | Sends a message in the chat log from a particular character. Use this for dialog between characters, as it implies that the phrase is being "said" within the world. |
+| `activate` | `activate Actor` | Sets an actor to active, which displays them to the player. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
+| `deactivate` | `deactivate Actor` | Sets an actor to inactive, which prevents them from being shown to the player. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
+| `delete` | `delete Person.is.tired` | Removes the specified relation from the world. `delete self` is a common pattern for practices that provide a single-use action, like `greet` in the above example. See [The `self` Binding](#the-self-binding) below for more info. |
+| `set` | `set Person.trusts.Other { level: high }` | Adds a new relation to the world. What appears to the right of `set` is exactly the same as declarations in the [World Script](#world-script). If the relation has fields, they must be specified within curly brackets and delimited by newlines. Otherwise, the brackets may be omitted. **Note:** This is how relations create other relations, which is an important mechanism in keeping the world running. For example, if an `argue` practice escalates to a high degree, an action may become available for one of the participants that allows for them to initiate a `divorce` practice if they are married. |
+| `update` | `update Person.trusts.Other.level to high` | Updates a single field of a relation to a new value. **This is currently not type checked, so use with caution.** An error will be thrown if the relation does not exist. (TODO) |
+| `increase` | `increase Person.trusts.Other.level` | Coming soon... |
+| `cycle` | `cycle Person.trusts.Other.level` | Coming soon... |
+```
+
+### The `self` Binding
+
+One additional binding that will be available within practices is `self`. This
+refers to the practice instance itself, and behind-the-scenes gets replaced
+with an actual reference to the practice before evaluation. For example, if I
+create a practice with `practice.greet.jacob.alaina`, `self` will refer to
+`practice.greet.jacob.alaina`, and I can access fields with `self.field` or
+delete it with `delete self`, etc. as I would if it was explicitly referenced.
 
 ## Field Types
 
