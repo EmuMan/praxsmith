@@ -4,7 +4,7 @@
     import init, { PraxsmthApi } from "praxsmth";
     import type {
         AvailableAction,
-        AgentInfo,
+        ActorInfo,
         Dialog,
         ChatMessage,
     } from "$lib/types";
@@ -32,7 +32,7 @@
     let buildError: string | null = $state(null);
     let building = $state(false);
 
-    let agents: AgentInfo[] = $state([]);
+    let actors: ActorInfo[] = $state([]);
     let emotions: Record<string, string | undefined> = $state({});
     let selectedId: string | null = $state(null);
     let availableActions: AvailableAction[] = $state([]);
@@ -61,15 +61,15 @@
     function refreshFromApi() {
         if (!api) return;
         try {
-            agents = api.getAgentInfo() as AgentInfo[];
+            actors = api.getActorInfo() as ActorInfo[];
 
             const nextEmotions: Record<string, string | undefined> = {};
-            for (const a of agents) {
+            for (const a of actors) {
                 nextEmotions[a.id] = api.getCurrentEmotion(a.id) ?? undefined;
             }
             emotions = nextEmotions;
 
-            if (selectedId && !agents.some((a) => a.id === selectedId)) {
+            if (selectedId && !actors.some((a) => a.id === selectedId)) {
                 selectedId = null;
             }
 
@@ -116,7 +116,7 @@
         }
     }
 
-    function selectAgent(id: string) {
+    function selectActor(id: string) {
         selectedId = id;
         if (api) {
             try {
@@ -125,7 +125,7 @@
                     actionScoreDepth,
                 );
             } catch (err) {
-                reportRuntimeError(err, "selectAgent");
+                reportRuntimeError(err, "selectActor");
                 availableActions = [];
             }
         }
@@ -145,7 +145,7 @@
 
     function reset() {
         api = null;
-        agents = [];
+        actors = [];
         emotions = {};
         selectedId = null;
         availableActions = [];
@@ -154,11 +154,11 @@
         runtimeError = null;
     }
 
-    let selectedAgentName = $derived(
-        agents.find((a) => a.id === selectedId)?.name ?? null,
+    let selectedActorName = $derived(
+        actors.find((a) => a.id === selectedId)?.name ?? null,
     );
 
-    let visibleAgents = $derived(agents.filter((a) => a.active));
+    let visibleActors = $derived(actors.filter((a) => a.active));
 </script>
 
 <main class="page">
@@ -181,17 +181,17 @@
     {:else}
         <section class="layout">
             <Cast
-                agents={visibleAgents}
+                actors={visibleActors}
                 {selectedId}
                 {emotions}
-                onselect={selectAgent}
+                onselect={selectActor}
             />
 
             <div class="chat-column">
                 <Chat {messages} />
                 <Actions
                     actions={availableActions}
-                    actorName={selectedAgentName}
+                    actorName={selectedActorName}
                     {pending}
                     onchoose={chooseAction}
                 />

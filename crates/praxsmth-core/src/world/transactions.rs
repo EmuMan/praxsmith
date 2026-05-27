@@ -25,11 +25,11 @@ impl<'a> WorldTxn<'a> {
     /// Wrapper for `World::add_trait` that logs undoable actions.
     pub fn add_trait(
         &mut self,
-        agent_id: &str,
+        actor_id: &str,
         type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
-        let created = self.world.add_trait(agent_id, type_id, fields)?;
+        let created = self.world.add_trait(actor_id, type_id, fields)?;
         self.mutation_log.extend(created.mutations);
         Ok(created.handle)
     }
@@ -37,11 +37,11 @@ impl<'a> WorldTxn<'a> {
     /// Wrapper for `World::add_emotion` that logs undoable actions.
     pub fn add_emotion(
         &mut self,
-        agent_id: &str,
+        actor_id: &str,
         type_id: &str,
         fields: Fields,
     ) -> Result<RelationHandle> {
-        let created = self.world.add_emotion(agent_id, type_id, fields)?;
+        let created = self.world.add_emotion(actor_id, type_id, fields)?;
         self.mutation_log.extend(created.mutations);
         Ok(created.handle)
     }
@@ -74,7 +74,7 @@ impl<'a> WorldTxn<'a> {
     }
 
     /// Wrapper for `World::remove_relation` that logs undoable actions,
-    /// including logging the edges of any agents connected to the relation
+    /// including logging the edges of any actors connected to the relation
     /// being removed, so that they can be restored on rollback.
     pub fn remove_relation(&mut self, handle: RelationHandle) -> Result<()> {
         self.mutation_log
@@ -89,10 +89,10 @@ impl<'a> WorldTxn<'a> {
         Ok(())
     }
 
-    /// Wrapper for setting an agent's active state that logs undoable actions.
-    pub fn set_agent_active(&mut self, name: &str, active: bool) -> Result<()> {
+    /// Wrapper for setting an actor's active state that logs undoable actions.
+    pub fn set_actor_active(&mut self, name: &str, active: bool) -> Result<()> {
         self.mutation_log
-            .push(self.world.set_agent_active(name, active)?);
+            .push(self.world.set_actor_active(name, active)?);
         Ok(())
     }
 

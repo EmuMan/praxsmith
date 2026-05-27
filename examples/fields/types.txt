@@ -1,9 +1,9 @@
-practice test (Agent) {
+practice test (Actor) {
   num: 0..5
   var: low | med | high
   actions: [
     {
-      for: Agent
+      for: Actor
       name: "Increase"
       conditions: [
         self and self.num < 5
@@ -13,7 +13,7 @@ practice test (Agent) {
       ]
     }
     {
-      for: Agent
+      for: Actor
       name: "Cycle"
       conditions: []
       outcomes: [
@@ -21,7 +21,7 @@ practice test (Agent) {
       ]
     }
     {
-      for: Agent
+      for: Actor
       name: "Exclaim"
       conditions: [
         self and self.var is #high

@@ -1,6 +1,6 @@
-import type { AgentInfo, AvailableAction, Dialog } from "praxsmth";
+import type { ActorInfo, AvailableAction, Dialog } from "praxsmth";
 
-export type { AgentInfo, AvailableAction, Dialog };
+export type { ActorInfo, AvailableAction, Dialog };
 
 export type ChatMessage =
   | { kind: "system"; line: string }

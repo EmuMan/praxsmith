@@ -1,27 +1,27 @@
 <script lang="ts">
-    import type { AgentInfo } from "./types";
+    import type { ActorInfo } from "./types";
 
     interface Props {
-        agents: AgentInfo[];
+        actors: ActorInfo[];
         selectedId: string | null;
         emotions: Record<string, string | undefined>;
         onselect: (id: string) => void;
     }
 
-    let { agents, selectedId, emotions, onselect }: Props = $props();
+    let { actors, selectedId, emotions, onselect }: Props = $props();
 </script>
 
 <aside class="cast">
     <h2 class="section-title">cast</h2>
-    {#each agents as agent (agent.id)}
-        {@const emotion = emotions[agent.id]}
+    {#each actors as actor (actor.id)}
+        {@const emotion = emotions[actor.id]}
         <button
             class="card"
-            class:selected={selectedId === agent.id}
-            onclick={() => onselect(agent.id)}
+            class:selected={selectedId === actor.id}
+            onclick={() => onselect(actor.id)}
         >
             <div class="card-head">
-                <span class="card-name">{agent.name}</span>
+                <span class="card-name">{actor.name}</span>
                 <span class="card-dot" aria-hidden="true"></span>
             </div>
             {#if emotion}
@@ -29,7 +29,7 @@
             {/if}
         </button>
     {/each}
-    {#if agents.length === 0}
+    {#if actors.length === 0}
         <p class="empty">no one is here yet.</p>
     {/if}
 </aside>

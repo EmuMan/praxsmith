@@ -12,8 +12,8 @@ use wasm_bindgen::prelude::*;
 ///     parsing world
 ///
 ///     Caused by:
-///         0: agent disappeared between validation and emotion edge insertion
-///         1: agent with name jacob already exists
+///         0: actor disappeared between validation and emotion edge insertion
+///         1: actor with name jacob already exists
 ///
 /// That whole block ends up as the JS `Error.message`, which the frontend already
 /// surfaces via `err.message` in its try/catch.
@@ -45,12 +45,12 @@ impl PraxsmthApi {
     #[wasm_bindgen(js_name = processEffect)]
     pub fn process_effect(
         &mut self,
-        agent_name: String,
+        actor_name: String,
         input: String,
     ) -> Result<Option<Dialog>, JsError> {
         let dialog = self
             .inner
-            .process_effect(&agent_name, &input)
+            .process_effect(&actor_name, &input)
             .map_err(js_err)?
             .map(Dialog::from);
         if let Some(ref dialog) = dialog {
@@ -78,22 +78,22 @@ impl PraxsmthApi {
         self.on_dialog = Some(cb);
     }
 
-    #[wasm_bindgen(js_name = getAgentInfo)]
-    pub fn get_agent_info(&self) -> Result<JsValue, JsError> {
-        let agent_infos: Vec<AgentInfo> = self
+    #[wasm_bindgen(js_name = getActorInfo)]
+    pub fn get_actor_info(&self) -> Result<JsValue, JsError> {
+        let actor_infos: Vec<ActorInfo> = self
             .inner
-            .get_agent_info()
+            .get_actor_info()
             .into_iter()
-            .map(AgentInfo::from)
+            .map(ActorInfo::from)
             .collect();
-        serde_wasm_bindgen::to_value(&agent_infos).map_err(js_err)
+        serde_wasm_bindgen::to_value(&actor_infos).map_err(js_err)
     }
 
     #[wasm_bindgen(js_name = getCurrentEmotion)]
-    pub fn get_current_emotion(&self, agent: String) -> Result<Option<String>, JsError> {
+    pub fn get_current_emotion(&self, actor: String) -> Result<Option<String>, JsError> {
         Ok(self
             .inner
-            .get_current_emotion(&agent)
+            .get_current_emotion(&actor)
             .map_err(js_err)?
             .map(|(_, relation)| relation.type_name.clone()))
     }
@@ -101,12 +101,12 @@ impl PraxsmthApi {
     #[wasm_bindgen(js_name = getAvailableActions)]
     pub fn get_available_actions(
         &mut self,
-        agent_name: String,
+        actor_name: String,
         depth: usize,
     ) -> Result<JsValue, JsError> {
         let actions: Vec<AvailableAction> = self
             .inner
-            .get_available_actions(&agent_name, depth)
+            .get_available_actions(&actor_name, depth)
             .map_err(js_err)?
             .into_iter()
             .map(AvailableAction::from)
@@ -117,12 +117,12 @@ impl PraxsmthApi {
     #[wasm_bindgen(js_name = applyAction)]
     pub fn apply_action(
         &mut self,
-        agent_name: String,
+        actor_name: String,
         action_index: u32,
     ) -> Result<JsValue, JsError> {
         let dialogs: Vec<Dialog> = self
             .inner
-            .apply_action(&agent_name, action_index)
+            .apply_action(&actor_name, action_index)
             .map_err(js_err)?
             .into_iter()
             .map(Dialog::from)
@@ -196,18 +196,18 @@ impl From<core::world::simulation::Dialog> for Dialog {
 
 #[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
 #[tsify(into_wasm_abi, from_wasm_abi)]
-pub struct AgentInfo {
+pub struct ActorInfo {
     id: String,
     name: String,
     active: bool,
 }
 
-impl From<core::api::AgentInfo> for AgentInfo {
-    fn from(agent_info: core::api::AgentInfo) -> Self {
-        AgentInfo {
-            id: agent_info.id,
-            name: agent_info.name,
-            active: agent_info.active,
+impl From<core::api::ActorInfo> for ActorInfo {
+    fn from(actor_info: core::api::ActorInfo) -> Self {
+        ActorInfo {
+            id: actor_info.id,
+            name: actor_info.name,
+            active: actor_info.active,
         }
     }
 }
@@ -237,6 +237,7 @@ pub enum PraxsmthConstant {
     Boolean(bool),
     Variant(String),
     String(String),
+    ActorRef(String),
 }
 
 impl From<core::values::Constant> for PraxsmthConstant {
@@ -246,6 +247,7 @@ impl From<core::values::Constant> for PraxsmthConstant {
             core::values::Constant::Boolean(b) => PraxsmthConstant::Boolean(b),
             core::values::Constant::Variant(v) => PraxsmthConstant::Variant(v),
             core::values::Constant::String(s) => PraxsmthConstant::String(s),
+            core::values::Constant::ActorRef(r) => PraxsmthConstant::ActorRef(r),
         }
     }
 }

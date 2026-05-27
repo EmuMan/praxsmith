@@ -134,6 +134,7 @@ impl Expression {
                 Value::Boolean(b) => Ok(Constant::Boolean(*b)),
                 Value::Variant(v) => Ok(Constant::Variant(v.clone())),
                 Value::String(s) => Ok(Constant::String(s.clone())),
+                Value::ActorRef(_) => todo!(),
                 Value::Variable(sentence) => Query::parse(world, sentence, bindings)?
                     .apply_bindings(bindings)
                     .evaluate_in_world(world)
@@ -218,9 +219,9 @@ impl Expression {
             }
 
             Expression::ForAll(new_symbol, inner) => {
-                for (agent_id, _) in world.iter_agents() {
+                for (actor_id, _) in world.iter_actors() {
                     let new_bindings =
-                        bindings.with([(new_symbol.clone(), agent_id.clone())].into());
+                        bindings.with([(new_symbol.clone(), actor_id.clone())].into());
                     match inner.evaluate(world, &new_bindings)? {
                         Constant::Boolean(true) => continue,
                         Constant::Boolean(false) => {
@@ -235,9 +236,9 @@ impl Expression {
             }
 
             Expression::Any(new_symbol, inner) => {
-                for (agent_id, _) in world.iter_agents() {
+                for (actor_id, _) in world.iter_actors() {
                     let new_bindings =
-                        bindings.with([(new_symbol.clone(), agent_id.clone())].into());
+                        bindings.with([(new_symbol.clone(), actor_id.clone())].into());
                     match inner.evaluate(world, &new_bindings)? {
                         Constant::Boolean(true) => {
                             return Ok(Constant::Boolean(true));
@@ -253,9 +254,9 @@ impl Expression {
 
             Expression::Count(new_symbol, inner) => {
                 let mut count = 0;
-                for (agent_id, _) in world.iter_agents() {
+                for (actor_id, _) in world.iter_actors() {
                     let new_bindings =
-                        bindings.with([(new_symbol.clone(), agent_id.clone())].into());
+                        bindings.with([(new_symbol.clone(), actor_id.clone())].into());
                     match inner.evaluate(world, &new_bindings)? {
                         Constant::Boolean(true) => count += 1,
                         Constant::Boolean(false) => continue,
@@ -275,8 +276,8 @@ impl Expression {
             } => {
                 let mut values = vec![];
 
-                for (agent_id, _) in world.iter_agents() {
-                    let new_bindings = bindings.with([(var.clone(), agent_id.clone())].into());
+                for (actor_id, _) in world.iter_actors() {
+                    let new_bindings = bindings.with([(var.clone(), actor_id.clone())].into());
                     match filter.evaluate(world, &new_bindings)? {
                         Constant::Boolean(true) => {
                             let value = body.evaluate(world, &new_bindings)?;

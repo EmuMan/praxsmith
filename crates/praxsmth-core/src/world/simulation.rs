@@ -5,7 +5,7 @@ use anyhow::{Context, Result, bail};
 use crate::{
     anyhow_ext::ResultOptionExt,
     expressions::Expression,
-    queries::{AgentRef, Query, RelationQuery},
+    queries::{ActorRef, Query, RelationQuery},
     types::{FieldType, RelationTypeData},
     values::{Constant, Sentence, Value},
     world::{
@@ -84,24 +84,24 @@ pub fn process_declaration(
     let relation_query = relation_query.apply_bindings(bindings);
 
     match relation_query {
-        RelationQuery::Trait { agent, trait_name } => {
-            world.add_trait(agent.as_literal()?, &trait_name, declaration.fields.clone())
+        RelationQuery::Trait { actor, trait_name } => {
+            world.add_trait(actor.as_literal()?, &trait_name, declaration.fields.clone())
         }
         RelationQuery::Emotion {
-            agent,
+            actor,
             emotion_name,
         } => world.add_emotion(
-            agent.as_literal()?,
+            actor.as_literal()?,
             &emotion_name,
             declaration.fields.clone(),
         ),
         RelationQuery::Binary {
-            agent_1,
-            agent_2,
+            actor_1,
+            actor_2,
             type_name,
         } => world.add_binary_relation(
-            agent_1.as_literal()?,
-            agent_2.as_literal()?,
+            actor_1.as_literal()?,
+            actor_2.as_literal()?,
             &type_name,
             declaration.fields.clone(),
         ),
@@ -111,7 +111,7 @@ pub fn process_declaration(
         } => world.add_practice(
             participants
                 .iter()
-                .map(AgentRef::as_literal)
+                .map(ActorRef::as_literal)
                 .collect::<Result<Vec<&str>>>()?,
             &type_name,
             declaration.fields.clone(),
@@ -219,6 +219,7 @@ fn process_update(
         Value::Boolean(b) => Constant::Boolean(*b),
         Value::Variant(v) => Constant::Variant(v.clone()),
         Value::String(s) => Constant::String(s.clone()),
+        Value::ActorRef(_) => todo!(),
         Value::Variable(new_val_sentence) => {
             evaluate_variable(world.inner(), new_val_sentence, bindings).with_context(|| {
                 format!(
@@ -406,7 +407,7 @@ fn process_cycle(
 
 pub fn process_effect(
     world: &mut WorldTxn,
-    agent_name: &str,
+    actor_name: &str,
     effect: &Effect,
     bindings: &Bindings,
 ) -> Result<Option<Dialog>> {
@@ -417,14 +418,14 @@ pub fn process_effect(
         Effect::Say(string) => {
             return Ok(Some(process_print(
                 world.inner(),
-                Some(agent_name),
+                Some(actor_name),
                 string,
                 bindings,
             )?));
         }
-        Effect::Activate(agent_id) => world.set_agent_active(&bindings.get_or_same(agent_id), true),
-        Effect::Deactivate(agent_id) => {
-            world.set_agent_active(&bindings.get_or_same(agent_id), false)
+        Effect::Activate(actor_id) => world.set_actor_active(&bindings.get_or_same(actor_id), true),
+        Effect::Deactivate(actor_id) => {
+            world.set_actor_active(&bindings.get_or_same(actor_id), false)
         }
         Effect::Delete(sentence) => process_delete(world, sentence, bindings),
         Effect::Set(declaration) => process_declaration(world, declaration, bindings).map(|_| ()),
@@ -435,13 +436,13 @@ pub fn process_effect(
     Ok(None)
 }
 
-pub fn get_available_actions(world: &World, agent_name: &str) -> Result<Vec<ActionRef>> {
-    let agent = world
-        .get_agent(agent_name)
-        .with_context(|| format!("agent {} not found", agent_name))?;
+pub fn get_available_actions(world: &World, actor_id: &str) -> Result<Vec<ActionRef>> {
+    let actor = world
+        .get_actor(actor_id)
+        .with_context(|| format!("actor {} not found", actor_id))?;
     let mut available_actions = Vec::new();
 
-    for (edge, relation) in world.iter_agent_relations(agent) {
+    for (edge, relation) in world.iter_actor_relations(actor) {
         match &relation.data {
             RelationData::Practice { bindings, .. } => {
                 let relation_type = world
@@ -458,7 +459,7 @@ pub fn get_available_actions(world: &World, agent_name: &str) -> Result<Vec<Acti
                 };
                 'action_loop: for (i, action) in actions.iter().enumerate() {
                     let action_for = World::resolve_binding_or_same(&action.for_actor, bindings);
-                    if action_for != agent_name {
+                    if action_for != actor_id {
                         continue;
                     }
                     for condition in &action.conditions {
@@ -554,7 +555,7 @@ pub fn process_available_action(
 
 /// Evaluates the current state of a goal within the context of a world.
 /// This value is not entirely useful by itself, and is intended to be used
-/// as part of a net delta of an agent's goals across two world states. The
+/// as part of a net delta of an actor's goals across two world states. The
 /// return value is derived from the goal's measurements and weights.
 ///
 /// This system supports the same unbound variables as conditions do, and
@@ -596,16 +597,16 @@ fn evaluate_goal(world: &World, goal: &Goal, bindings: &Bindings) -> Result<f64>
     Ok(total_weight)
 }
 
-/// Evaluates all of an agent's goals and returns the total score. This is
-/// intended to be used as part of a net delta of an agent's goals across
+/// Evaluates all of an actor's goals and returns the total score. This is
+/// intended to be used as part of a net delta of an actor's goals across
 /// two world states, so the return value is not entirely useful by itself.
 /// The return value is derived from the goals' measurements and weights.
-pub fn evaluate_agent_goals(world: &World, agent_id: &str) -> Result<f64> {
-    let agent = world
-        .get_agent(agent_id)
-        .with_context(|| format!("agent {} not found for goal evaluation", agent_id))?;
+pub fn evaluate_actor_goals(world: &World, actor_id: &str) -> Result<f64> {
+    let actor = world
+        .get_actor(actor_id)
+        .with_context(|| format!("actor {} not found for goal evaluation", actor_id))?;
     let mut total_score = 0.0;
-    for goal in &agent.goals {
+    for goal in &actor.goals {
         total_score += evaluate_goal(world, goal, &Bindings::default())?;
     }
     Ok(total_score)

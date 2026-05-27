@@ -28,15 +28,18 @@ char         =  {
 var_name     = @{ (ASCII_ALPHANUMERIC | "_")+ }
 sentence     = ${ var_name ~ ("." ~ var_name)* }
 
-field_brackets =  { "{" ~ field_def* ~ "}" }
-field_def      =  { var_name ~ ":" ~ field }
-field          = _{ number_range | variant_list }
-number_range   =  { number ~ ".." ~ number }
-variant_list   =  { var_name ~ ("|" ~ var_name)+ }
-variant_single = @{ "#" ~ var_name }
+field_brackets  =  { "{" ~ field_def* ~ "}" }
+field_def       =  { var_name ~ ":" ~ field_type }
+field_type      = _{ ft_number_range | ft_variant_list | ft_actor }
+ft_number_range =  { number ~ ".." ~ number }
+ft_variant_list =  { var_name ~ ("|" ~ var_name)+ }
+ft_actor        =  { "actor" }
 
-const = _{ number | string | variant_single }
-value = _{ number | string | variant_single | sentence }
+variant_single = @{ "#" ~ var_name }
+actor_ref      = @{ "@" ~ var_name }
+
+const = _{ number | string | variant_single | actor_ref }
+value = _{ number | string | variant_single | actor_ref | sentence }
 
 // Pratt parsing, following Pest's example
 expression = {
@@ -117,7 +120,7 @@ t_practice_brackets = { "{" ~ t_practice_field_def* ~ "}" }
 
 t_practice_field_def     = _{ t_practice_actions_field | t_practice_generic_field }
 t_practice_actions_field =  { "actions" ~ ":" ~ t_practice_actions }
-t_practice_generic_field =  { var_name ~ ":" ~ field }
+t_practice_generic_field =  { var_name ~ ":" ~ field_type }
 
 t_practice_actions = { "[" ~ t_practice_action* ~ "]" }
 
@@ -161,15 +164,15 @@ effect_cycle      =  { "cycle" ~ sentence ~ "by" ~ number }
 // =================
 
 world_definition = _{
-    w_agent
+    w_actor
   | w_declaration
 }
 
-// Agent rules
-w_agent          = { "agent" ~ var_name ~ ("as" ~ string)? ~ w_agent_inactive? ~ w_agent_brackets? }
-w_agent_inactive = { "inactive" }
-w_agent_brackets = { "{" ~ w_agent_goal* ~ "}" }
-w_agent_goal     = { "goal" ~ "(" ~ number ~ ")" ~ ":" ~ w_delta? ~ expression }
+// Actor rules
+w_actor          = { "actor" ~ var_name ~ ("as" ~ string)? ~ w_actor_inactive? ~ w_actor_brackets? }
+w_actor_inactive = { "inactive" }
+w_actor_brackets = { "{" ~ w_actor_goal* ~ "}" }
+w_actor_goal     = { "goal" ~ "(" ~ number ~ ")" ~ ":" ~ w_delta? ~ expression }
 w_delta          = { "delta" }
 
 // Declaration rules

@@ -11,7 +11,7 @@ use crate::{
         parse_sentence,
     },
     world::{
-        AgentInitInfo,
+        ActorInitInfo,
         goals::{Goal, GoalMeasurement},
         simulation::Declaration,
     },
@@ -19,21 +19,21 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum WorldInitStep {
-    NewAgent(AgentInitInfo),
+    NewActor(ActorInitInfo),
     NewRelation(Declaration),
 }
 
 impl fmt::Display for WorldInitStep {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            WorldInitStep::NewAgent(a) => write!(f, "{}", a),
+            WorldInitStep::NewActor(a) => write!(f, "{}", a),
             WorldInitStep::NewRelation(d) => write!(f, "{}", d),
         }
     }
 }
 
-fn parse_agent_goal(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Goal {
-    // pair is Rule::w_agent_goal:
+fn parse_actor_goal(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Goal {
+    // pair is Rule::w_actor_goal:
     //   "goal" ~ "(" ~ number ~ ")" ~ ":" ~ (w_increase | w_decrease)? ~ expression
     let mut inner = pair.into_inner();
     let weight: f64 = inner.next().unwrap().as_str().parse().unwrap();
@@ -52,9 +52,9 @@ fn parse_agent_goal(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Goal {
     }
 }
 
-fn parse_agent(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> AgentInitInfo {
-    // pair is Rule::w_agent:
-    //   "agent" ~ var_name ~ ("as" ~ string)? ~ w_agent_inactive? ~ w_agent_brackets?
+fn parse_actor(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> ActorInitInfo {
+    // pair is Rule::w_actor:
+    //   "actor" ~ var_name ~ ("as" ~ string)? ~ w_actor_inactive? ~ w_actor_brackets?
     let mut inner = pair.into_inner();
     let id = inner.next().unwrap().as_str().to_string();
     let mut name = id.clone();
@@ -66,19 +66,19 @@ fn parse_agent(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> AgentInitInfo {
             Rule::string => {
                 name = next.into_inner().next().unwrap().as_str().to_string();
             }
-            Rule::w_agent_inactive => {
+            Rule::w_actor_inactive => {
                 active = false;
             }
-            Rule::w_agent_brackets => {
+            Rule::w_actor_brackets => {
                 for goal_pair in next.into_inner() {
-                    goals.push(parse_agent_goal(goal_pair, pratt));
+                    goals.push(parse_actor_goal(goal_pair, pratt));
                 }
             }
             _ => unreachable!(),
         }
     }
 
-    AgentInitInfo {
+    ActorInitInfo {
         id,
         name,
         active,
@@ -114,9 +114,9 @@ pub fn parse_world(input_str: &str) -> Result<Vec<WorldInitStep>, Error<Rule>> {
     let pratt = build_expression_pratt();
 
     let values = pairs
-        .filter(|pair| matches!(pair.as_rule(), Rule::w_agent | Rule::w_declaration))
+        .filter(|pair| matches!(pair.as_rule(), Rule::w_actor | Rule::w_declaration))
         .map(|pair| match pair.as_rule() {
-            Rule::w_agent => WorldInitStep::NewAgent(parse_agent(pair, &pratt)),
+            Rule::w_actor => WorldInitStep::NewActor(parse_actor(pair, &pratt)),
             Rule::w_declaration => WorldInitStep::NewRelation(parse_declaration(pair)),
             _ => unreachable!(),
         })

@@ -65,25 +65,25 @@ fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -
     Ok(())
 }
 
-/// Represents an edge from an agent to a relation.
+/// Represents an edge from an actor to a relation.
 ///
 /// Fields:
-/// - `index`: The index of the agent in the relation's edges list. This is
-///   used primarily for directional edges, where the position of the agent in
+/// - `index`: The index of the actor in the relation's edges list. This is
+///   used primarily for directional edges, where the position of the actor in
 ///   the edge list determines its role (e.g. forward vs backward).
 /// - `relation_type`: The type of the relation this edge points to. This is
 ///   used for quick access to the relation's type without needing to look it
 ///   up in the relation store.
 /// - `relation_handle`: A handle to the relation this edge points to.
 #[derive(Debug, Clone)]
-pub struct AgentToRelation {
+pub struct ActorToRelation {
     pub index: usize,
     pub relation_type: String,
     pub relation_handle: RelationHandle,
 }
 
 #[derive(Debug, Clone)]
-pub enum RelationToAgent {
+pub enum RelationToActor {
     Solo(String),
     Forward(String),
     Backward(String),
@@ -91,14 +91,14 @@ pub enum RelationToAgent {
     Ordered(String),
 }
 
-impl RelationToAgent {
-    pub fn agent(&self) -> &str {
+impl RelationToActor {
+    pub fn actor(&self) -> &str {
         match self {
-            RelationToAgent::Solo(a)
-            | RelationToAgent::Forward(a)
-            | RelationToAgent::Backward(a)
-            | RelationToAgent::Unordered(a)
-            | RelationToAgent::Ordered(a) => &a,
+            RelationToActor::Solo(a)
+            | RelationToActor::Forward(a)
+            | RelationToActor::Backward(a)
+            | RelationToActor::Unordered(a)
+            | RelationToActor::Ordered(a) => &a,
         }
     }
 }
@@ -106,7 +106,7 @@ impl RelationToAgent {
 #[derive(Debug, Clone)]
 pub struct Relation {
     pub type_name: String,
-    edges: Vec<RelationToAgent>,
+    edges: Vec<RelationToActor>,
     pub fields: Fields,
     pub data: RelationData,
 }
@@ -125,26 +125,26 @@ impl Relation {
 #[derive(Debug, Clone)]
 pub enum RelationData {
     Trait {
-        agent: String,
+        actor: String,
     },
     Emotion {
-        agent: String,
+        actor: String,
     },
     Directional {
-        agent_from: String,
-        agent_to: String,
+        actor_from: String,
+        actor_to: String,
     },
     Reciprocal {
-        agent_1: String,
-        agent_2: String,
+        actor_1: String,
+        actor_2: String,
     },
     Evaluation {
-        agent_from: String,
-        agent_to: String,
+        actor_from: String,
+        actor_to: String,
         reason: String,
     },
     Practice {
-        agents: Vec<String>,
+        actors: Vec<String>,
         bindings: Bindings,
     },
 }
@@ -310,14 +310,14 @@ impl RelationStore {
 }
 
 #[derive(Debug, Clone)]
-pub struct AgentInitInfo {
+pub struct ActorInitInfo {
     pub id: String,
     pub name: String,
     pub active: bool,
     pub goals: Vec<Goal>,
 }
 
-impl fmt::Display for AgentInitInfo {
+impl fmt::Display for ActorInitInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.goals.is_empty() {
             write!(f, "{}", self.name)
@@ -332,18 +332,18 @@ impl fmt::Display for AgentInitInfo {
     }
 }
 
-pub struct Agent {
+pub struct Actor {
     pub name: String,
-    pub edges: Vec<AgentToRelation>,
+    pub edges: Vec<ActorToRelation>,
     // Quick access field for the singular emotion they might have
     pub emotion: Option<RelationHandle>,
     pub is_active: bool,
     pub goals: Vec<Goal>,
 }
 
-impl Agent {
+impl Actor {
     pub fn new(name: String, is_active: bool, goals: Vec<Goal>) -> Self {
-        Agent {
+        Actor {
             name,
             edges: Vec::new(),
             emotion: None,
@@ -376,22 +376,22 @@ pub enum WorldMutation {
         handle: RelationHandle,
         prior_fields: Fields,
     },
-    AgentSetActive {
-        agent_id: String,
+    ActorSetActive {
+        actor_id: String,
         prior_active: bool,
     },
-    AgentEdgesUpdated {
-        agent_id: String,
-        prior_edges: Vec<AgentToRelation>,
+    ActorEdgesUpdated {
+        actor_id: String,
+        prior_edges: Vec<ActorToRelation>,
     },
-    AgentEmotionUpdated {
-        agent_id: String,
+    ActorEmotionUpdated {
+        actor_id: String,
         prior_emotion: Option<RelationHandle>,
     },
 }
 
 pub struct World {
-    agents: HashMap<String, Agent>,
+    actors: HashMap<String, Actor>,
     relation_type_map: RelationTypeMap,
     relation_store: RelationStore,
 }
@@ -399,7 +399,7 @@ pub struct World {
 impl World {
     pub fn new(type_map: RelationTypeMap) -> Self {
         World {
-            agents: HashMap::new(),
+            actors: HashMap::new(),
             relation_type_map: type_map,
             relation_store: RelationStore::new(),
         }
@@ -427,11 +427,11 @@ impl World {
             })
     }
 
-    pub fn iter_agent_relations<'a, 'b>(
+    pub fn iter_actor_relations<'a, 'b>(
         &'a self,
-        agent: &'b Agent,
-    ) -> impl Iterator<Item = (&'b AgentToRelation, &'a Relation)> {
-        agent.edges.iter().filter_map(|edge| {
+        actor: &'b Actor,
+    ) -> impl Iterator<Item = (&'b ActorToRelation, &'a Relation)> {
+        actor.edges.iter().filter_map(|edge| {
             let handle = edge.relation_handle.clone();
             self.relation_store
                 .get(handle.clone())
@@ -442,11 +442,11 @@ impl World {
     fn format_string(&self, string: &str, bindings: &Bindings) -> Result<String> {
         let mut result = string.to_string();
         for (var, value) in bindings {
-            let agent = self
-                .get_agent(value)
-                .with_context(|| format!("looking up agent {} for string formatting", value))?;
+            let actor = self
+                .get_actor(value)
+                .with_context(|| format!("looking up actor {} for string formatting", value))?;
             let placeholder = format!("[{}]", var);
-            result = result.replace(&placeholder, &agent.name);
+            result = result.replace(&placeholder, &actor.name);
         }
         Ok(result)
     }
@@ -458,38 +458,38 @@ impl World {
             .unwrap_or_else(|| string.to_string())
     }
 
-    pub fn add_agent(&mut self, info: &AgentInitInfo) -> Result<()> {
-        if self.agents.contains_key(&info.id) {
-            bail!("agent with id {} already exists", &info.id);
+    pub fn add_actor(&mut self, info: &ActorInitInfo) -> Result<()> {
+        if self.actors.contains_key(&info.id) {
+            bail!("actor with id {} already exists", &info.id);
         }
-        self.agents.insert(
+        self.actors.insert(
             info.id.clone(),
-            Agent::new(info.name.clone(), info.active, info.goals.clone()),
+            Actor::new(info.name.clone(), info.active, info.goals.clone()),
         );
         Ok(())
     }
 
-    pub fn get_agent(&self, name: &str) -> Option<&Agent> {
-        self.agents.get(name)
+    pub fn get_actor(&self, name: &str) -> Option<&Actor> {
+        self.actors.get(name)
     }
 
-    pub fn get_agent_mut(&mut self, name: &str) -> Option<&mut Agent> {
-        self.agents.get_mut(name)
+    pub fn get_actor_mut(&mut self, name: &str) -> Option<&mut Actor> {
+        self.actors.get_mut(name)
     }
 
-    pub fn iter_agents(&self) -> impl Iterator<Item = (&String, &Agent)> {
-        self.agents.iter()
+    pub fn iter_actors(&self) -> impl Iterator<Item = (&String, &Actor)> {
+        self.actors.iter()
     }
 
-    pub fn set_agent_active(&mut self, name: &str, active: bool) -> Result<WorldMutation> {
-        let agent = self
-            .agents
+    pub fn set_actor_active(&mut self, name: &str, active: bool) -> Result<WorldMutation> {
+        let actor = self
+            .actors
             .get_mut(name)
-            .with_context(|| format!("looking up agent {} for activation", name))?;
-        let prior_active = agent.is_active;
-        agent.is_active = active;
-        Ok(WorldMutation::AgentSetActive {
-            agent_id: name.to_string(),
+            .with_context(|| format!("looking up actor {} for activation", name))?;
+        let prior_active = actor.is_active;
+        actor.is_active = active;
+        Ok(WorldMutation::ActorSetActive {
+            actor_id: name.to_string(),
             prior_active,
         })
     }
@@ -563,18 +563,18 @@ impl World {
             .relation_store
             .get(handle.clone())
             .with_context(|| format!("looking up relation {:?} for removal", handle))?;
-        relation.edges.iter().for_each(|edge_to_agent| {
-            let agent_name = edge_to_agent.agent();
-            if let Some(agent) = self.agents.get_mut(agent_name) {
-                mutations.push(WorldMutation::AgentEdgesUpdated {
-                    agent_id: agent_name.to_string(),
-                    prior_edges: agent.edges.clone(),
+        relation.edges.iter().for_each(|edge_to_actor| {
+            let actor_name = edge_to_actor.actor();
+            if let Some(actor) = self.actors.get_mut(actor_name) {
+                mutations.push(WorldMutation::ActorEdgesUpdated {
+                    actor_id: actor_name.to_string(),
+                    prior_edges: actor.edges.clone(),
                 });
-                agent.remove_edges_to(handle.clone());
+                actor.remove_edges_to(handle.clone());
             } else {
                 panic!(
-                    "agent with name {} not found when removing relation with handle {:?}",
-                    agent_name, handle
+                    "actor with name {} not found when removing relation with handle {:?}",
+                    actor_name, handle
                 );
             }
         });
@@ -591,18 +591,18 @@ impl World {
         Ok(mutations)
     }
 
-    fn validate_agent(&self, name: &str) -> Result<()> {
-        if self.agents.contains_key(name) {
+    fn validate_actor(&self, name: &str) -> Result<()> {
+        if self.actors.contains_key(name) {
             Ok(())
         } else {
-            bail!("agent with name {} not found", name);
+            bail!("actor with name {} not found", name);
         }
     }
 
-    fn validate_agents(&self, names: &[&str]) -> Result<()> {
+    fn validate_actors(&self, names: &[&str]) -> Result<()> {
         for name in names {
-            self.validate_agent(name)
-                .with_context(|| format!("validating agent {:?}", name))?;
+            self.validate_actor(name)
+                .with_context(|| format!("validating actor {:?}", name))?;
         }
         Ok(())
     }
@@ -634,23 +634,23 @@ impl World {
 
     /// Adds a trait to the world.
     ///
-    /// A trait is a relation that connects a single agent to a type, and
-    /// represents a property or characteristic of that agent. As there is only
+    /// A trait is a relation that connects a single actor to a type, and
+    /// represents a property or characteristic of that actor. As there is only
     /// ever one edge to the relation, that edge will always have index `0`.
     ///
     /// Returns an error if the type does not exist or is not a trait type,
-    /// if the agent does not exist, or if the fields do not match the type
+    /// if the actor does not exist, or if the fields do not match the type
     /// definition. Otherwise, returns an associated `RelationCreated`
     /// containing a handle to the newly created relation and a list of
     /// mutations that were applied to the world as part of creating the
     /// relation.
     pub fn add_trait(
         &mut self,
-        agent_id: &str,
+        actor_id: &str,
         type_id: &str,
         fields: Fields,
     ) -> Result<RelationCreated> {
-        let trait_ctx = || format!("adding trait {} to agent {}", type_id, agent_id);
+        let trait_ctx = || format!("adding trait {} to actor {}", type_id, actor_id);
 
         self.expect_type(type_id, "trait", |d| matches!(d, RelationTypeData::Trait))
             .with_context(trait_ctx)?;
@@ -658,25 +658,25 @@ impl World {
         self.validate_type_fields(type_id, &fields)
             .with_context(trait_ctx)?;
 
-        self.validate_agent(agent_id).with_context(trait_ctx)?;
+        self.validate_actor(actor_id).with_context(trait_ctx)?;
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
-            edges: vec![RelationToAgent::Solo(agent_id.to_string())],
+            edges: vec![RelationToActor::Solo(actor_id.to_string())],
             fields,
             data: RelationData::Trait {
-                agent: agent_id.to_string(),
+                actor: actor_id.to_string(),
             },
         });
 
-        let agent = self.agents.get_mut(agent_id).unwrap();
+        let actor = self.actors.get_mut(actor_id).unwrap();
 
-        created.mutations.push(WorldMutation::AgentEdgesUpdated {
-            agent_id: agent_id.to_string(),
-            prior_edges: agent.edges.clone(),
+        created.mutations.push(WorldMutation::ActorEdgesUpdated {
+            actor_id: actor_id.to_string(),
+            prior_edges: actor.edges.clone(),
         });
 
-        agent.edges.push(AgentToRelation {
+        actor.edges.push(ActorToRelation {
             index: 0,
             relation_type: type_id.to_string(),
             relation_handle: created.handle.clone(),
@@ -685,27 +685,27 @@ impl World {
         Ok(created)
     }
 
-    /// Retrieves a trait relation for the given agent and type, if it exists.
+    /// Retrieves a trait relation for the given actor and type, if it exists.
     ///
     /// Returns an error if the type does not exist or is not a trait type, or
-    /// if the agent does not exist. Otherwise, returns `Ok(None)` if the agent
+    /// if the actor does not exist. Otherwise, returns `Ok(None)` if the actor
     /// does not have that relation, and `Ok(Some((edge, relation)))` if they
     /// do.
     pub fn get_trait(
         &self,
-        agent_id: &str,
+        actor_id: &str,
         type_id: &str,
-    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
-        let trait_ctx = || format!("getting trait {} from agent {}", type_id, agent_id);
+    ) -> Result<Option<(&ActorToRelation, &Relation)>> {
+        let trait_ctx = || format!("getting trait {} from actor {}", type_id, actor_id);
 
         self.expect_type(type_id, "trait", |d| matches!(d, RelationTypeData::Trait))
             .with_context(trait_ctx)?;
 
-        self.validate_agent(agent_id).with_context(trait_ctx)?;
+        self.validate_actor(actor_id).with_context(trait_ctx)?;
 
-        let agent = self.agents.get(agent_id).unwrap();
+        let actor_id = self.actors.get(actor_id).unwrap();
 
-        Ok(agent.edges.iter().find_map(|edge| {
+        Ok(actor_id.edges.iter().find_map(|edge| {
             if edge.relation_type == type_id {
                 if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
                     return Some((edge, relation));
@@ -717,24 +717,24 @@ impl World {
 
     /// Adds an emotion to the world.
     ///
-    /// An emotion is a relation that connects a single agent to a type, and
-    /// represents the sole, short-term emotion that the agent may have. As
+    /// An emotion is a relation that connects a single actor to a type, and
+    /// represents the sole, short-term emotion that the actor may have. As
     /// there is only ever one edge to the relation, that edge will always have
     /// index `0`.
     ///
     /// Returns an error if the type does not exist or is not an emotion type,
-    /// if the agent does not exist, or if the fields do not match the type
+    /// if the actor does not exist, or if the fields do not match the type
     /// definition. Otherwise, returns an associated `RelationCreated`
     /// containing a handle to the newly created relation and a list of
     /// mutations that were applied to the world as part of creating the
     /// relation.
     pub fn add_emotion(
         &mut self,
-        agent_id: &str,
+        actor_id: &str,
         type_id: &str,
         fields: Fields,
     ) -> Result<RelationCreated> {
-        let emotion_ctx = || format!("adding emotion {} to agent {}", type_id, agent_id);
+        let emotion_ctx = || format!("adding emotion {} to actor {}", type_id, actor_id);
 
         self.expect_type(type_id, "emotion", |d| {
             matches!(d, RelationTypeData::Emotion)
@@ -744,72 +744,72 @@ impl World {
         self.validate_type_fields(type_id, &fields)
             .with_context(emotion_ctx)?;
 
-        self.validate_agent(agent_id).with_context(emotion_ctx)?;
+        self.validate_actor(actor_id).with_context(emotion_ctx)?;
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
-            edges: vec![RelationToAgent::Solo(agent_id.to_string())],
+            edges: vec![RelationToActor::Solo(actor_id.to_string())],
             fields,
             data: RelationData::Emotion {
-                agent: agent_id.to_string(),
+                actor: actor_id.to_string(),
             },
         });
 
-        let agent = self.agents.get_mut(agent_id).unwrap();
+        let actor = self.actors.get_mut(actor_id).unwrap();
 
-        let old_emotion_handle = agent.emotion.clone();
+        let old_emotion_handle = actor.emotion.clone();
 
-        created.mutations.push(WorldMutation::AgentEdgesUpdated {
-            agent_id: agent_id.to_string(),
-            prior_edges: agent.edges.clone(),
+        created.mutations.push(WorldMutation::ActorEdgesUpdated {
+            actor_id: actor_id.to_string(),
+            prior_edges: actor.edges.clone(),
         });
-        created.mutations.push(WorldMutation::AgentEmotionUpdated {
-            agent_id: agent_id.to_string(),
+        created.mutations.push(WorldMutation::ActorEmotionUpdated {
+            actor_id: actor_id.to_string(),
             prior_emotion: old_emotion_handle.clone(),
         });
 
-        agent.edges.push(AgentToRelation {
+        actor.edges.push(ActorToRelation {
             index: 0,
             relation_type: type_id.to_string(),
             relation_handle: created.handle.clone(),
         });
-        agent.emotion = Some(created.handle.clone());
+        actor.emotion = Some(created.handle.clone());
 
-        // Remove the old emotion edge for this agent, since an agent can only have one emotion edge at a time
+        // Remove the old emotion edge for this actor, since an actor can only have one emotion edge at a time
         if let Some(old_emotion_handle) = old_emotion_handle {
             let old_removal_mutations = self
                 .remove_relation(old_emotion_handle)
-                .with_context(|| format!("replacing prior emotion edge on agent {}", agent_id))?;
+                .with_context(|| format!("replacing prior emotion edge on actor {}", actor_id))?;
             created.mutations.extend(old_removal_mutations);
         }
 
         Ok(created)
     }
 
-    /// Retrieves an emotion relation for the given agent and type, if it
+    /// Retrieves an emotion relation for the given actor and type, if it
     /// exists.
     ///
     /// Returns an error if the type does not exist or is not an emotion type,
-    /// or if the agent does not exist. Otherwise, returns `Ok(None)` if the
-    /// agent does not have that relation, and `Ok(Some((edge, relation)))` if
+    /// or if the actor does not exist. Otherwise, returns `Ok(None)` if the
+    /// actor does not have that relation, and `Ok(Some((edge, relation)))` if
     /// they do.
     pub fn get_emotion(
         &self,
-        agent_id: &str,
+        actor_id: &str,
         type_id: &str,
-    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
-        let emotion_ctx = || format!("getting emotion {} from agent {}", type_id, agent_id);
+    ) -> Result<Option<(&ActorToRelation, &Relation)>> {
+        let emotion_ctx = || format!("getting emotion {} from actor {}", type_id, actor_id);
 
         self.expect_type(type_id, "emotion", |d| {
             matches!(d, RelationTypeData::Emotion)
         })
         .with_context(emotion_ctx)?;
 
-        self.validate_agent(agent_id).with_context(emotion_ctx)?;
+        self.validate_actor(actor_id).with_context(emotion_ctx)?;
 
-        let agent = self.agents.get(agent_id).unwrap();
+        let actor = self.actors.get(actor_id).unwrap();
 
-        Ok(agent.edges.iter().find_map(|edge| {
+        Ok(actor.edges.iter().find_map(|edge| {
             if edge.relation_type == type_id {
                 if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
                     return Some((edge, relation));
@@ -821,13 +821,13 @@ impl World {
 
     /// Adds a directional relation to the world.
     ///
-    /// A directional relationship connects two agents in a directed way, with
-    /// a distinct "from" agent and "to" agent. The from agent is always at
-    /// index `0` in the relation's edges list, and the to agent is always at
+    /// A directional relationship connects two actors in a directed way, with
+    /// a distinct "from" actor and "to" actor. The from actor is always at
+    /// index `0` in the relation's edges list, and the to actor is always at
     /// index `1`.
     ///
     /// Returns an error if the type does not exist or is not a directional
-    /// type, if either agent does not exist, or if the fields do not match the
+    /// type, if either actor does not exist, or if the fields do not match the
     /// type definition. Otherwise, returns an associated `RelationCreated`
     /// containing a handle to the newly created relation and a list of
     /// mutations that were applied to the world as part of creating the
@@ -854,7 +854,7 @@ impl World {
         self.validate_type_fields(type_id, &fields)
             .with_context(directional_ctx)?;
 
-        self.validate_agents(&[from_id, to_id])
+        self.validate_actors(&[from_id, to_id])
             .with_context(directional_ctx)?;
 
         let exclusive = matches!(
@@ -863,12 +863,12 @@ impl World {
         );
 
         let existing = if exclusive {
-            self.agents
+            self.actors
                 .get(from_id)
                 .into_iter()
                 .flat_map(|a| a.edges.iter())
                 .find_map(|edge| {
-                    // From agents are always index zero, so if this agent has
+                    // From actors are always index zero, so if this actor has
                     // an index zero edge going to this type then it's the one
                     // we want to replace
                     if edge.relation_type == type_id && edge.index == 0 {
@@ -883,13 +883,13 @@ impl World {
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             edges: vec![
-                RelationToAgent::Forward(from_id.to_string()),
-                RelationToAgent::Backward(to_id.to_string()),
+                RelationToActor::Forward(from_id.to_string()),
+                RelationToActor::Backward(to_id.to_string()),
             ],
             fields,
             data: RelationData::Directional {
-                agent_from: from_id.to_string(),
-                agent_to: to_id.to_string(),
+                actor_from: from_id.to_string(),
+                actor_to: to_id.to_string(),
             },
         });
 
@@ -900,27 +900,27 @@ impl World {
             created.mutations.extend(removal_mutations);
         }
 
-        let from_agent = self.agents.get_mut(from_id).unwrap();
+        let from_actor = self.actors.get_mut(from_id).unwrap();
 
-        created.mutations.push(WorldMutation::AgentEdgesUpdated {
-            agent_id: from_id.to_string(),
-            prior_edges: from_agent.edges.clone(),
+        created.mutations.push(WorldMutation::ActorEdgesUpdated {
+            actor_id: from_id.to_string(),
+            prior_edges: from_actor.edges.clone(),
         });
 
-        from_agent.edges.push(AgentToRelation {
+        from_actor.edges.push(ActorToRelation {
             index: 0,
             relation_type: type_id.to_string(),
             relation_handle: created.handle.clone(),
         });
 
-        let to_agent = self.agents.get_mut(to_id).unwrap();
+        let to_actor = self.actors.get_mut(to_id).unwrap();
 
-        created.mutations.push(WorldMutation::AgentEdgesUpdated {
-            agent_id: to_id.to_string(),
-            prior_edges: to_agent.edges.clone(),
+        created.mutations.push(WorldMutation::ActorEdgesUpdated {
+            actor_id: to_id.to_string(),
+            prior_edges: to_actor.edges.clone(),
         });
 
-        to_agent.edges.push(AgentToRelation {
+        to_actor.edges.push(ActorToRelation {
             index: 1,
             relation_type: type_id.to_string(),
             relation_handle: created.handle.clone(),
@@ -929,7 +929,7 @@ impl World {
         Ok(created)
     }
 
-    /// Retrieves a directional relation for the given from and to agents and
+    /// Retrieves a directional relation for the given from and to actors and
     /// type, if it exists. Works on both primary and complement type names,
     /// but requires correct ordering of arguments.
     ///
@@ -942,15 +942,15 @@ impl World {
     /// and to are reversed in the lookup.
     ///
     /// Returns an error if the type does not exist or is not a directional
-    /// type, or if either of the agents do not exist. Otherwise, returns
-    /// `Ok(None)` if the agents do not have that relation, and
+    /// type, or if either of the actors do not exist. Otherwise, returns
+    /// `Ok(None)` if the actors do not have that relation, and
     /// `Ok(Some((edge, relation)))` if they do.
     pub fn get_directional(
         &self,
         from_id: &str,
         to_id: &str,
         type_id: &str,
-    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+    ) -> Result<Option<(&ActorToRelation, &Relation)>> {
         // If the edge is a complement, perform a search on the primary type
         // with the from and to reversed. This allows us to find the edge
         // regardless of which direction it's referred to as.
@@ -971,16 +971,16 @@ impl World {
         })
         .with_context(directional_ctx)?;
 
-        self.validate_agents(&[from_id, to_id])
+        self.validate_actors(&[from_id, to_id])
             .with_context(directional_ctx)?;
 
-        let from_agent = self.agents.get(from_id).unwrap();
+        let from_actor = self.actors.get(from_id).unwrap();
 
-        Ok(from_agent.edges.iter().find_map(|edge| {
+        Ok(from_actor.edges.iter().find_map(|edge| {
             if edge.relation_type == type_id && edge.index == 0 {
                 if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
-                    if let RelationData::Directional { agent_to, .. } = &relation.data {
-                        if agent_to == to_id {
+                    if let RelationData::Directional { actor_to, .. } = &relation.data {
+                        if actor_to == to_id {
                             return Some((edge, relation));
                         }
                     }
@@ -992,29 +992,29 @@ impl World {
 
     /// Adds a reciprocal relation to the world.
     ///
-    /// A reciprocal relationship connects two agents in a non-directed way,
-    /// with no order distinction between the two agents. The two agents are
+    /// A reciprocal relationship connects two actors in a non-directed way,
+    /// with no order distinction between the two actors. The two actors are
     /// always at index `0` and `1` in the relation's edges list, but there is
     /// no significance to this ordering and as with the associated lookup,
-    /// the relation can be found regardless of the order of the agents.
+    /// the relation can be found regardless of the order of the actors.
     ///
     /// Returns an error if the type does not exist or is not a reciprocal
-    /// type, if either agent does not exist, or if the fields do not match the
+    /// type, if either actor does not exist, or if the fields do not match the
     /// type definition. Otherwise, returns an associated `RelationCreated`
     /// containing a handle to the newly created relation and a list of
     /// mutations that were applied to the world as part of creating the
     /// relation.
     pub fn add_reciprocal(
         &mut self,
-        agent_1_id: &str,
-        agent_2_id: &str,
+        actor_1_id: &str,
+        actor_2_id: &str,
         type_id: &str,
         fields: Fields,
     ) -> Result<RelationCreated> {
         let reciprocal_ctx = || {
             format!(
                 "adding reciprocal {} between {} and {}",
-                type_id, agent_1_id, agent_2_id
+                type_id, actor_1_id, actor_2_id
             )
         };
 
@@ -1026,43 +1026,43 @@ impl World {
         self.validate_type_fields(type_id, &fields)
             .with_context(reciprocal_ctx)?;
 
-        self.validate_agents(&[agent_1_id, agent_2_id])
+        self.validate_actors(&[actor_1_id, actor_2_id])
             .with_context(reciprocal_ctx)?;
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             edges: vec![
-                RelationToAgent::Unordered(agent_1_id.to_string()),
-                RelationToAgent::Unordered(agent_2_id.to_string()),
+                RelationToActor::Unordered(actor_1_id.to_string()),
+                RelationToActor::Unordered(actor_2_id.to_string()),
             ],
             fields,
             data: RelationData::Reciprocal {
-                agent_1: agent_1_id.to_string(),
-                agent_2: agent_2_id.to_string(),
+                actor_1: actor_1_id.to_string(),
+                actor_2: actor_2_id.to_string(),
             },
         });
 
-        let agent_1 = self.agents.get_mut(agent_1_id).unwrap();
+        let actor_1 = self.actors.get_mut(actor_1_id).unwrap();
 
-        created.mutations.push(WorldMutation::AgentEdgesUpdated {
-            agent_id: agent_1_id.to_string(),
-            prior_edges: agent_1.edges.clone(),
+        created.mutations.push(WorldMutation::ActorEdgesUpdated {
+            actor_id: actor_1_id.to_string(),
+            prior_edges: actor_1.edges.clone(),
         });
 
-        agent_1.edges.push(AgentToRelation {
+        actor_1.edges.push(ActorToRelation {
             index: 0,
             relation_type: type_id.to_string(),
             relation_handle: created.handle.clone(),
         });
 
-        let agent_2 = self.agents.get_mut(agent_2_id).unwrap();
+        let actor_2 = self.actors.get_mut(actor_2_id).unwrap();
 
-        created.mutations.push(WorldMutation::AgentEdgesUpdated {
-            agent_id: agent_2_id.to_string(),
-            prior_edges: agent_2.edges.clone(),
+        created.mutations.push(WorldMutation::ActorEdgesUpdated {
+            actor_id: actor_2_id.to_string(),
+            prior_edges: actor_2.edges.clone(),
         });
 
-        agent_2.edges.push(AgentToRelation {
+        actor_2.edges.push(ActorToRelation {
             index: 1,
             relation_type: type_id.to_string(),
             relation_handle: created.handle.clone(),
@@ -1071,31 +1071,31 @@ impl World {
         Ok(created)
     }
 
-    /// Retrieves a reciprocal relation for the given two agents and type, if
+    /// Retrieves a reciprocal relation for the given two actors and type, if
     /// it exists.
     ///
     /// Since reciprocal relations have no order distinction between the two
-    /// agents, this lookup will find the relation regardless of the order of
-    /// `agent_1` and `agent_2`. For example, if `x.is_friends_with.y` exists
+    /// actors, this lookup will find the relation regardless of the order of
+    /// `actor_1` and `actor_2`. For example, if `x.is_friends_with.y` exists
     /// as a reciprocal relation, then both
     /// `get_reciprocal(x, y, is_friends_with)` and
     /// `get_reciprocal(y, x, is_friends_with)` will find it.
     ///
     /// Returns an error if the type does not exist or is not a reciprocal
-    /// type, or if either of the agents do not exist. Otherwise, returns
-    /// `Ok(None)` if the agents do not have that relation, and
+    /// type, or if either of the actors do not exist. Otherwise, returns
+    /// `Ok(None)` if the actors do not have that relation, and
     /// `Ok(Some((edge, relation)))` if they do.
     pub fn get_reciprocal(
         &self,
-        agent_1_id: &str,
-        agent_2_id: &str,
+        actor_1_id: &str,
+        actor_2_id: &str,
         type_id: &str,
-    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+    ) -> Result<Option<(&ActorToRelation, &Relation)>> {
         // Error checking!
         let reciprocal_ctx = || {
             format!(
                 "getting reciprocal {} between {} and {}",
-                type_id, agent_1_id, agent_2_id
+                type_id, actor_1_id, actor_2_id
             )
         };
 
@@ -1104,23 +1104,23 @@ impl World {
         })
         .with_context(reciprocal_ctx)?;
 
-        self.validate_agents(&[agent_1_id, agent_2_id])
+        self.validate_actors(&[actor_1_id, actor_2_id])
             .with_context(reciprocal_ctx)?;
 
-        let agent_1 = self.agents.get(agent_1_id).unwrap();
+        let actor_1 = self.actors.get(actor_1_id).unwrap();
 
-        // Order doesn't matter, but still go off of one arbitrary agent's
+        // Order doesn't matter, but still go off of one arbitrary actor's
         // edges for lookup, meaning we don't have to scan all relations.
-        Ok(agent_1.edges.iter().find_map(|edge| {
+        Ok(actor_1.edges.iter().find_map(|edge| {
             if edge.relation_type == type_id {
                 if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
                     if let RelationData::Reciprocal {
-                        agent_1: a1,
-                        agent_2: a2,
+                        actor_1: a1,
+                        actor_2: a2,
                     } = &relation.data
                     {
-                        if (a1 == agent_1_id && a2 == agent_2_id)
-                            || (a1 == agent_2_id && a2 == agent_1_id)
+                        if (a1 == actor_1_id && a2 == actor_2_id)
+                            || (a1 == actor_2_id && a2 == actor_1_id)
                         {
                             return Some((edge, relation));
                         }
@@ -1133,14 +1133,14 @@ impl World {
 
     /// Adds an evaluation to the world.
     ///
-    /// An evaluation is a directed relation that connects two agents, but also
+    /// An evaluation is a directed relation that connects two actors, but also
     /// includes a "reason" field that provides additional context for the
-    /// relation. As with directional relations, the from agent is always at
-    /// index `0` in the relation's edges list, and the to agent is always at
+    /// relation. As with directional relations, the from actor is always at
+    /// index `0` in the relation's edges list, and the to actor is always at
     /// index `1`.
     ///
     /// Returns an error if the type does not exist or is not an evaluation
-    /// type, if either agent does not exist, or if the fields do not match the
+    /// type, if either actor does not exist, or if the fields do not match the
     /// type definition. Otherwise, returns an associated `RelationCreated`
     /// containing a handle to the newly created relation and a list of
     /// mutations that were applied to the world as part of creating the
@@ -1168,44 +1168,44 @@ impl World {
         self.validate_type_fields(type_id, &fields)
             .with_context(evaluation_ctx)?;
 
-        self.validate_agents(&[from_id, to_id])
+        self.validate_actors(&[from_id, to_id])
             .with_context(evaluation_ctx)?;
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             edges: vec![
-                RelationToAgent::Forward(from_id.to_string()),
-                RelationToAgent::Backward(to_id.to_string()),
+                RelationToActor::Forward(from_id.to_string()),
+                RelationToActor::Backward(to_id.to_string()),
             ],
             fields,
             data: RelationData::Evaluation {
-                agent_from: from_id.to_string(),
-                agent_to: to_id.to_string(),
+                actor_from: from_id.to_string(),
+                actor_to: to_id.to_string(),
                 reason: reason.to_string(),
             },
         });
 
-        let from_agent = self.agents.get_mut(from_id).unwrap();
+        let from_actor = self.actors.get_mut(from_id).unwrap();
 
-        created.mutations.push(WorldMutation::AgentEdgesUpdated {
-            agent_id: from_id.to_string(),
-            prior_edges: from_agent.edges.clone(),
+        created.mutations.push(WorldMutation::ActorEdgesUpdated {
+            actor_id: from_id.to_string(),
+            prior_edges: from_actor.edges.clone(),
         });
 
-        from_agent.edges.push(AgentToRelation {
+        from_actor.edges.push(ActorToRelation {
             index: 0,
             relation_type: type_id.to_string(),
             relation_handle: created.handle.clone(),
         });
 
-        let to_agent = self.agents.get_mut(to_id).unwrap();
+        let to_actor = self.actors.get_mut(to_id).unwrap();
 
-        created.mutations.push(WorldMutation::AgentEdgesUpdated {
-            agent_id: to_id.to_string(),
-            prior_edges: to_agent.edges.clone(),
+        created.mutations.push(WorldMutation::ActorEdgesUpdated {
+            actor_id: to_id.to_string(),
+            prior_edges: to_actor.edges.clone(),
         });
 
-        to_agent.edges.push(AgentToRelation {
+        to_actor.edges.push(ActorToRelation {
             index: 1,
             relation_type: type_id.to_string(),
             relation_handle: created.handle.clone(),
@@ -1214,24 +1214,24 @@ impl World {
         Ok(created)
     }
 
-    /// Retrieves an evaluation relation for the given from and to agents and
+    /// Retrieves an evaluation relation for the given from and to actors and
     /// type, if it exists. Works on both primary and complement type names,
-    /// but requires correct ordering of arguments, with the from agent as
-    /// `from` and the to agent as `to`.
+    /// but requires correct ordering of arguments, with the from actor as
+    /// `from` and the to actor as `to`.
     ///
     /// Refer to `World::get_directional` for more details on how the lookup
     /// handles type complements and ordering of arguments.
     ///
     /// Returns an error if the type does not exist or is not an evaluation
-    /// type, or if either of the agents do not exist. Otherwise, returns
-    /// `Ok(None)` if the agents do not have that relation, and
+    /// type, or if either of the actors do not exist. Otherwise, returns
+    /// `Ok(None)` if the actors do not have that relation, and
     /// `Ok(Some((edge, relation)))` if they do.
     pub fn get_evaluation(
         &self,
         from_id: &str,
         to_id: &str,
         type_id: &str,
-    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+    ) -> Result<Option<(&ActorToRelation, &Relation)>> {
         // If the edge is a complement, perform a search on the primary type
         // with the from and to reversed. This allows us to find the edge
         // regardless of which direction it's referred to as.
@@ -1252,16 +1252,16 @@ impl World {
         })
         .with_context(evaluation_ctx)?;
 
-        self.validate_agents(&[from_id, to_id])
+        self.validate_actors(&[from_id, to_id])
             .with_context(evaluation_ctx)?;
 
-        let from_agent = self.agents.get(from_id).unwrap();
+        let from_actor = self.actors.get(from_id).unwrap();
 
-        Ok(from_agent.edges.iter().find_map(|edge| {
+        Ok(from_actor.edges.iter().find_map(|edge| {
             if edge.relation_type == type_id && edge.index == 0 {
                 if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
-                    if let RelationData::Evaluation { agent_to, .. } = &relation.data {
-                        if agent_to == to_id {
+                    if let RelationData::Evaluation { actor_to, .. } = &relation.data {
+                        if actor_to == to_id {
                             return Some((edge, relation));
                         }
                     }
@@ -1273,8 +1273,8 @@ impl World {
 
     /// Adds a practice to the world.
     ///
-    /// A practice is a relation that connects multiple agents together around
-    /// a shared functionality. The specific roles of the agents in the
+    /// A practice is a relation that connects multiple actors together around
+    /// a shared functionality. The specific roles of the actors in the
     /// practice are determined by the parameters provided by the type
     /// definition, in conjunction with the arguments passed in. This makes
     /// practices ordering dependent, so a practice created with participants
@@ -1283,7 +1283,7 @@ impl World {
     /// used in the corresponding lookup, `World::get_practice`.
     ///
     /// Returns an error if the type does not exist or is not a practice
-    /// type, if any agent does not exist, or if the fields do not match the
+    /// type, if any actor does not exist, or if the fields do not match the
     /// type definition. Otherwise, returns an associated `RelationCreated`
     /// containing a handle to the newly created relation and a list of
     /// mutations that were applied to the world as part of creating the
@@ -1309,7 +1309,7 @@ impl World {
         self.validate_type_fields(type_id, &fields)
             .with_context(practice_ctx)?;
 
-        self.validate_agents(&participant_ids)
+        self.validate_actors(&participant_ids)
             .with_context(practice_ctx)?;
 
         let type_def = self
@@ -1343,7 +1343,7 @@ impl World {
         let edges = participant_ids
             .iter()
             .cloned()
-            .map(|p| RelationToAgent::Ordered(p.into()))
+            .map(|p| RelationToActor::Ordered(p.into()))
             .collect();
 
         let mut created = self.add_relation(Relation {
@@ -1351,20 +1351,20 @@ impl World {
             edges,
             fields,
             data: RelationData::Practice {
-                agents: participant_ids.iter().cloned().map(String::from).collect(),
+                actors: participant_ids.iter().cloned().map(String::from).collect(),
                 bindings,
             },
         });
 
         for (i, participant) in participant_ids.iter().enumerate() {
-            let agent = self.agents.get_mut(*participant).unwrap();
+            let actor = self.actors.get_mut(*participant).unwrap();
 
-            created.mutations.push(WorldMutation::AgentEdgesUpdated {
-                agent_id: participant.to_string(),
-                prior_edges: agent.edges.clone(),
+            created.mutations.push(WorldMutation::ActorEdgesUpdated {
+                actor_id: participant.to_string(),
+                prior_edges: actor.edges.clone(),
             });
 
-            agent.edges.push(AgentToRelation {
+            actor.edges.push(ActorToRelation {
                 index: i,
                 relation_type: type_id.to_string(),
                 relation_handle: created.handle.clone(),
@@ -1376,18 +1376,18 @@ impl World {
 
     /// Retrieves a practice relation for the given participants and type, if
     /// it exists. The participants must be in the same order as they were when
-    /// the practice was created, since the ordering of agents in a practice is
+    /// the practice was created, since the ordering of actors in a practice is
     /// significant for determining their roles in the practice.
     ///
     /// Returns an error if the type does not exist or is not a practice type,
-    /// or if any of the agents do not exist. Otherwise, returns `Ok(None)` if
-    /// the agents do not have that relation, and `Ok(Some((edge, relation)))`
+    /// or if any of the actors do not exist. Otherwise, returns `Ok(None)` if
+    /// the actors do not have that relation, and `Ok(Some((edge, relation)))`
     /// if they do.
     pub fn get_practice(
         &self,
         participant_ids: Vec<&str>,
         type_id: &str,
-    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+    ) -> Result<Option<(&ActorToRelation, &Relation)>> {
         // Error checking!
         let practice_ctx = || {
             format!(
@@ -1403,20 +1403,20 @@ impl World {
 
         // More error checking! Make sure all participants exist
 
-        self.validate_agents(&participant_ids)
+        self.validate_actors(&participant_ids)
             .with_context(practice_ctx)?;
 
         // Should never fail but blehhhh...
-        let agent_1 = self.agents.get(participant_ids[0]).with_context(|| {
+        let actor_1 = self.actors.get(participant_ids[0]).with_context(|| {
             format!(
                 "looking up first participant {} for practice retrieval",
                 participant_ids[0]
             )
         })?;
 
-        // Work off of the arbitrary first agent for faster lookup
-        Ok(agent_1.edges.iter().find_map(|edge| {
-            // We know this is the first agent so we know it's at index 0
+        // Work off of the arbitrary first actor for faster lookup
+        Ok(actor_1.edges.iter().find_map(|edge| {
+            // We know this is the first actor so we know it's at index 0
             if edge.relation_type == type_id && edge.index == 0 {
                 if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
                     // Participants must match exactly, since order matters for practices
@@ -1425,7 +1425,7 @@ impl World {
                         .iter()
                         // Edges are ordered on creation, so direct
                         // comparison works
-                        .map(|e| e.agent())
+                        .map(|e| e.actor())
                         .eq(participant_ids.iter().cloned())
                     {
                         return Some((edge, relation));
@@ -1436,7 +1436,7 @@ impl World {
         }))
     }
 
-    /// Adds a binary relation between two agents, with the specific edge type
+    /// Adds a binary relation between two actors, with the specific edge type
     /// determined by the type mapping.
     ///
     /// This function can exist because the inputs for all binary relation
@@ -1447,7 +1447,7 @@ impl World {
     ///
     /// Returns an error if the type does not exist or is not a supported
     /// binary relation type (i.e. directional, reciprocal, or evaluation), if
-    /// either agent does not exist, if the fields do not match the type
+    /// either actor does not exist, if the fields do not match the type
     /// definition, or if the required "reason" field is not provided for
     /// evaluation types. Otherwise, returns an associated `RelationCreated`
     /// containing a handle to the newly created relation and a list of
@@ -1497,29 +1497,29 @@ impl World {
     }
 
     /// Gets a binary relation (i.e. directional, reciprocal, or evaluation)
-    /// between two agents, with the specific edge type determined by the type
+    /// between two actors, with the specific edge type determined by the type
     /// mapping. Works on both primary and complement type names, but requires
     /// correct ordering of arguments if relevant.
     ///
     /// Returns an error if the type does not exist or is not a supported
     /// binary relation type (i.e. directional, reciprocal, or evaluation), or
-    /// if either agent does not exist. Otherwise, returns `Ok(None)` if the
-    /// agents do not have that relation, and `Ok(Some((edge, relation)))` if
+    /// if either actor does not exist. Otherwise, returns `Ok(None)` if the
+    /// actors do not have that relation, and `Ok(Some((edge, relation)))` if
     /// they do.
     pub fn get_binary_relation(
         &self,
-        from: &str,
-        to: &str,
+        from_id: &str,
+        to_id: &str,
         edge_type_name: &str,
-    ) -> Result<Option<(&AgentToRelation, &Relation)>> {
+    ) -> Result<Option<(&ActorToRelation, &Relation)>> {
         match self.relation_type_map.get_type(edge_type_name) {
             Some(edge_type) => match edge_type.data {
                 RelationTypeData::Directional { .. } => {
-                    self.get_directional(from, to, edge_type_name)
+                    self.get_directional(from_id, to_id, edge_type_name)
                 }
-                RelationTypeData::Reciprocal => self.get_reciprocal(from, to, edge_type_name),
+                RelationTypeData::Reciprocal => self.get_reciprocal(from_id, to_id, edge_type_name),
                 RelationTypeData::Evaluation { .. } => {
-                    self.get_evaluation(from, to, edge_type_name)
+                    self.get_evaluation(from_id, to_id, edge_type_name)
                 }
                 _ => bail!(
                     "edge type {} has unsupported variant {:?} for binary relation retrieval",
@@ -1554,37 +1554,37 @@ impl World {
                 relation.fields = prior_fields;
                 Ok(())
             }
-            WorldMutation::AgentSetActive {
-                agent_id,
+            WorldMutation::ActorSetActive {
+                actor_id,
                 prior_active,
             } => {
-                let agent = self.agents.get_mut(&agent_id).with_context(|| {
+                let actor = self.actors.get_mut(&actor_id).with_context(|| {
                     format!(
-                        "looking up agent {} for undoing active state change",
-                        agent_id
+                        "looking up actor {} for undoing active state change",
+                        actor_id
                     )
                 })?;
-                agent.is_active = prior_active;
+                actor.is_active = prior_active;
                 Ok(())
             }
-            WorldMutation::AgentEdgesUpdated {
-                agent_id,
+            WorldMutation::ActorEdgesUpdated {
+                actor_id,
                 prior_edges,
             } => {
-                let agent = self.agents.get_mut(&agent_id).with_context(|| {
-                    format!("looking up agent {} for undoing edges update", agent_id)
+                let actor = self.actors.get_mut(&actor_id).with_context(|| {
+                    format!("looking up actor {} for undoing edges update", actor_id)
                 })?;
-                agent.edges = prior_edges;
+                actor.edges = prior_edges;
                 Ok(())
             }
-            WorldMutation::AgentEmotionUpdated {
-                agent_id,
+            WorldMutation::ActorEmotionUpdated {
+                actor_id,
                 prior_emotion,
             } => {
-                let agent = self.agents.get_mut(&agent_id).with_context(|| {
-                    format!("looking up agent {} for undoing emotion update", agent_id)
+                let actor = self.actors.get_mut(&actor_id).with_context(|| {
+                    format!("looking up actor {} for undoing emotion update", actor_id)
                 })?;
-                agent.emotion = prior_emotion;
+                actor.emotion = prior_emotion;
                 Ok(())
             }
         }

@@ -1,10 +1,10 @@
-agent house as "House" inactive
-agent street as "Street" inactive
+actor house as "House" inactive
+actor street as "Street" inactive
 
-agent jacob as "Jacob" {
+actor jacob as "Jacob" {
   goal (10): delta count Person where Person.feels.happy
 }
-agent alaina as "Alaina"
+actor alaina as "Alaina"
 
 jacob.is_married_to.alaina {
   since: 2024

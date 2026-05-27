@@ -62,7 +62,7 @@ Actors can be defined as such in the world script, with an internal ID and a
 display name in quotes:
 
 ```
-agent michelle as "Michelle"
+actor michelle as "Michelle"
 ```
 
 Any actor defined this way will appear as an entity that has an emotion and can
@@ -70,7 +70,7 @@ make decisions within the interface. If you want to exclude an entity from that
 list, you can mark them as inactive as such:
 
 ```
-agent house as "House" inactive
+actor house as "House" inactive
 ```
 
 These characters will still exist within the world and can perform actions, but
@@ -93,7 +93,7 @@ getting them to behave how you want.
 Goals are defined as such, with one on each line:
 
 ```
-agent michelle as "Michelle" {
+actor michelle as "Michelle" {
   goal(1): any Person where Person.feels.Happy
 }
 ```
@@ -109,7 +109,7 @@ either be 10 or 0 based on whether or not this condition is true.
 You can also track the change in a value over time with the `delta` keyword:
 
 ```
-agent michelle as "Michelle" {
+actor michelle as "Michelle" {
   goal(1): delta count Person where Person.feels.Happy
 }
 ```
@@ -229,8 +229,8 @@ above example, since it also helps improve readability.
 | `or` | `Person.feels.sad or Person.feels.angry` | Requires both sides to be booleans, and will evaluate to `true` if either side or both sides are `true`, and false if both are `false`. In `x or y`, either `x` or `y`, or both, must be `true` for the statement to evaluate to `true`. If you want to exclude the case in which both are `true`, use the `xor` operator instead. This operator **short-circuits**, which you can learn more about in [Conditionals](#conditionals) and [Appeasing the Type Checker](#appeasing-the-type-checker), including why this is important. |
 | `not` | `not Person.is.lactose_intolerant` | Requires its operand to be a boolean, and negates its value. `true` will become `false`, and `false` will become `true`. |
 | `is` | `Person.trusts.Other.amount is #high` | Requires both sides to be of the same type (e.g. number and number, variant and variant), and returns `true` if they are equal and `false` otherwise. For example, `5 is 5` evaluates to `true`, `5 is 3` to false, and `5 is #high` throws an error. Variants can be compared across types, so `#high` will always equal `#high` regardless of if it comes from `Person.trusts.Other.amount` or `Person.admires.Other.amount` |
-| `for all _` | `for all Other, Other.likes.Person` | Evaluates to `true` only if its operand evaluates to `true` for every possible value of `_`, which means every agent in the world. In the example, every agent must like `Person` for it to evaluate to `true`.<br />**Warning:** This cares about *every* entity. If there is a house, it will get checked as well. Consider adding an `a_person` trait relation so you can use the following instead: `for all Other, Other.is.a_person and Other.likes.Person`. TODO: allow for comparisons between agents to exclude self-comparisons. |
-| `any _ where` | `any Other where Other.likes.Person` | Evaluates to `true` if its operand evaluates to `true` for any possible value of `_`, which means any agent in the world. In the example, any singular agent can like `Person` for the whole expression to evaluate to `true`. |
+| `for all _` | `for all Other, Other.likes.Person` | Evaluates to `true` only if its operand evaluates to `true` for every possible value of `_`, which means every actor in the world. In the example, every actor must like `Person` for it to evaluate to `true`.<br />**Warning:** This cares about *every* entity. If there is a house, it will get checked as well. Consider adding an `a_person` trait relation so you can use the following instead: `for all Other, Other.is.a_person and Other.likes.Person`. TODO: allow for comparisons between actors to exclude self-comparisons. |
+| `any _ where` | `any Other where Other.likes.Person` | Evaluates to `true` if its operand evaluates to `true` for any possible value of `_`, which means any actor in the world. In the example, any singular actor can like `Person` for the whole expression to evaluate to `true`. |
 | `count _ where` | `count Other where Other.likes.Person` | Counts the number of values of `_` for which its operand evaluates to `true` for. The example will count the number of people that like `Person`. |
 | Aggregations (`sum`, `average`, `min`, `max`) | `sum Person.is.rich.amount across Person where Person.is.rich` | Aggregate operators are designed to combine many numbers, and they take the form of `OP BODY across SYM where FILTER`. `OP` can be one of `sum`, `average`, `min`, or `max`, and it determines how the numbers are combined. `SYM` is the name of the variable that will be substituted for all actors, and behaves the same as the `_` in `for all _` queries. `BODY` describes what numbers to grab and is a normal expression that must evaluate to a number, such as `Person.is.rich.amount` in the example. `FILTER` must evaluate to a boolean, and is designed to limit which actors are summed together. In the example, people are only considered if they have the `rich` trait, which is actually necessary for the statement to work at all. In fact, **the filter in general is required by design.** You can read more about this in the following [Appeasing the Type Checker](#appeasing-the-type-checker) section. |
 
@@ -573,7 +573,7 @@ The world script includes two things:
 exist within your world, including their display names and goals. See more in
 the [Defining Actors](#defining-actors) and [Goals](#goals) sections above.
 - **Declarations:** This is where you initialize certain relations between
-agents, as well as social practices that the agents start engaged in. These
+actors, as well as social practices that the actors start engaged in. These
 behave exactly the same as the `set` effect, described in the
 [Action Outcomes](#action-outcomes) section, but they are run at initialization
 to set up the world.
@@ -624,17 +624,17 @@ practice greet (Greeter, Greeted) {
   ]
 }
 
-practice move (Agent, From, To) {
+practice move (Actor, From, To) {
   actions: [
     {
-      for: Agent
+      for: Actor
       name: "Move from [From] to [To]"
       conditions: [
-        Agent.is_in.From
+        Actor.is_in.From
       ]
       outcomes: [
-        set Agent.is_in.To
-        broadcast "[Agent] moves from [From] to [To]."
+        set Actor.is_in.To
+        broadcast "[Actor] moves from [From] to [To]."
       ]
     }
   ]
@@ -644,13 +644,13 @@ practice move (Agent, From, To) {
 **World script:**
 
 ```
-agent house as "House" inactive
-agent street as "Street" inactive
+actor house as "House" inactive
+actor street as "Street" inactive
 
-agent jacob as "Jacob" {
+actor jacob as "Jacob" {
   goal (10): delta count Person where Person.feels.happy
 }
-agent alaina as "Alaina"
+actor alaina as "Alaina"
 
 jacob.is_married_to.alaina {
   since: 2024

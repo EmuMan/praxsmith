@@ -1,4 +1,4 @@
-agent test as "Test"
+actor test as "Test"
 
 practice.test.test {
   num: 0

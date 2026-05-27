@@ -6,7 +6,7 @@ use crate::{
     anyhow_ext::ResultOptionExt,
     types::RelationTypeData,
     values::{Constant, Sentence},
-    world::{AgentToRelation, Relation, World, bindings::Bindings},
+    world::{ActorToRelation, Relation, World, bindings::Bindings},
 };
 
 #[derive(Debug, Clone)]
@@ -54,7 +54,7 @@ impl Query {
                 })?;
                 Query::try_new_with_fields(query.relation_query().clone(), rest)
             }
-            [agent, verb, trait_name, rest @ ..] if verb == "is" => {
+            [actor, verb, trait_name, rest @ ..] if verb == "is" => {
                 let relation_type = world
                     .get_relation_type_map()
                     .get_type(trait_name)
@@ -64,13 +64,13 @@ impl Query {
                 };
                 Query::try_new_with_fields(
                     RelationQuery::Trait {
-                        agent: AgentRef::new(agent, bindings)?,
+                        actor: ActorRef::new(actor, bindings)?,
                         trait_name: trait_name.clone(),
                     },
                     rest,
                 )
             }
-            [agent, verb, emotion_name, rest @ ..] if verb == "feels" => {
+            [actor, verb, emotion_name, rest @ ..] if verb == "feels" => {
                 let relation_type = world
                     .get_relation_type_map()
                     .get_type(emotion_name)
@@ -80,7 +80,7 @@ impl Query {
                 };
                 Query::try_new_with_fields(
                     RelationQuery::Emotion {
-                        agent: AgentRef::new(agent, bindings)?,
+                        actor: ActorRef::new(actor, bindings)?,
                         emotion_name: emotion_name.clone(),
                     },
                     rest,
@@ -105,8 +105,8 @@ impl Query {
                 }
                 let participants = rest[..participants_count]
                     .iter()
-                    .map(|a| AgentRef::new(a, bindings))
-                    .collect::<Result<Vec<AgentRef>>>()?;
+                    .map(|a| ActorRef::new(a, bindings))
+                    .collect::<Result<Vec<ActorRef>>>()?;
                 Query::try_new_with_fields(
                     RelationQuery::Practice {
                         participants,
@@ -115,7 +115,7 @@ impl Query {
                     &rest[participants_count..],
                 )
             }
-            [agent_1, relation_name, agent_2, rest @ ..] => {
+            [actor_1, relation_name, actor_2, rest @ ..] => {
                 let relation_type = world
                     .get_relation_type_map()
                     .get_type(relation_name)
@@ -130,8 +130,8 @@ impl Query {
                 }
                 Query::try_new_with_fields(
                     RelationQuery::Binary {
-                        agent_1: AgentRef::new(agent_1, bindings)?,
-                        agent_2: AgentRef::new(agent_2, bindings)?,
+                        actor_1: ActorRef::new(actor_1, bindings)?,
+                        actor_2: ActorRef::new(actor_2, bindings)?,
                         type_name: relation_name.clone(),
                     },
                     rest,
@@ -144,21 +144,21 @@ impl Query {
         }
     }
 
-    pub fn get_agent_refs(&self) -> Vec<&AgentRef> {
+    pub fn get_actor_refs(&self) -> Vec<&ActorRef> {
         match self.relation_query() {
-            RelationQuery::Trait { agent, .. } => vec![agent],
-            RelationQuery::Emotion { agent, .. } => vec![agent],
+            RelationQuery::Trait { actor, .. } => vec![actor],
+            RelationQuery::Emotion { actor, .. } => vec![actor],
             RelationQuery::Binary {
-                agent_1, agent_2, ..
-            } => vec![agent_1, agent_2],
+                actor_1, actor_2, ..
+            } => vec![actor_1, actor_2],
             RelationQuery::Practice { participants, .. } => participants.iter().collect(),
         }
     }
 
-    pub fn is_any_agent_free(&self) -> bool {
-        self.get_agent_refs()
+    pub fn is_any_actor_free(&self) -> bool {
+        self.get_actor_refs()
             .iter()
-            .any(|agent_ref| agent_ref.is_free())
+            .any(|actor_ref| actor_ref.is_free())
     }
 
     pub fn apply_bindings(&self, bindings: &Bindings) -> Self {
@@ -206,20 +206,20 @@ impl Query {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RelationQuery {
     Trait {
-        agent: AgentRef,
+        actor: ActorRef,
         trait_name: String,
     },
     Emotion {
-        agent: AgentRef,
+        actor: ActorRef,
         emotion_name: String,
     },
     Binary {
-        agent_1: AgentRef,
-        agent_2: AgentRef,
+        actor_1: ActorRef,
+        actor_2: ActorRef,
         type_name: String,
     },
     Practice {
-        participants: Vec<AgentRef>,
+        participants: Vec<ActorRef>,
         type_name: String,
     },
 }
@@ -227,24 +227,24 @@ pub enum RelationQuery {
 impl RelationQuery {
     pub fn apply_bindings(&self, bindings: &Bindings) -> Self {
         match self {
-            RelationQuery::Trait { agent, trait_name } => RelationQuery::Trait {
-                agent: agent.bind_or_same(bindings),
+            RelationQuery::Trait { actor, trait_name } => RelationQuery::Trait {
+                actor: actor.bind_or_same(bindings),
                 trait_name: trait_name.clone(),
             },
             RelationQuery::Emotion {
-                agent,
+                actor,
                 emotion_name,
             } => RelationQuery::Emotion {
-                agent: agent.bind_or_same(bindings),
+                actor: actor.bind_or_same(bindings),
                 emotion_name: emotion_name.clone(),
             },
             RelationQuery::Binary {
-                agent_1,
-                agent_2,
+                actor_1,
+                actor_2,
                 type_name,
             } => RelationQuery::Binary {
-                agent_1: agent_1.bind_or_same(bindings),
-                agent_2: agent_2.bind_or_same(bindings),
+                actor_1: actor_1.bind_or_same(bindings),
+                actor_2: actor_2.bind_or_same(bindings),
                 type_name: type_name.clone(),
             },
             RelationQuery::Practice {
@@ -268,42 +268,42 @@ impl RelationQuery {
     pub fn lookup_in_world<'a>(
         &self,
         world: &'a World,
-    ) -> Result<Option<(&'a AgentToRelation, &'a Relation)>> {
+    ) -> Result<Option<(&'a ActorToRelation, &'a Relation)>> {
         match self {
-            RelationQuery::Trait { agent, trait_name } => {
-                let agent_lit = agent.as_literal()?;
-                world.get_trait(agent_lit, &trait_name).with_context(|| {
+            RelationQuery::Trait { actor, trait_name } => {
+                let actor_lit = actor.as_literal()?;
+                world.get_trait(actor_lit, &trait_name).with_context(|| {
                     format!(
-                        "could not find trait with agent: {}, trait name: {}",
-                        agent_lit, trait_name
+                        "could not find trait with actor: {}, trait name: {}",
+                        actor_lit, trait_name
                     )
                 })
             }
             RelationQuery::Emotion {
-                agent,
+                actor,
                 emotion_name,
             } => {
-                let agent_lit = agent.as_literal()?;
+                let actor_lit = actor.as_literal()?;
                 world
-                    .get_emotion(agent_lit, &emotion_name)
+                    .get_emotion(actor_lit, &emotion_name)
                     .with_context(|| {
                         format!(
-                            "could not find emotion with agent: {}, emotion name: {}",
-                            agent_lit, emotion_name
+                            "could not find emotion with actor: {}, emotion name: {}",
+                            actor_lit, emotion_name
                         )
                     })
             }
             RelationQuery::Binary {
-                agent_1,
-                agent_2,
+                actor_1,
+                actor_2,
                 type_name,
             } => {
-                let agent_1_lit = agent_1.as_literal()?;
-                let agent_2_lit = agent_2.as_literal()?;
-                world.get_binary_relation(agent_1_lit, agent_2_lit, &type_name).with_context(|| {
+                let actor_1_lit = actor_1.as_literal()?;
+                let actor_2_lit = actor_2.as_literal()?;
+                world.get_binary_relation(actor_1_lit, actor_2_lit, &type_name).with_context(|| {
                     format!(
-                        "could not find binary relation with agent 1: {}, agent 2: {}, type name: {}",
-                        agent_1_lit, agent_2_lit, type_name
+                        "could not find binary relation with actor 1: {}, actor 2: {}, type name: {}",
+                        actor_1_lit, actor_2_lit, type_name
                     )
                 })
             }
@@ -313,7 +313,7 @@ impl RelationQuery {
             } => {
                 let participants_lit = participants
                     .iter()
-                    .map(AgentRef::as_literal)
+                    .map(ActorRef::as_literal)
                     .collect::<Result<Vec<&str>>>()?;
                 world
                     .get_practice(participants_lit, &type_name)
@@ -327,13 +327,13 @@ impl RelationQuery {
         }
     }
 
-    pub fn get_all_agents(&self) -> Vec<&AgentRef> {
+    pub fn get_all_actors(&self) -> Vec<&ActorRef> {
         match self {
-            RelationQuery::Trait { agent, .. } => vec![agent],
-            RelationQuery::Emotion { agent, .. } => vec![agent],
+            RelationQuery::Trait { actor, .. } => vec![actor],
+            RelationQuery::Emotion { actor, .. } => vec![actor],
             RelationQuery::Binary {
-                agent_1, agent_2, ..
-            } => vec![agent_1, agent_2],
+                actor_1, actor_2, ..
+            } => vec![actor_1, actor_2],
             RelationQuery::Practice { participants, .. } => participants.iter().collect(),
         }
     }
@@ -351,18 +351,18 @@ impl RelationQuery {
 impl fmt::Display for RelationQuery {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RelationQuery::Trait { agent, trait_name } => {
-                write!(f, "{}.is.{}", agent.symbol(), trait_name)
+            RelationQuery::Trait { actor, trait_name } => {
+                write!(f, "{}.is.{}", actor.symbol(), trait_name)
             }
             RelationQuery::Emotion {
-                agent,
+                actor,
                 emotion_name,
-            } => write!(f, "{}.feels.{}", agent.symbol(), emotion_name),
+            } => write!(f, "{}.feels.{}", actor.symbol(), emotion_name),
             RelationQuery::Binary {
-                agent_1,
-                agent_2,
+                actor_1,
+                actor_2,
                 type_name,
-            } => write!(f, "{}.{}.{}", agent_1.symbol(), type_name, agent_2.symbol()),
+            } => write!(f, "{}.{}.{}", actor_1.symbol(), type_name, actor_2.symbol()),
             RelationQuery::Practice {
                 participants,
                 type_name,
@@ -379,24 +379,24 @@ impl fmt::Display for RelationQuery {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum AgentRef {
+pub enum ActorRef {
     Literal(String),
     Free(String),
 }
 
-impl AgentRef {
-    pub fn new(specifier: &str, bindings: &Bindings) -> Result<AgentRef> {
+impl ActorRef {
+    pub fn new(specifier: &str, bindings: &Bindings) -> Result<ActorRef> {
         let first_char = &specifier
             .chars()
             .nth(0)
-            .with_context(|| "agent ref could not be built from an empty specifier")?;
+            .with_context(|| "actor ref could not be built from an empty specifier")?;
         match bindings.get(specifier) {
-            Some(id) => Ok(AgentRef::Literal(id.into())),
+            Some(id) => Ok(ActorRef::Literal(id.into())),
             None => {
                 if first_char.is_ascii_uppercase() {
-                    Ok(AgentRef::Free(specifier.into()))
+                    Ok(ActorRef::Free(specifier.into()))
                 } else {
-                    Ok(AgentRef::Literal(specifier.into()))
+                    Ok(ActorRef::Literal(specifier.into()))
                 }
             }
         }
@@ -406,7 +406,7 @@ impl AgentRef {
         match self {
             Self::Literal(id) => Ok(id),
             Self::Free(specifier) => bail!(format!(
-                "agent ref {} is an unbound free variable",
+                "actor ref {} is an unbound free variable",
                 specifier
             )),
         }
@@ -416,11 +416,11 @@ impl AgentRef {
         matches!(self, Self::Free(_))
     }
 
-    pub fn bind_or_same(&self, bindings: &Bindings) -> AgentRef {
+    pub fn bind_or_same(&self, bindings: &Bindings) -> ActorRef {
         match self {
             Self::Literal(_) => self.clone(),
             Self::Free(specifier) => match bindings.get(specifier) {
-                Some(id) => AgentRef::Literal(id.into()),
+                Some(id) => ActorRef::Literal(id.into()),
                 None => self.clone(),
             },
         }

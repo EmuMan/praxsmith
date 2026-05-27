@@ -51,6 +51,7 @@ pub enum Constant {
     Boolean(bool),
     Variant(String),
     String(String),
+    ActorRef(String),
 }
 
 impl fmt::Display for Constant {
@@ -60,6 +61,7 @@ impl fmt::Display for Constant {
             Constant::Boolean(b) => b.to_string(),
             Constant::Variant(v) => v.clone(),
             Constant::String(s) => format!("\"{}\"", s),
+            Constant::ActorRef(r) => format!("@{}", r),
         };
         write!(f, "{}", s)
     }
@@ -71,6 +73,7 @@ pub enum Value {
     Boolean(bool),
     Variant(String),
     String(String),
+    ActorRef(String),
     Variable(Sentence),
 }
 
@@ -81,6 +84,7 @@ impl fmt::Display for Value {
             Value::Boolean(b) => b.to_string(),
             Value::Variant(v) => v.clone(),
             Value::String(s) => format!("\"{}\"", s),
+            Value::ActorRef(r) => format!("@{}", r),
             Value::Variable(sentence) => sentence.to_string(),
         };
         write!(f, "{}", s)
@@ -94,6 +98,7 @@ impl From<&Constant> for Value {
             Constant::Boolean(b) => Value::Boolean(*b),
             Constant::Variant(v) => Value::Variant(v.clone()),
             Constant::String(s) => Value::String(s.clone()),
+            Constant::ActorRef(r) => Value::ActorRef(r.clone()),
         }
     }
 }

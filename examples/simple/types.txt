@@ -27,17 +27,17 @@ practice greet (Greeter, Greeted) {
   ]
 }
 
-practice move (Agent, From, To) {
+practice move (Actor, From, To) {
   actions: [
     {
-      for: Agent
+      for: Actor
       name: "Move from [From] to [To]"
       conditions: [
-        Agent.is_in.From
+        Actor.is_in.From
       ]
       outcomes: [
-        set Agent.is_in.To
-        broadcast "[Agent] moves from [From] to [To]."
+        set Actor.is_in.To
+        broadcast "[Actor] moves from [From] to [To]."
       ]
     }
   ]

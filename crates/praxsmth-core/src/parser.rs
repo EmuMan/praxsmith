@@ -32,6 +32,11 @@ fn parse_variant_single(pair: Pair<Rule>) -> String {
     pair.as_str().trim_matches('#').to_string()
 }
 
+fn parse_actor_ref(pair: Pair<Rule>) -> String {
+    // pair is Rule::variant_single
+    pair.as_str().trim_matches('@').to_string()
+}
+
 fn parse_sentence(pair: Pair<Rule>) -> Sentence {
     // pair is Rule::sentence
     pair.into_inner()
@@ -55,27 +60,31 @@ pub fn parse_constant(pair: Pair<Rule>) -> Constant {
         Rule::number => Constant::Number(pair.as_str().parse().unwrap()),
         Rule::string => Constant::String(parse_string(pair)),
         Rule::variant_single => Constant::Variant(parse_variant_single(pair)),
+        Rule::actor_ref => Constant::ActorRef(parse_actor_ref(pair)),
         _ => unreachable!(),
     }
 }
 
-fn parse_field(pair: Pair<Rule>) -> FieldType {
-    // pair is either Rule::number_range or Rule::variant_list
+fn parse_field_type(pair: Pair<Rule>) -> FieldType {
+    // pair is either Rule::ft_number_range or Rule::ft_variant_list
     match pair.as_rule() {
-        Rule::number_range => {
-            // number_range is: number ~ ".." ~ number
+        Rule::ft_number_range => {
+            // ft_number_range is: number ~ ".." ~ number
             let mut numbers = pair.into_inner();
             let start: f64 = numbers.next().unwrap().as_str().parse().unwrap();
             let end: f64 = numbers.next().unwrap().as_str().parse().unwrap();
             FieldType::NumberRange(start, end)
         }
-        Rule::variant_list => {
-            // variant_list is: var_name ~ ("|" ~ var_name)+
+        Rule::ft_variant_list => {
+            // ft_variant_list is: var_name ~ ("|" ~ var_name)+
             let variants = pair
                 .into_inner()
                 .map(|var| var.as_str().to_string())
                 .collect();
             FieldType::VariantList(variants)
+        }
+        Rule::ft_actor => {
+            todo!()
         }
         _ => unreachable!(),
     }
@@ -110,7 +119,7 @@ pub fn test_parse() {
     );
 }
 
-/// Parse a single effect (e.g. `set agent.likes { amount: 5 }`) from a string.
+/// Parse a single effect (e.g. `set actor.likes { amount: 5 }`) from a string.
 pub fn parse_effect_str(input_str: &str) -> Result<Effect, Error<Rule>> {
     let mut pairs = PraxsmthParser::parse(Rule::parse_effect, input_str)?;
     // parse_effect is silent and anchored: SOI ~ effect ~ EOI
@@ -240,10 +249,10 @@ mod tests {
     #[test]
     fn parses_effect() {
         // `set` wraps a declaration, so this also exercises declaration parsing.
-        let effect = parse_effect_str("set agent.likes { amount: 5 }").unwrap();
+        let effect = parse_effect_str("set actor.likes.food { amount: 5 }").unwrap();
         match effect {
             Effect::Set(decl) => {
-                assert_eq!(decl.sentence, Sentence::from_strs(&["agent", "likes"]));
+                assert_eq!(decl.sentence, Sentence::from_strs(&["actor", "likes"]));
                 assert_eq!(decl.fields.get("amount"), Some(&Constant::Number(5.0)));
             }
             other => panic!("expected Effect::Set, got {:?}", other),

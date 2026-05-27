@@ -10,8 +10,8 @@ trait rich { amount: 0..100 }
 ";
 
 const WORLD: &str = "\
-agent alice
-agent bob
+actor alice
+actor bob
 alice.is.rich { amount: 5 }
 ";
 
@@ -45,14 +45,14 @@ fn set_creates_relation() {
 }
 
 #[test]
-fn set_agent_active_works() {
+fn set_actor_active_works() {
     let mut api = world();
     api.process_effect("alice", "deactivate alice").unwrap();
     assert!(
-        !api.get_agent_info()
+        !api.get_actor_info()
             .iter()
-            .find(|agent| agent.id == "alice")
-            .expect("alice should be in agent info")
+            .find(|actor| actor.id == "alice")
+            .expect("alice should be in actor info")
             .active
     );
 }

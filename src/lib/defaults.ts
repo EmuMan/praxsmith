@@ -31,17 +31,17 @@ practice greet (Greeter, Greeted) {
   ]
 }
 
-practice move (Agent, From, To) {
+practice move (Actor, From, To) {
   actions: [
     {
-      for: Agent
+      for: Actor
       name: "Move from [From] to [To]"
       conditions: [
-        Agent.is_in.From
+        Actor.is_in.From
       ]
       outcomes: [
-        set Agent.is_in.To
-        broadcast "[Agent] moves from [From] to [To]."
+        set Actor.is_in.To
+        broadcast "[Actor] moves from [From] to [To]."
       ]
     }
   ]
@@ -49,13 +49,13 @@ practice move (Agent, From, To) {
 `;
 
 export const DEFAULT_WORLD = `
-agent house as "House" inactive
-agent street as "Street" inactive
+actor house as "House" inactive
+actor street as "Street" inactive
 
-agent jacob as "Jacob" {
+actor jacob as "Jacob" {
   goal (10): delta count Person where Person.feels.happy
 }
-agent alaina as "Alaina"
+actor alaina as "Alaina"
 
 jacob.is_married_to.alaina {
   since: 2024

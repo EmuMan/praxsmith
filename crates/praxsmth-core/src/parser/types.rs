@@ -5,8 +5,8 @@ use pest::pratt_parser::PrattParser;
 
 use crate::parser::world::parse_declaration;
 use crate::parser::{
-    PraxsmthParser, Rule, build_expression_pratt, parse_expression, parse_field, parse_sentence,
-    parse_string, parse_value,
+    PraxsmthParser, Rule, build_expression_pratt, parse_expression, parse_field_type,
+    parse_sentence, parse_string, parse_value,
 };
 use crate::types::{FieldType, FieldTypes, PracticeAction, RelationType, RelationTypeData};
 use crate::world::simulation::Effect;
@@ -18,7 +18,7 @@ fn parse_field_brackets(pair: Pair<Rule>) -> FieldTypes {
             // kv_pair is: var_name ~ ":" ~ value
             let mut field_def_inner = field_def.into_inner();
             let field_name = field_def_inner.next().unwrap().as_str().to_string();
-            let field = parse_field(field_def_inner.next().unwrap());
+            let field = parse_field_type(field_def_inner.next().unwrap());
             (field_name, field)
         })
         .collect::<Vec<(String, FieldType)>>()
@@ -277,9 +277,9 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> RelationType {
                     .collect();
             }
             Rule::t_practice_generic_field => {
-                // var_name ~ ":" ~ field
+                // var_name ~ ":" ~ field_type
                 let field_name = field_inner.next().unwrap().as_str().to_string();
-                let field_value = parse_field(field_inner.next().unwrap());
+                let field_value = parse_field_type(field_inner.next().unwrap());
                 fields.insert(field_name, field_value);
             }
             _ => unreachable!(),
