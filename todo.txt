@@ -1,9 +1,10 @@
 Major:
-- Support for booleans and strings as field types
-- Use epsilons in all numeric operations
+- Auto self guarantee
+- Guarantees carry over to outcomes
 - Escalating Argument and Gossip Chain examples
 - Type check effects (especially updates, which can use guarantees provided by the conditions)
 - Functional debug window
+- Autonomous actors
 
 Meh:
 - Free variables creating actions?

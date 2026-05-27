@@ -96,6 +96,8 @@ pub enum FieldType {
     NumberRange(f64, f64),
     VariantList(Vec<String>),
     ActorRef,
+    String,
+    Boolean,
 }
 
 impl fmt::Display for FieldType {
@@ -104,6 +106,8 @@ impl fmt::Display for FieldType {
             FieldType::NumberRange(start, end) => write!(f, "{}..{}", start, end),
             FieldType::VariantList(variants) => write!(f, "{}", variants.join(" | ")),
             FieldType::ActorRef => write!(f, "ActorRef"),
+            FieldType::String => write!(f, "String"),
+            FieldType::Boolean => write!(f, "Boolean"),
         }
     }
 }

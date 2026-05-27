@@ -49,6 +49,8 @@ fn parse_value(pair: Pair<Rule>) -> Value {
     match pair.as_rule() {
         Rule::number => Value::Number(pair.as_str().parse().unwrap()),
         Rule::string => Value::String(parse_string(pair)),
+        Rule::bool_true => Value::Boolean(true),
+        Rule::bool_false => Value::Boolean(false),
         Rule::variant_single => Value::Variant(parse_variant_single(pair)),
         Rule::actor_ref => Value::ActorRef(parse_actor_ref(pair)),
         Rule::sentence => Value::Variable(parse_sentence(pair)),
@@ -60,6 +62,8 @@ pub fn parse_constant(pair: Pair<Rule>) -> Constant {
     match pair.as_rule() {
         Rule::number => Constant::Number(pair.as_str().parse().unwrap()),
         Rule::string => Constant::String(parse_string(pair)),
+        Rule::bool_true => Constant::Boolean(true),
+        Rule::bool_false => Constant::Boolean(false),
         Rule::variant_single => Constant::Variant(parse_variant_single(pair)),
         Rule::actor_ref => Constant::ActorRef(parse_actor_ref(pair)),
         _ => unreachable!(),
@@ -88,6 +92,8 @@ fn parse_field_type(pair: Pair<Rule>) -> FieldType {
             // ft_actor is just the keyword "actor", so it has no inner pairs
             FieldType::ActorRef
         }
+        Rule::ft_string => FieldType::String,
+        Rule::ft_boolean => FieldType::Boolean,
         _ => unreachable!(),
     }
 }
@@ -121,12 +127,12 @@ pub fn test_parse() {
     );
 }
 
-/// Parse a single effect (e.g. `set actor.likes { amount: 5 }`) from a string.
+/// Parse a single effect (e.g. `set actor.likes.food { amount: 5 }`) from a string.
 pub fn parse_effect_str(input_str: &str) -> Result<Effect, Error<Rule>> {
     let mut pairs = PraxsmthParser::parse(Rule::parse_effect, input_str)?;
     // parse_effect is silent and anchored: SOI ~ effect ~ EOI
     let effect_pair = pairs.next().unwrap();
-    Ok(types::parse_effect(effect_pair))
+    Ok(types::parse_effect(effect_pair, &build_expression_pratt()))
 }
 
 /// Parse a single expression (e.g. `a is b and not c`) from a string.

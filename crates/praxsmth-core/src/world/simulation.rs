@@ -53,10 +53,10 @@ impl fmt::Display for Declaration {
 
 #[derive(Debug, Clone)]
 pub enum Effect {
-    Broadcast(String),
-    Say(String),
-    Activate(String),
-    Deactivate(String),
+    Broadcast(Expression),
+    Say(Expression),
+    Activate(Expression),
+    Deactivate(Expression),
     Delete(Sentence),
     Set(Declaration),
     Update(Sentence, Value),
@@ -412,21 +412,41 @@ pub fn process_effect(
     bindings: &Bindings,
 ) -> Result<Option<Dialog>> {
     match effect {
-        Effect::Broadcast(string) => {
-            return Ok(Some(process_print(world.inner(), None, string, bindings)?));
+        Effect::Broadcast(expr) => {
+            let string = expr
+                .evaluate(world.inner(), bindings)?
+                .display_string(world.inner());
+            return Ok(Some(process_print(world.inner(), None, &string, bindings)?));
         }
-        Effect::Say(string) => {
+        Effect::Say(expr) => {
+            let string = expr
+                .evaluate(world.inner(), bindings)?
+                .display_string(world.inner());
             return Ok(Some(process_print(
                 world.inner(),
                 Some(actor_name),
-                string,
+                &string,
                 bindings,
             )?));
         }
-        Effect::Activate(actor_id) => world.set_actor_active(&bindings.get_or_same(actor_id), true),
-        Effect::Deactivate(actor_id) => {
-            world.set_actor_active(&bindings.get_or_same(actor_id), false)
-        }
+        Effect::Activate(expr) => match expr.evaluate(world.inner(), bindings)? {
+            Constant::ActorRef(actor_id) => world
+                .set_actor_active(&bindings.get_or_same(&actor_id), true)
+                .with_context(|| format!("activating actor {} in effect", actor_id)),
+            other => bail!(
+                "activate effect expression must evaluate to actor reference, got {}",
+                other
+            ),
+        },
+        Effect::Deactivate(expr) => match expr.evaluate(world.inner(), bindings)? {
+            Constant::ActorRef(actor_id) => world
+                .set_actor_active(&bindings.get_or_same(&actor_id), false)
+                .with_context(|| format!("deactivating actor {} in effect", actor_id)),
+            other => bail!(
+                "deactivate effect expression must evaluate to actor reference, got {}",
+                other
+            ),
+        },
         Effect::Delete(sentence) => process_delete(world, sentence, bindings),
         Effect::Set(declaration) => process_declaration(world, declaration, bindings).map(|_| ()),
         Effect::Update(sentence, value) => process_update(world, sentence, value, bindings),

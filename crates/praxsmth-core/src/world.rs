@@ -48,6 +48,10 @@ fn verify_fields(fields: &Fields, field_types: &FieldTypes, require_all: bool) -
                         );
                     }
                 }
+                // Invalid actor references are ideally caught during type checking
+                (FieldType::ActorRef, Constant::ActorRef(_)) => {}
+                (FieldType::String, Constant::String(_)) => {}
+                (FieldType::Boolean, Constant::Boolean(_)) => {}
                 _ => {
                     bail!(
                         "field {} has type mismatch: expected {}, got {}",

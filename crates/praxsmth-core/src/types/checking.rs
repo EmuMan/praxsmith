@@ -7,7 +7,7 @@ use crate::{
     queries::{Query, RelationQuery},
     types::{FieldType, RelationTypeData},
     values::{Sentence, Value},
-    world::{World, bindings::Bindings, goals::GoalMeasurement},
+    world::{World, bindings::Bindings, goals::GoalMeasurement, simulation::Effect},
 };
 
 #[derive(Debug, Clone)]
@@ -410,6 +410,8 @@ fn type_check_query(
                 FieldType::NumberRange(..) => Ok(ResultType::Number),
                 FieldType::VariantList(..) => Ok(ResultType::Variant),
                 FieldType::ActorRef => Ok(ResultType::ActorRef),
+                FieldType::String => Ok(ResultType::String),
+                FieldType::Boolean => Ok(ResultType::empty_boolean()),
             }
         }
         Query::Unfielded(relation_query) => {
@@ -425,8 +427,8 @@ fn type_check_query(
     }
 }
 
-/// Runs a type check on the world to ensure that all conditions in practices
-/// and actor goals are well-formed.
+/// Runs a type check on the world to ensure that all conditions/effects in
+/// practices and actor goals are well-formed.
 pub fn type_check_world(world: &World) -> Result<()> {
     for relation_type in world.get_relation_type_map().iter_types() {
         match &relation_type.data {
@@ -449,6 +451,28 @@ pub fn type_check_world(world: &World) -> Result<()> {
                             action.name, relation_type.name
                         )
                     })?;
+
+                    for effect in action.effects.iter() {
+                        match effect {
+                            Effect::Broadcast(expr) | Effect::Say(expr) => {
+                                type_check(expr, world, params, Some(self_id.clone()))
+                                    .with_context(|| {
+                                        format!("type checking broadcast expression: {}", expr)
+                                    })?;
+                            }
+                            Effect::Activate(expr) | Effect::Deactivate(expr) => expect_type(
+                                expr,
+                                world,
+                                params,
+                                Some(self_id.clone()),
+                                ResultType::ActorRef,
+                            )
+                            .with_context(|| {
+                                format!("type checking activation expression: {}", expr)
+                            })?,
+                            _ => {}
+                        }
+                    }
                 }
             }
             _ => {}

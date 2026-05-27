@@ -136,30 +136,30 @@ fn parse_emotion(pair: Pair<Rule>) -> RelationType {
     }
 }
 
-pub fn parse_effect(pair: Pair<Rule>) -> Effect {
+pub fn parse_effect(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Effect {
     // pair is one of the effect_* rules
     let mut inner = pair.clone().into_inner();
 
     match pair.as_rule() {
         Rule::effect_broadcast => {
-            // "broadcast" ~ string
-            let string_pair = inner.next().unwrap();
-            Effect::Broadcast(parse_string(string_pair))
+            // "broadcast" ~ expression
+            let expr_pair = inner.next().unwrap();
+            Effect::Broadcast(parse_expression(expr_pair, pratt))
         }
         Rule::effect_say => {
-            // "say" ~ string
-            let string_pair = inner.next().unwrap();
-            Effect::Say(parse_string(string_pair))
+            // "say" ~ expression
+            let expr_pair = inner.next().unwrap();
+            Effect::Say(parse_expression(expr_pair, pratt))
         }
         Rule::effect_activate => {
-            // "activate" ~ var_name
-            let var_pair = inner.next().unwrap();
-            Effect::Activate(var_pair.as_str().to_string())
+            // "activate" ~ expression
+            let expr_pair = inner.next().unwrap();
+            Effect::Activate(parse_expression(expr_pair, pratt))
         }
         Rule::effect_deactivate => {
-            // "deactivate" ~ var_name
-            let var_pair = inner.next().unwrap();
-            Effect::Deactivate(var_pair.as_str().to_string())
+            // "deactivate" ~ expression
+            let expr_pair = inner.next().unwrap();
+            Effect::Deactivate(parse_expression(expr_pair, pratt))
         }
         Rule::effect_delete => {
             // "delete" ~ sentence
@@ -229,7 +229,10 @@ fn parse_practice_action(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Practic
             Rule::t_practice_outcomes_field => {
                 // "outcomes" ~ ":" ~ t_practice_outcomes
                 let outcomes_pair = inner.next().unwrap(); // Rule::t_practice_outcomes
-                effects = outcomes_pair.into_inner().map(parse_effect).collect();
+                effects = outcomes_pair
+                    .into_inner()
+                    .map(|p| parse_effect(p, pratt))
+                    .collect();
             }
             _ => unreachable!(),
         }

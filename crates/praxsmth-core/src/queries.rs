@@ -26,7 +26,7 @@ impl Query {
     pub fn try_new_with_fields(relation_query: RelationQuery, fields: &[String]) -> Result<Self> {
         if fields.len() > 1 {
             bail!(
-                "too many fields specified for relation query {:?}, got {}",
+                "too many fields specified for relation query {}, got {}",
                 relation_query,
                 fields.len()
             );
@@ -48,7 +48,7 @@ impl Query {
                 // build the query for the self context and then re-attach the rest.
                 let query = Self::parse(world, self_sentence, bindings).with_context(|| {
                     format!(
-                        "parsing sentence starting with 'self' using self context {:?}",
+                        "parsing sentence starting with 'self' using self context {}",
                         self_sentence
                     )
                 })?;
@@ -138,7 +138,7 @@ impl Query {
                 )
             }
             _ => bail!(
-                "could not parse sentence {:?} into a relation query",
+                "could not parse sentence {} into a relation query",
                 sentence
             ),
         }
@@ -181,7 +181,7 @@ impl Query {
                         .lookup_in_world(world)
                         .require_with_context(|| {
                             format!(
-                                "evaluating query for relation {:?} with field {:?}",
+                                "evaluating query for relation {} with field {}",
                                 relation_query, field_name
                             )
                         })?;

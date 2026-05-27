@@ -19,6 +19,8 @@ parse_expression = _{ SOI ~ expression ~ EOI }
 // to negate an expression, multiply by `-1`.
 number       = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 string       = ${ "\"" ~ string_inner ~ "\"" }
+bool_true    = @{ "true" ~ !ASCII_ALPHANUMERIC }
+bool_false   = @{ "false" ~ !ASCII_ALPHANUMERIC }
 string_inner = @{ char* }
 char         =  {
     !("\"" | "\\") ~ ANY
@@ -30,16 +32,18 @@ sentence     = ${ var_name ~ ("." ~ var_name)* }
 
 field_brackets  =  { "{" ~ field_def* ~ "}" }
 field_def       =  { var_name ~ ":" ~ field_type }
-field_type      = _{ ft_number_range | ft_variant_list | ft_actor }
+field_type      = _{ ft_number_range | ft_variant_list | ft_actor | ft_boolean | ft_string }
 ft_number_range =  { number ~ ".." ~ number }
 ft_variant_list =  { var_name ~ ("|" ~ var_name)+ }
 ft_actor        =  { "actor" }
+ft_string       =  { "string" }
+ft_boolean      =  { "boolean" }
 
 variant_single = @{ "#" ~ var_name }
 actor_ref      = @{ "@" ~ var_name }
 
-const = _{ number | string | variant_single | actor_ref }
-value = _{ number | string | variant_single | actor_ref | sentence }
+const = _{ number | string | bool_true | variant_single | actor_ref }
+value = _{ number | string | bool_true | variant_single | actor_ref | sentence }
 
 // Pratt parsing, following Pest's example
 expression = {
@@ -149,10 +153,10 @@ effect            = _{
   | effect_increase
   | effect_cycle
 }
-effect_broadcast  =  { "broadcast" ~ string }
-effect_say        =  { "say" ~ string }
-effect_activate   =  { "activate" ~ var_name }
-effect_deactivate =  { "deactivate" ~ var_name }
+effect_broadcast  =  { "broadcast" ~ expression }
+effect_say        =  { "say" ~ expression }
+effect_activate   =  { "activate" ~ expression }
+effect_deactivate =  { "deactivate" ~ expression }
 effect_delete     =  { "delete" ~ sentence }
 effect_set        =  { "set" ~ w_declaration }
 effect_update     =  { "update" ~ sentence ~ "to" ~ value }

@@ -91,35 +91,6 @@ where
     Ok(Constant::Boolean(cmp_fn(x, y)))
 }
 
-fn evaluate_binary_numeric_op<F>(
-    world: &World,
-    bindings: &Bindings,
-    x: &Expression,
-    y: &Expression,
-    op_fn: F,
-) -> Result<Constant>
-where
-    F: Fn(f64, f64) -> f64,
-{
-    let x = x.evaluate(world, bindings)?;
-    let y = y.evaluate(world, bindings)?;
-
-    let Constant::Number(x) = x else {
-        bail!(
-            "Left-hand side of numeric operation must evaluate to number, got {:?}",
-            x
-        );
-    };
-    let Constant::Number(y) = y else {
-        bail!(
-            "Right-hand side of numeric operation must evaluate to number, got {:?}",
-            y
-        );
-    };
-
-    Ok(Constant::Number(op_fn(x, y)))
-}
-
 impl Expression {
     /// Evaluates an expression to a single constant value.
     ///
@@ -198,16 +169,105 @@ impl Expression {
             }
 
             Expression::Multiply(x, y) => {
-                evaluate_binary_numeric_op(world, bindings, x, y, |a, b| a * b)
+                let x = x.evaluate(world, bindings)?;
+                let y = y.evaluate(world, bindings)?;
+
+                match (x, y) {
+                    (Constant::Number(x), Constant::Number(y)) => Ok(Constant::Number(x * y)),
+                    (Constant::String(s), Constant::Number(n))
+                    | (Constant::Number(n), Constant::String(s)) => {
+                        // Turns out this handles negative and non-integer numbers fine!
+                        Ok(Constant::String(s.repeat(n.round() as usize)))
+                    }
+                    (Constant::Boolean(b), Constant::Number(n))
+                    | (Constant::Number(n), Constant::Boolean(b)) => {
+                        if b {
+                            Ok(Constant::Number(n))
+                        } else {
+                            Ok(Constant::Number(0.0))
+                        }
+                    }
+                    (other_x, other_y) => bail!(
+                        "Multiply conditions must evaluate to either Number and Number, Number and String, or Number and Boolean; got {:?} and {:?}",
+                        other_x,
+                        other_y
+                    ),
+                }
             }
             Expression::Divide(x, y) => {
-                evaluate_binary_numeric_op(world, bindings, x, y, |a, b| a / b)
+                let x = x.evaluate(world, bindings)?;
+                let y = y.evaluate(world, bindings)?;
+
+                match (x, y) {
+                    (Constant::Number(x), Constant::Number(y)) => {
+                        if y == 0.0 {
+                            bail!("Division by zero");
+                        }
+                        Ok(Constant::Number(x / y))
+                    }
+                    (other_x, other_y) => bail!(
+                        "Divide conditions must evaluate to numbers, got {:?} and {:?}",
+                        other_x,
+                        other_y
+                    ),
+                }
             }
             Expression::Add(x, y) => {
-                evaluate_binary_numeric_op(world, bindings, x, y, |a, b| a + b)
+                let x = x.evaluate(world, bindings)?;
+                let y = y.evaluate(world, bindings)?;
+
+                match (x, y) {
+                    (Constant::Number(x), Constant::Number(y)) => Ok(Constant::Number(x + y)),
+                    (Constant::String(s1), Constant::String(s2)) => {
+                        Ok(Constant::String(format!("{}{}", s1, s2)))
+                    }
+                    (Constant::Number(n), Constant::String(s)) => {
+                        Ok(Constant::String(format!("{}{}", n, s)))
+                    }
+                    (Constant::String(s), Constant::Number(n)) => {
+                        Ok(Constant::String(format!("{}{}", s, n)))
+                    }
+                    (Constant::Boolean(b), Constant::String(s)) => {
+                        Ok(Constant::String(format!("{}{}", b, s)))
+                    }
+                    (Constant::String(s), Constant::Boolean(b)) => {
+                        Ok(Constant::String(format!("{}{}", s, b)))
+                    }
+                    (Constant::Variant(v), Constant::String(s)) => {
+                        Ok(Constant::String(format!("{}{}", v, s)))
+                    }
+                    (Constant::String(s), Constant::Variant(v)) => {
+                        Ok(Constant::String(format!("{}{}", s, v)))
+                    }
+                    (Constant::ActorRef(ar), Constant::String(s)) => {
+                        let actor_display_name =
+                            world.get_actor(&ar).map(|a| a.name.clone()).unwrap_or(ar);
+                        Ok(Constant::String(format!("{}{}", actor_display_name, s)))
+                    }
+                    (Constant::String(s), Constant::ActorRef(ar)) => {
+                        let actor_display_name =
+                            world.get_actor(&ar).map(|a| a.name.clone()).unwrap_or(ar);
+                        Ok(Constant::String(format!("{}{}", s, actor_display_name)))
+                    }
+                    (other_x, other_y) => bail!(
+                        "Add conditions must evaluate to either Number and Number or String and Any; got {:?} and {:?}",
+                        other_x,
+                        other_y
+                    ),
+                }
             }
             Expression::Subtract(x, y) => {
-                evaluate_binary_numeric_op(world, bindings, x, y, |a, b| a - b)
+                let x = x.evaluate(world, bindings)?;
+                let y = y.evaluate(world, bindings)?;
+
+                match (x, y) {
+                    (Constant::Number(x), Constant::Number(y)) => Ok(Constant::Number(x - y)),
+                    (other_x, other_y) => bail!(
+                        "Subtract conditions must evaluate to numbers, got {:?} and {:?}",
+                        other_x,
+                        other_y
+                    ),
+                }
             }
 
             Expression::Not(x) => {

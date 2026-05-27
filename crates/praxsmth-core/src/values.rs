@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::world::World;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sentence {
     components: Vec<String>,
@@ -52,6 +54,24 @@ pub enum Constant {
     Variant(String),
     String(String),
     ActorRef(String),
+}
+
+impl Constant {
+    pub fn display_string(&self, world: &World) -> String {
+        match self {
+            Constant::Number(n) => n.to_string(),
+            Constant::Boolean(b) => b.to_string(),
+            Constant::Variant(v) => v.clone(),
+            Constant::String(s) => s.clone(),
+            Constant::ActorRef(r) => {
+                if let Some(actor) = world.get_actor(r) {
+                    actor.name.clone()
+                } else {
+                    format!("@{}", r)
+                }
+            }
+        }
+    }
 }
 
 impl fmt::Display for Constant {
