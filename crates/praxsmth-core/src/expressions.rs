@@ -77,13 +77,13 @@ where
 
     let Constant::Number(x) = x else {
         bail!(
-            "Left-hand side of inequality must evaluate to number, got {:?}",
+            "Left-hand side of inequality must evaluate to number, got {}",
             x
         );
     };
     let Constant::Number(y) = y else {
         bail!(
-            "Right-hand side of inequality must evaluate to number, got {:?}",
+            "Right-hand side of inequality must evaluate to number, got {}",
             y
         );
     };
@@ -111,7 +111,7 @@ impl Expression {
                     .evaluate_in_world(world)
                     .with_context(|| {
                         format!(
-                            "evaluating variable for expression with sentence {:?}",
+                            "evaluating variable for expression with sentence {}",
                             sentence
                         )
                     }),
@@ -120,7 +120,7 @@ impl Expression {
             Expression::And(x, y) => {
                 let x = x.evaluate(world, bindings)?;
                 let Constant::Boolean(x) = x else {
-                    bail!("And conditions must evaluate to boolean, got {:?}", x);
+                    bail!("And conditions must evaluate to boolean, got {}", x);
                 };
                 if !x {
                     // Short circuit, important behavior!
@@ -130,14 +130,14 @@ impl Expression {
                 let y = y.evaluate(world, bindings)?;
                 match y {
                     Constant::Boolean(y) => Ok(Constant::Boolean(y)),
-                    other => bail!("And conditions must evaluate to boolean, got {:?}", other),
+                    other => bail!("And conditions must evaluate to boolean, got {}", other),
                 }
             }
 
             Expression::Or(x, y) => {
                 let x = x.evaluate(world, bindings)?;
                 let Constant::Boolean(x) = x else {
-                    bail!("Or conditions must evaluate to boolean, got {:?}", x);
+                    bail!("Or conditions must evaluate to boolean, got {}", x);
                 };
                 if x {
                     // Short circuit, important behavior!
@@ -147,7 +147,7 @@ impl Expression {
                 let y = y.evaluate(world, bindings)?;
                 match y {
                     Constant::Boolean(y) => Ok(Constant::Boolean(y)),
-                    other => bail!("Or conditions must evaluate to boolean, got {:?}", other),
+                    other => bail!("Or conditions must evaluate to boolean, got {}", other),
                 }
             }
 
@@ -179,6 +179,7 @@ impl Expression {
                         // Turns out this handles negative and non-integer numbers fine!
                         Ok(Constant::String(s.repeat(n.round() as usize)))
                     }
+                    // Multiplication with boolean returns n or 0
                     (Constant::Boolean(b), Constant::Number(n))
                     | (Constant::Number(n), Constant::Boolean(b)) => {
                         if b {
@@ -188,7 +189,7 @@ impl Expression {
                         }
                     }
                     (other_x, other_y) => bail!(
-                        "Multiply conditions must evaluate to either Number and Number, Number and String, or Number and Boolean; got {:?} and {:?}",
+                        "Multiply conditions must evaluate to either Number and Number, Number and String, or Number and Boolean, got {} and {}",
                         other_x,
                         other_y
                     ),
@@ -206,7 +207,7 @@ impl Expression {
                         Ok(Constant::Number(x / y))
                     }
                     (other_x, other_y) => bail!(
-                        "Divide conditions must evaluate to numbers, got {:?} and {:?}",
+                        "Divide conditions must evaluate to numbers, got {} and {}",
                         other_x,
                         other_y
                     ),
@@ -250,7 +251,7 @@ impl Expression {
                         Ok(Constant::String(format!("{}{}", s, actor_display_name)))
                     }
                     (other_x, other_y) => bail!(
-                        "Add conditions must evaluate to either Number and Number or String and Any; got {:?} and {:?}",
+                        "Add conditions must evaluate to either Number and Number or String and Any; got {} and {}",
                         other_x,
                         other_y
                     ),
@@ -263,7 +264,7 @@ impl Expression {
                 match (x, y) {
                     (Constant::Number(x), Constant::Number(y)) => Ok(Constant::Number(x - y)),
                     (other_x, other_y) => bail!(
-                        "Subtract conditions must evaluate to numbers, got {:?} and {:?}",
+                        "Subtract conditions must evaluate to numbers, got {} and {}",
                         other_x,
                         other_y
                     ),
@@ -274,7 +275,7 @@ impl Expression {
                 let res = x.evaluate(world, bindings)?;
                 match res {
                     Constant::Boolean(b) => Ok(Constant::Boolean(!b)),
-                    other => bail!("Not condition must evaluate to boolean, got {:?}", other),
+                    other => bail!("Not condition must evaluate to boolean, got {}", other),
                 }
             }
 
@@ -288,7 +289,7 @@ impl Expression {
                             return Ok(Constant::Boolean(false));
                         }
                         other => {
-                            bail!("ForAll condition must evaluate to boolean, got {:?}", other)
+                            bail!("ForAll condition must evaluate to boolean, got {}", other)
                         }
                     }
                 }
@@ -305,7 +306,7 @@ impl Expression {
                         }
                         Constant::Boolean(false) => continue,
                         other => {
-                            bail!("Any condition must evaluate to boolean, got {:?}", other)
+                            bail!("Any condition must evaluate to boolean, got {}", other)
                         }
                     }
                 }
@@ -321,7 +322,7 @@ impl Expression {
                         Constant::Boolean(true) => count += 1,
                         Constant::Boolean(false) => continue,
                         other => {
-                            bail!("Count condition must evaluate to boolean, got {:?}", other)
+                            bail!("Count condition must evaluate to boolean, got {}", other)
                         }
                     }
                 }
@@ -344,13 +345,13 @@ impl Expression {
                             match value {
                                 Constant::Number(n) => values.push(n),
                                 other => {
-                                    bail!("Aggregate body must evaluate to number, got {:?}", other)
+                                    bail!("Aggregate body must evaluate to number, got {}", other)
                                 }
                             }
                         }
                         Constant::Boolean(false) => continue,
                         other => {
-                            bail!("Aggregate filter must evaluate to boolean, got {:?}", other)
+                            bail!("Aggregate filter must evaluate to boolean, got {}", other)
                         }
                     }
                 }

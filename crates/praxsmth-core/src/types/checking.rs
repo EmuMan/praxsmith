@@ -48,6 +48,10 @@ impl Guarantees {
         self.items.extend(other.items.clone());
         self
     }
+
+    pub fn extend(&mut self, other: &Guarantees) {
+        self.items.extend(other.items.clone());
+    }
 }
 
 impl Default for Guarantees {
@@ -138,8 +142,13 @@ pub fn type_check(
     expression: &Expression,
     world: &World,
     extra_bindings: &[String],
-    self_id: Option<Sentence>,
+    self_id: Option<&Sentence>,
+    initial_guarantees: Option<&mut Guarantees>,
 ) -> Result<ResultType> {
+    let guarantees = match initial_guarantees {
+        Some(guarantees) => guarantees,
+        None => &mut Guarantees::default(),
+    };
     let world_entity_ids: Vec<String> = world
         .iter_actors()
         .map(|(actor_id, _)| actor_id.clone())
@@ -150,13 +159,13 @@ pub fn type_check(
         .chain(world_entity_ids.iter().cloned())
         .collect();
     let bindings = match self_id {
-        Some(self_id) => Bindings::self_only(self_id),
+        Some(self_id) => Bindings::self_only(self_id.clone()),
         None => Bindings::default(),
     };
     type_check_helper(
         expression,
         world,
-        &mut Guarantees::default(),
+        guarantees,
         &mut ValidActors::new(all_bindings),
         &bindings,
     )
@@ -282,20 +291,74 @@ fn type_check_helper(
             }
             Ok(ResultType::empty_boolean())
         }
-        Expression::Multiply(x, y)
-        | Expression::Divide(x, y)
-        | Expression::Add(x, y)
-        | Expression::Subtract(x, y) => {
+        Expression::Multiply(x, y) => {
             let x = type_check_helper(x, world, guarantees, valid_actors, bindings)?;
             let y = type_check_helper(y, world, guarantees, valid_actors, bindings)?;
-            // Both sides must be numbers
-            if !matches!(x, ResultType::Number) {
-                bail!("arithmetic expressions must be numeric, got {}", x);
+
+            // Can be: number/number, number/string, number/boolean (unordered)
+            match (x, y) {
+                (ResultType::Number, ResultType::Number) => Ok(ResultType::Number),
+                (ResultType::Number, ResultType::String)
+                | (ResultType::String, ResultType::Number) => Ok(ResultType::String),
+                (ResultType::Number, ResultType::Boolean { .. })
+                | (ResultType::Boolean { .. }, ResultType::Number) => {
+                    // Multiplication with boolean returns n or 0
+                    Ok(ResultType::Number)
+                }
+                (x, y) => bail!(
+                    "Multiply conditions must evaluate to either Number and Number, Number and String, or Number and Boolean, got {} and {}",
+                    x,
+                    y
+                ),
             }
-            if !matches!(y, ResultType::Number) {
-                bail!("arithmetic expressions must be numeric, got {}", y);
+        }
+        Expression::Divide(x, y) => {
+            let x = type_check_helper(x, world, guarantees, valid_actors, bindings)?;
+            let y = type_check_helper(y, world, guarantees, valid_actors, bindings)?;
+
+            match (x, y) {
+                (ResultType::Number, ResultType::Number) => Ok(ResultType::Number),
+                (other_x, other_y) => bail!(
+                    "Divide conditions must evaluate to numbers, got {} and {}",
+                    other_x,
+                    other_y
+                ),
             }
-            Ok(ResultType::Number)
+        }
+        Expression::Add(x, y) => {
+            let x = type_check_helper(x, world, guarantees, valid_actors, bindings)?;
+            let y = type_check_helper(y, world, guarantees, valid_actors, bindings)?;
+
+            match (x, y) {
+                (ResultType::Number, ResultType::Number) => Ok(ResultType::Number),
+                (ResultType::String, ResultType::String) => Ok(ResultType::String),
+                (ResultType::Number, ResultType::String)
+                | (ResultType::String, ResultType::Number) => Ok(ResultType::String),
+                (ResultType::Boolean { .. }, ResultType::String)
+                | (ResultType::String, ResultType::Boolean { .. }) => Ok(ResultType::String),
+                (ResultType::Variant, ResultType::String)
+                | (ResultType::String, ResultType::Variant) => Ok(ResultType::String),
+                (ResultType::ActorRef, ResultType::String)
+                | (ResultType::String, ResultType::ActorRef) => Ok(ResultType::String),
+                (other_x, other_y) => bail!(
+                    "Add conditions must evaluate to either Number and Number or String and Any; got {} and {}",
+                    other_x,
+                    other_y
+                ),
+            }
+        }
+        Expression::Subtract(x, y) => {
+            let x = type_check_helper(x, world, guarantees, valid_actors, bindings)?;
+            let y = type_check_helper(y, world, guarantees, valid_actors, bindings)?;
+
+            match (x, y) {
+                (ResultType::Number, ResultType::Number) => Ok(ResultType::Number),
+                (other_x, other_y) => bail!(
+                    "Subtract conditions must evaluate to numbers, got {} and {}",
+                    other_x,
+                    other_y
+                ),
+            }
         }
         Expression::Not(expr) => {
             let res = type_check_helper(expr, world, guarantees, valid_actors, bindings)?;
@@ -438,40 +501,23 @@ pub fn type_check_world(world: &World) -> Result<()> {
                 params,
             } => {
                 for action in actions.iter() {
-                    expect_all_to_be_type(
-                        &action.conditions,
-                        world,
-                        params,
-                        Some(self_id.clone()),
-                        ResultType::empty_boolean(),
-                    )
-                    .with_context(|| {
-                        format!(
-                            "type checking conditions of action {} in practice {}",
-                            action.name, relation_type.name
-                        )
-                    })?;
+                    let mut guarantees =
+                        type_check_conditions(&action.conditions, world, params, Some(self_id))
+                            .with_context(|| {
+                                format!(
+                                    "type checking conditions of action {} in practice {}",
+                                    action.name, relation_type.name
+                                )
+                            })?;
 
                     for effect in action.effects.iter() {
-                        match effect {
-                            Effect::Broadcast(expr) | Effect::Say(expr) => {
-                                type_check(expr, world, params, Some(self_id.clone()))
-                                    .with_context(|| {
-                                        format!("type checking broadcast expression: {}", expr)
-                                    })?;
-                            }
-                            Effect::Activate(expr) | Effect::Deactivate(expr) => expect_type(
-                                expr,
-                                world,
-                                params,
-                                Some(self_id.clone()),
-                                ResultType::ActorRef,
-                            )
+                        type_check_effect(effect, world, params, Some(self_id), &mut guarantees)
                             .with_context(|| {
-                                format!("type checking activation expression: {}", expr)
-                            })?,
-                            _ => {}
-                        }
+                                format!(
+                                    "type checking effect of action {} in practice {}",
+                                    action.name, relation_type.name
+                                )
+                            })?;
                     }
                 }
             }
@@ -509,15 +555,16 @@ fn expect_type(
     expression: &Expression,
     world: &World,
     extra_bindings: &[String],
-    self_id: Option<Sentence>,
+    self_id: Option<&Sentence>,
     expected: ResultType,
 ) -> Result<()> {
-    let actual = type_check(expression, world, extra_bindings, self_id).with_context(|| {
-        format!(
-            "type checking expression {} expected to be {}",
-            expression, expected
-        )
-    })?;
+    let actual =
+        type_check(expression, world, extra_bindings, self_id, None).with_context(|| {
+            format!(
+                "type checking expression {} expected to be {}",
+                expression, expected
+            )
+        })?;
 
     if std::mem::discriminant(&actual) != std::mem::discriminant(&expected) {
         bail!(
@@ -531,21 +578,57 @@ fn expect_type(
     Ok(())
 }
 
-fn expect_all_to_be_type(
+fn type_check_conditions(
     expressions: &[Expression],
     world: &World,
     extra_bindings: &[String],
-    self_id: Option<Sentence>,
-    expected: ResultType,
-) -> Result<()> {
+    self_id: Option<&Sentence>,
+) -> Result<Guarantees> {
+    let mut guarantees = Guarantees::default();
     for expression in expressions.iter() {
-        expect_type(
-            expression,
-            world,
-            extra_bindings,
-            self_id.clone(),
-            expected.clone(),
-        )?;
+        let eval = type_check(expression, world, extra_bindings, self_id, None)
+            .with_context(|| format!("type checking condition expression {}", expression))?;
+        match eval {
+            ResultType::Boolean {
+                true_guarantees, ..
+            } => {
+                guarantees.extend(&true_guarantees);
+            }
+            other => bail!(
+                "expected condition expression {} to be boolean, but got {}",
+                expression,
+                other
+            ),
+        }
     }
-    Ok(())
+    Ok(guarantees)
+}
+
+fn type_check_effect(
+    effect: &Effect,
+    world: &World,
+    extra_bindings: &[String],
+    self_id: Option<&Sentence>,
+    guarantees: &mut Guarantees,
+) -> Result<()> {
+    match effect {
+        Effect::Broadcast(expr) | Effect::Say(expr) => {
+            type_check(expr, world, extra_bindings, self_id, Some(guarantees))
+                .with_context(|| format!("type checking broadcast expression: {}", expr))?;
+            Ok(())
+        }
+        Effect::Activate(expr) | Effect::Deactivate(expr) => {
+            let res = type_check(expr, world, extra_bindings, self_id, Some(guarantees))
+                .with_context(|| format!("type checking activation expression: {}", expr))?;
+            match res {
+                ResultType::ActorRef => Ok(()),
+                other => bail!(
+                    "expected activation expression {} to be ActorRef, but got {}",
+                    expr,
+                    other
+                ),
+            }
+        }
+        _ => Ok(()),
+    }
 }
