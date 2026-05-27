@@ -1,0 +1,34 @@
+practice test (Agent) {
+  num: 0..5
+  var: low | med | high
+  actions: [
+    {
+      for: Agent
+      name: "Increase"
+      conditions: [
+        self and self.num < 5
+      ]
+      outcomes: [
+        increase self.num by 1
+      ]
+    }
+    {
+      for: Agent
+      name: "Cycle"
+      conditions: []
+      outcomes: [
+        cycle self.var by 1
+      ]
+    }
+    {
+      for: Agent
+      name: "Exclaim"
+      conditions: [
+        self and self.var is #high
+      ]
+      outcomes: [
+        broadcast "Test var is high!"
+      ]
+    }
+  ]
+}

@@ -6,10 +6,10 @@ use crate::{
     anyhow_ext::ResultOptionExt,
     expressions::Expression,
     queries::{AgentRef, Query, RelationQuery},
-    types::RelationTypeData,
+    types::{FieldType, RelationTypeData},
     values::{Constant, Sentence, Value},
     world::{
-        Bindings, RelationData, RelationHandle, World,
+        Bindings, Relation, RelationData, RelationHandle, World,
         goals::{Goal, GoalMeasurement},
         transactions::WorldTxn,
     },
@@ -60,8 +60,8 @@ pub enum Effect {
     Delete(Sentence),
     Set(Declaration),
     Update(Sentence, Value),
-    Increase(Sentence, i64),
-    Cycle(Sentence, i64),
+    Increase(Sentence, f64),
+    Cycle(Sentence, f64),
 }
 
 /// Adds the information contained within a declaration to the world state.
@@ -74,11 +74,11 @@ pub fn process_declaration(
     bindings: &Bindings,
 ) -> Result<RelationHandle> {
     let query = Query::parse(world.inner(), &declaration.sentence, bindings)
-        .with_context(|| format!("processing declaration {:?}", declaration.sentence))?;
+        .with_context(|| format!("processing declaration {}", declaration.sentence))?;
 
     // TODO: relations with one parameter should be initializable this way!
     let Query::Unfielded(relation_query) = &query else {
-        bail!("extra parameters in declaration {:?}", declaration.sentence);
+        bail!("extra parameters in declaration {}", declaration.sentence);
     };
 
     let relation_query = relation_query.apply_bindings(bindings);
@@ -137,7 +137,7 @@ pub fn evaluate_variable(
         .evaluate_in_world(world)
         .with_context(|| {
             format!(
-                "evaluating variable with sentence {:?} and bindings {:?}",
+                "evaluating variable with sentence {} and bindings {:?}",
                 sentence, bindings
             )
         })
@@ -151,7 +151,7 @@ pub fn check_condition(
     match expression.evaluate(world, bindings)? {
         Constant::Boolean(b) => Ok(b),
         other => bail!(
-            "condition expression must evaluate to boolean, got {:?}",
+            "condition expression must evaluate to boolean, got {}",
             other
         ),
     }
@@ -177,20 +177,20 @@ fn process_print(
 
 fn process_delete(world: &mut WorldTxn, sentence: &Sentence, bindings: &Bindings) -> Result<()> {
     let query = Query::parse(world.inner(), sentence, bindings)
-        .with_context(|| format!("processing delete outcome {:?}", sentence))?;
+        .with_context(|| format!("processing delete outcome {}", sentence))?;
 
     let Query::Unfielded(relation_query) = &query else {
-        bail!("extra parameters in delete outcome {:?}", sentence);
+        bail!("extra parameters in delete outcome {}", sentence);
     };
 
     let relation_query = relation_query.apply_bindings(bindings);
 
     let (edge, _) = relation_query
         .lookup_in_world(world.inner())
-        .require_with_context(|| format!("relation not found in delete outcome {:?}", sentence))?;
+        .require_with_context(|| format!("relation not found in delete outcome {}", sentence))?;
     world
         .remove_relation(edge.relation_handle.clone())
-        .with_context(|| format!("removing relation in delete outcome {:?}", sentence))
+        .with_context(|| format!("removing relation in delete outcome {}", sentence))
 }
 
 fn process_update(
@@ -200,14 +200,10 @@ fn process_update(
     bindings: &Bindings,
 ) -> Result<()> {
     let query = Query::parse(world.inner(), sentence, bindings)
-        .with_context(|| format!("processing update outcome {:?}", sentence))?;
+        .with_context(|| format!("processing update outcome {}", sentence))?;
     let Query::Fielded(relation_query, field_name) = &query else {
-        // TODO: Support bracket syntax so this is actually usable!!!
-        // (Currently you can't initialize anything with >1 fields)
-        // Just needs to be added to parser and the logic flow here,
-        // the update functions should already support it.
         bail!(
-            "update outcome must specify a field to update {:?}",
+            "update outcome must specify a field to update: {}",
             sentence
         );
     };
@@ -216,7 +212,7 @@ fn process_update(
 
     let (edge, _) = relation_query
         .lookup_in_world(world.inner())
-        .require_with_context(|| format!("relation not found in update outcome {:?}", sentence))?;
+        .require_with_context(|| format!("relation not found in update outcome {}", sentence))?;
 
     let constant_value = match value {
         Value::Number(n) => Constant::Number(*n),
@@ -226,7 +222,7 @@ fn process_update(
         Value::Variable(new_val_sentence) => {
             evaluate_variable(world.inner(), new_val_sentence, bindings).with_context(|| {
                 format!(
-                    "evaluating variable for new value in update outcome with sentence {:?}",
+                    "evaluating variable for new value in update outcome with sentence {}",
                     new_val_sentence
                 )
             })?
@@ -238,25 +234,174 @@ fn process_update(
             edge.relation_handle.clone(),
             HashMap::from([(field_name.clone(), constant_value)]),
         )
-        .with_context(|| format!("applying update outcome {:?}", sentence))
+        .with_context(|| format!("applying update outcome {}", sentence))
+}
+
+fn get_value_and_field_type<'a, 'b>(
+    world: &'a World,
+    relation: &'b Relation,
+    field_name: &str,
+) -> Result<(&'b Constant, &'a FieldType)> {
+    let current_value = relation
+        .fields
+        .get(field_name)
+        .with_context(|| format!("field {} not found in relation", field_name))?;
+
+    let Some(relation_type) = world.get_relation_type_map().get_type(&relation.type_name) else {
+        bail!("relation type {} not found", relation.type_name);
+    };
+
+    let Some(field_type) = relation_type.fields.get(field_name) else {
+        bail!(
+            "field {} not found in relation type {}",
+            field_name,
+            &relation_type.name
+        );
+    };
+
+    Ok((current_value, field_type))
 }
 
 fn process_increase(
-    _world: &mut WorldTxn,
-    _sentence: &Sentence,
-    _amount: i64,
-    _bindings: &Bindings,
+    world: &mut WorldTxn,
+    sentence: &Sentence,
+    amount: f64,
+    bindings: &Bindings,
 ) -> Result<()> {
-    unimplemented!()
+    let query = Query::parse(world.inner(), sentence, bindings)
+        .with_context(|| format!("processing increase outcome {}", sentence))?;
+    let Query::Fielded(relation_query, field_name) = &query else {
+        bail!(
+            "increase outcome must specify a field to increase: {}",
+            sentence
+        );
+    };
+
+    let relation_query = relation_query.apply_bindings(bindings);
+
+    let (edge, relation) = relation_query
+        .lookup_in_world(world.inner())
+        .require_with_context(|| format!("relation not found in increase outcome {}", sentence))?;
+
+    let (current_value, field_type) = get_value_and_field_type(world.inner(), relation, field_name)
+        .with_context(|| {
+            format!(
+                "getting current value and field type for increase outcome {}",
+                sentence
+            )
+        })?;
+
+    match (current_value, field_type) {
+        (Constant::Number(current), FieldType::NumberRange(low, high)) => {
+            let new_value = (current + (amount as f64)).clamp(*low, *high);
+            world
+                .update_relation(
+                    edge.relation_handle.clone(),
+                    HashMap::from([(field_name.clone(), Constant::Number(new_value))]),
+                )
+                .with_context(|| format!("applying increase outcome {}", sentence))
+        }
+        (Constant::Variant(current), FieldType::VariantList(variants)) => {
+            let current_index = variants
+                .iter()
+                .position(|v| v == current)
+                .with_context(|| {
+                    format!(
+                        "current variant value {} not found in variants list for increase outcome {}",
+                        current, sentence
+                    )
+                })?;
+            let amount = amount.round() as i64;
+            let new_index =
+                (current_index as i64 + amount).clamp(0, (variants.len() - 1) as i64) as usize;
+            world
+                .update_relation(
+                    edge.relation_handle.clone(),
+                    HashMap::from([(
+                        field_name.clone(),
+                        Constant::Variant(variants[new_index].clone()),
+                    )]),
+                )
+                .with_context(|| format!("applying increase outcome {}", sentence))
+        }
+        // Can also fail if the field type is wrong, but that should never happen.
+        // Just worth noting.
+        _ => bail!(
+            "increase outcome only applies to number ranges and variants, found {}: {}",
+            field_type,
+            sentence
+        ),
+    }
 }
 
 fn process_cycle(
-    _world: &mut WorldTxn,
-    _sentence: &Sentence,
-    _amount: i64,
-    _bindings: &Bindings,
+    world: &mut WorldTxn,
+    sentence: &Sentence,
+    amount: f64,
+    bindings: &Bindings,
 ) -> Result<()> {
-    unimplemented!()
+    let query = Query::parse(world.inner(), sentence, bindings)
+        .with_context(|| format!("processing cycle outcome {}", sentence))?;
+    let Query::Fielded(relation_query, field_name) = &query else {
+        bail!("cycle outcome must specify a field to cycle: {}", sentence);
+    };
+
+    let relation_query = relation_query.apply_bindings(bindings);
+
+    let (edge, relation) = relation_query
+        .lookup_in_world(world.inner())
+        .require_with_context(|| format!("relation not found in cycle outcome {}", sentence))?;
+
+    let (current_value, field_type) = get_value_and_field_type(world.inner(), relation, field_name)
+        .with_context(|| {
+            format!(
+                "getting current value and field type for cycle outcome {}",
+                sentence
+            )
+        })?;
+
+    match (current_value, field_type) {
+        (Constant::Number(current), FieldType::NumberRange(low, high)) => {
+            let range = high - low;
+            let new_value = ((current - low + amount).rem_euclid(range)) + low;
+            world
+                .update_relation(
+                    edge.relation_handle.clone(),
+                    HashMap::from([(field_name.clone(), Constant::Number(new_value))]),
+                )
+                .with_context(|| format!("applying cycle outcome {}", sentence))
+        }
+        (Constant::Variant(current), FieldType::VariantList(variants)) => {
+            let current_index = variants
+                .iter()
+                .position(|v| v == current)
+                .with_context(|| {
+                    format!(
+                        "current variant value {} not found in variants list for cycle outcome {}",
+                        current, sentence
+                    )
+                })?;
+            let amount = amount.round() as i64;
+            let new_index =
+                ((current_index as i64 + amount).rem_euclid(variants.len() as i64)) as usize;
+            world
+                .update_relation(
+                    edge.relation_handle.clone(),
+                    HashMap::from([(
+                        field_name.clone(),
+                        Constant::Variant(variants[new_index].clone()),
+                    )]),
+                )
+                .with_context(|| format!("applying cycle outcome {}", sentence))
+        }
+        // Can also fail if the field type is wrong, but that should never happen.
+        // Just worth noting.
+        _ => bail!(
+            "cycle outcome only applies to number ranges and variants, found {}: {}",
+            field_type,
+            sentence
+        ),
+    }
 }
 
 pub fn process_effect(
@@ -319,7 +464,7 @@ pub fn get_available_actions(world: &World, agent_name: &str) -> Result<Vec<Acti
                     for condition in &action.conditions {
                         if !check_condition(world, condition, bindings).with_context(|| {
                             format!(
-                                "checking conditions for action {} of practice {:?}",
+                                "checking conditions for action {} of practice {}",
                                 action.name, relation_type.name
                             )
                         })? {
@@ -331,7 +476,7 @@ pub fn get_available_actions(world: &World, agent_name: &str) -> Result<Vec<Acti
                         display_name: world.format_string(&action.name, bindings).with_context(
                             || {
                                 format!(
-                                    "formatting display name for action {} of practice {:?}",
+                                    "formatting display name for action {} of practice {}",
                                     action.name, relation_type.name
                                 )
                             },
@@ -419,7 +564,7 @@ pub fn process_available_action(
 /// WARNING: If a new edge is added that gets caught by an increase
 /// measurement, it will result in a huge delta for that event. I would
 /// recommend normalizing your values for this; throwing away non-delta
-/// scores would fix this issue, but also throws away potentially useful
+/// scores would fix this issue, but also throws away pocurrent value and field type do not match for increase outcometentially useful
 /// information, so I've decided not to do that.
 fn evaluate_goal(world: &World, goal: &Goal, bindings: &Bindings) -> Result<f64> {
     let evaluation = goal.expression.evaluate(world, bindings)?;
@@ -433,7 +578,7 @@ fn evaluate_goal(world: &World, goal: &Goal, bindings: &Bindings) -> Result<f64>
                 }
             }
             other => bail!(
-                "goal expression must evaluate to boolean for Exists measurement, got {:?}",
+                "goal expression must evaluate to boolean for Exists measurement, got {}",
                 other
             ),
         },
@@ -442,7 +587,7 @@ fn evaluate_goal(world: &World, goal: &Goal, bindings: &Bindings) -> Result<f64>
                 total_weight += n * goal.weight;
             }
             other => bail!(
-                "goal expression must evaluate to number for Increase/Decrease measurement, got {:?}",
+                "goal expression must evaluate to number for Increase/Decrease measurement, got {}",
                 other
             ),
         },

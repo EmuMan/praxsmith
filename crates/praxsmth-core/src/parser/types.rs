@@ -181,14 +181,14 @@ pub fn parse_effect(pair: Pair<Rule>) -> Effect {
             // "increase" ~ sentence ~ "by" ~ number
             let sentence_pair = inner.next().unwrap();
             let number_pair = inner.next().unwrap();
-            let num: i64 = number_pair.as_str().parse().unwrap();
+            let num: f64 = number_pair.as_str().parse().unwrap();
             Effect::Increase(parse_sentence(sentence_pair), num)
         }
         Rule::effect_cycle => {
             // "cycle" ~ sentence ~ "by" ~ number
             let sentence_pair = inner.next().unwrap();
             let number_pair = inner.next().unwrap();
-            let num: i64 = number_pair.as_str().parse().unwrap();
+            let num: f64 = number_pair.as_str().parse().unwrap();
             Effect::Cycle(parse_sentence(sentence_pair), num)
         }
         _ => unreachable!(),

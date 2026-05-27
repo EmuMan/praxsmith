@@ -1,0 +1,6 @@
+agent test as "Test"
+
+practice.test.test {
+  num: 0
+  var: #low
+}
