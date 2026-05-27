@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt};
 
 use anyhow::{Context, Result, bail};
 
-use crate::{expressions::Expression, world::simulation::Effect};
+use crate::{expressions::Expression, values::Sentence, world::simulation::Effect};
 
 pub mod checking;
 
@@ -77,6 +77,7 @@ pub enum RelationTypeData {
     },
     Emotion,
     Practice {
+        self_id: Sentence,
         params: Vec<String>,
         actions: Vec<PracticeAction>,
     },

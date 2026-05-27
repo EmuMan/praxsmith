@@ -6,7 +6,7 @@ use crate::{
     expressions::Expression,
     queries::{Query, RelationQuery},
     types::{FieldType, RelationTypeData},
-    values::Value,
+    values::{Sentence, Value},
     world::{World, bindings::Bindings, goals::GoalMeasurement},
 };
 
@@ -136,6 +136,7 @@ pub fn type_check(
     expression: &Expression,
     world: &World,
     extra_bindings: &[String],
+    self_id: Option<Sentence>,
 ) -> Result<ResultType> {
     let world_entity_ids: Vec<String> = world
         .iter_agents()
@@ -146,11 +147,16 @@ pub fn type_check(
         .cloned()
         .chain(world_entity_ids.iter().cloned())
         .collect();
+    let bindings = match self_id {
+        Some(self_id) => Bindings::self_only(self_id),
+        None => Bindings::default(),
+    };
     type_check_helper(
         expression,
         world,
         &mut Guarantees::default(),
         &mut ValidAgents::new(all_bindings),
+        &bindings,
     )
 }
 
@@ -159,7 +165,9 @@ fn type_check_helper(
     world: &World,
     guarantees: &mut Guarantees,
     valid_agents: &mut ValidAgents,
+    bindings: &Bindings,
 ) -> Result<ResultType> {
+    log::info!("type checking expression {}", expression);
     match expression {
         Expression::Value(value) => match value {
             Value::Number(_) => Ok(ResultType::Number),
@@ -167,14 +175,14 @@ fn type_check_helper(
             Value::Variant(_) => Ok(ResultType::Variant),
             Value::String(_) => Ok(ResultType::String),
             Value::Variable(sentence) => type_check_query(
-                Query::parse(world, sentence, &Bindings::default())?,
+                Query::parse(world, sentence, bindings)?,
                 world,
                 guarantees,
                 valid_agents,
             ),
         },
         Expression::And(x, y) => {
-            let x = type_check_helper(x, world, guarantees, valid_agents)?;
+            let x = type_check_helper(x, world, guarantees, valid_agents, bindings)?;
             let ResultType::Boolean {
                 true_guarantees: x_true_guarantees,
                 ..
@@ -187,7 +195,7 @@ fn type_check_helper(
             // the first condition is true because of short-circuiting! It will
             // not be run otherwise!
             let added_count = guarantees.push_many(x_true_guarantees.items.clone());
-            let y = type_check_helper(y, world, guarantees, valid_agents)?;
+            let y = type_check_helper(y, world, guarantees, valid_agents, bindings)?;
             guarantees.pop_many(added_count);
             match y {
                 // True guarantees can be combined because if the whole
@@ -205,7 +213,7 @@ fn type_check_helper(
             }
         }
         Expression::Or(x, y) => {
-            let x = type_check_helper(x, world, guarantees, valid_agents)?;
+            let x = type_check_helper(x, world, guarantees, valid_agents, bindings)?;
             let ResultType::Boolean {
                 false_guarantees: x_false_guarantees,
                 ..
@@ -218,7 +226,7 @@ fn type_check_helper(
             // the first condition is false because of short-circuiting! It
             // will not be run otherwise!
             let added_count = guarantees.push_many(x_false_guarantees.items.clone());
-            let y = type_check_helper(y, world, guarantees, valid_agents)?;
+            let y = type_check_helper(y, world, guarantees, valid_agents, bindings)?;
             guarantees.pop_many(added_count);
             match y {
                 // False guarantees can be combined because if the whole
@@ -236,8 +244,8 @@ fn type_check_helper(
             }
         }
         Expression::Is(x, y) => {
-            let x = type_check_helper(x, world, guarantees, valid_agents)?;
-            let y = type_check_helper(y, world, guarantees, valid_agents)?;
+            let x = type_check_helper(x, world, guarantees, valid_agents, bindings)?;
+            let y = type_check_helper(y, world, guarantees, valid_agents, bindings)?;
             // The only condition is that they are the same type
             if std::mem::discriminant(&x) != std::mem::discriminant(&y) {
                 bail!(
@@ -254,8 +262,8 @@ fn type_check_helper(
         | Expression::GreaterThan(x, y)
         | Expression::LessThanOrEqual(x, y)
         | Expression::GreaterThanOrEqual(x, y) => {
-            let x = type_check_helper(x, world, guarantees, valid_agents)?;
-            let y = type_check_helper(y, world, guarantees, valid_agents)?;
+            let x = type_check_helper(x, world, guarantees, valid_agents, bindings)?;
+            let y = type_check_helper(y, world, guarantees, valid_agents, bindings)?;
             // Both sides must be numbers
             if !matches!(x, ResultType::Number) {
                 bail!("comparison conditions must be numeric, got {}", x);
@@ -269,8 +277,8 @@ fn type_check_helper(
         | Expression::Divide(x, y)
         | Expression::Add(x, y)
         | Expression::Subtract(x, y) => {
-            let x = type_check_helper(x, world, guarantees, valid_agents)?;
-            let y = type_check_helper(y, world, guarantees, valid_agents)?;
+            let x = type_check_helper(x, world, guarantees, valid_agents, bindings)?;
+            let y = type_check_helper(y, world, guarantees, valid_agents, bindings)?;
             // Both sides must be numbers
             if !matches!(x, ResultType::Number) {
                 bail!("arithmetic expressions must be numeric, got {}", x);
@@ -281,7 +289,7 @@ fn type_check_helper(
             Ok(ResultType::Number)
         }
         Expression::Not(expr) => {
-            let res = type_check_helper(expr, world, guarantees, valid_agents)?;
+            let res = type_check_helper(expr, world, guarantees, valid_agents, bindings)?;
             match res {
                 // Just swap the true and false guarantees because the result
                 // value is negated.
@@ -298,7 +306,7 @@ fn type_check_helper(
         Expression::ForAll(new_symbol, expression) => {
             // The new symbol represents a new valid agent binding
             valid_agents.push(new_symbol.clone())?;
-            let res = type_check_helper(expression, world, guarantees, valid_agents)?;
+            let res = type_check_helper(expression, world, guarantees, valid_agents, bindings)?;
             valid_agents.pop();
             match res {
                 ResultType::Boolean { .. } => Ok(ResultType::empty_boolean()),
@@ -308,7 +316,7 @@ fn type_check_helper(
         Expression::Any(new_symbol, expression) => {
             // The new symbol represents a new valid agent binding
             valid_agents.push(new_symbol.clone())?;
-            let res = type_check_helper(expression, world, guarantees, valid_agents)?;
+            let res = type_check_helper(expression, world, guarantees, valid_agents, bindings)?;
             valid_agents.pop();
             match res {
                 ResultType::Boolean { .. } => Ok(ResultType::empty_boolean()),
@@ -318,7 +326,7 @@ fn type_check_helper(
         Expression::Count(new_symbol, expression) => {
             // The new symbol represents a new valid agent binding
             valid_agents.push(new_symbol.clone())?;
-            let res = type_check_helper(expression, world, guarantees, valid_agents)?;
+            let res = type_check_helper(expression, world, guarantees, valid_agents, bindings)?;
             valid_agents.pop();
             match res {
                 ResultType::Boolean { .. } => Ok(ResultType::Number),
@@ -330,7 +338,7 @@ fn type_check_helper(
         } => {
             // The new symbol represents a new valid agent binding
             valid_agents.push(var.clone())?;
-            let filter_res = type_check_helper(filter, world, guarantees, valid_agents)?;
+            let filter_res = type_check_helper(filter, world, guarantees, valid_agents, bindings)?;
             valid_agents.pop();
 
             let true_guarantees = match filter_res {
@@ -345,7 +353,7 @@ fn type_check_helper(
             // Push valid agent again here to keep these atomic.
             valid_agents.push(var.clone())?;
             let added_count = guarantees.push_many(true_guarantees.items.clone());
-            let body_res = type_check_helper(body, world, guarantees, valid_agents)?;
+            let body_res = type_check_helper(body, world, guarantees, valid_agents, bindings)?;
             valid_agents.pop();
             guarantees.pop_many(added_count);
 
@@ -412,12 +420,17 @@ fn type_check_query(
 pub fn type_check_world(world: &World) -> Result<()> {
     for relation_type in world.get_relation_type_map().iter_types() {
         match &relation_type.data {
-            RelationTypeData::Practice { actions, params } => {
+            RelationTypeData::Practice {
+                self_id,
+                actions,
+                params,
+            } => {
                 for action in actions.iter() {
                     expect_all_to_be_type(
                         &action.conditions,
                         world,
                         params,
+                        Some(self_id.clone()),
                         ResultType::empty_boolean(),
                     )
                     .with_context(|| {
@@ -435,11 +448,15 @@ pub fn type_check_world(world: &World) -> Result<()> {
     for (agent_id, agent) in world.iter_agents() {
         for goal in agent.goals.iter() {
             match goal.measurement {
-                GoalMeasurement::Exists => {
-                    expect_type(&goal.expression, world, &[], ResultType::empty_boolean())
-                }
+                GoalMeasurement::Exists => expect_type(
+                    &goal.expression,
+                    world,
+                    &[],
+                    None,
+                    ResultType::empty_boolean(),
+                ),
                 GoalMeasurement::Delta => {
-                    expect_type(&goal.expression, world, &[], ResultType::Number)
+                    expect_type(&goal.expression, world, &[], None, ResultType::Number)
                 }
             }
             .with_context(|| {
@@ -458,9 +475,10 @@ fn expect_type(
     expression: &Expression,
     world: &World,
     extra_bindings: &[String],
+    self_id: Option<Sentence>,
     expected: ResultType,
 ) -> Result<()> {
-    let actual = type_check(expression, world, extra_bindings).with_context(|| {
+    let actual = type_check(expression, world, extra_bindings, self_id).with_context(|| {
         format!(
             "type checking expression {} expected to be {}",
             expression, expected
@@ -483,10 +501,17 @@ fn expect_all_to_be_type(
     expressions: &[Expression],
     world: &World,
     extra_bindings: &[String],
+    self_id: Option<Sentence>,
     expected: ResultType,
 ) -> Result<()> {
     for expression in expressions.iter() {
-        expect_type(expression, world, extra_bindings, expected.clone())?;
+        expect_type(
+            expression,
+            world,
+            extra_bindings,
+            self_id.clone(),
+            expected.clone(),
+        )?;
     }
     Ok(())
 }

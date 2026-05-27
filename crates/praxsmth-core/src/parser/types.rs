@@ -286,10 +286,20 @@ fn parse_practice(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> RelationType {
         }
     }
 
+    let mut self_id = vec!["practice".to_string()];
+    self_id.push(name.to_string());
+    self_id.extend(params.iter().cloned().map(String::from));
+
+    log::info!("Parsed practice '{}', self_id: {:?}", name, self_id);
+
     RelationType {
         name,
         fields,
-        data: RelationTypeData::Practice { params, actions },
+        data: RelationTypeData::Practice {
+            self_id: self_id.into(),
+            params,
+            actions,
+        },
     }
 }
 

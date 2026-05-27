@@ -228,7 +228,7 @@ above example, since it also helps improve readability.
 | `and` | `Greeter.is_in.Room and Greeted.is_in.Room` | Requires both sides to be booleans, and will evaluate to `true` if both sides are `true`, and false in any other case. In `x and y`, both `x` **and** `y` must be `true` for the statement to evaluate to `true`. This operator **short-circuits**, which you can learn more about in [Conditionals](#conditionals) and [Appeasing the Type Checker](#appeasing-the-type-checker), including why this is important. |
 | `or` | `Person.feels.sad or Person.feels.angry` | Requires both sides to be booleans, and will evaluate to `true` if either side or both sides are `true`, and false if both are `false`. In `x or y`, either `x` or `y`, or both, must be `true` for the statement to evaluate to `true`. If you want to exclude the case in which both are `true`, use the `xor` operator instead. This operator **short-circuits**, which you can learn more about in [Conditionals](#conditionals) and [Appeasing the Type Checker](#appeasing-the-type-checker), including why this is important. |
 | `not` | `not Person.is.lactose_intolerant` | Requires its operand to be a boolean, and negates its value. `true` will become `false`, and `false` will become `true`. |
-| `is` | `Person.trusts.Other.amount is high` | Requires both sides to be of the same type (e.g. number and number, variant and variant), and returns `true` if they are equal and `false` otherwise. For example, `5 is 5` evaluates to `true`, `5 is 3` to false, and `5 is high` throws an error. Variants can be compared across types, so `high` will always equal `high` regardless of if it comes from `Person.trusts.Other.amount` or `Person.admires.Other.amount` |
+| `is` | `Person.trusts.Other.amount is #high` | Requires both sides to be of the same type (e.g. number and number, variant and variant), and returns `true` if they are equal and `false` otherwise. For example, `5 is 5` evaluates to `true`, `5 is 3` to false, and `5 is #high` throws an error. Variants can be compared across types, so `#high` will always equal `#high` regardless of if it comes from `Person.trusts.Other.amount` or `Person.admires.Other.amount` |
 | `for all _` | `for all Other, Other.likes.Person` | Evaluates to `true` only if its operand evaluates to `true` for every possible value of `_`, which means every agent in the world. In the example, every agent must like `Person` for it to evaluate to `true`.<br />**Warning:** This cares about *every* entity. If there is a house, it will get checked as well. Consider adding an `a_person` trait relation so you can use the following instead: `for all Other, Other.is.a_person and Other.likes.Person`. TODO: allow for comparisons between agents to exclude self-comparisons. |
 | `any _ where` | `any Other where Other.likes.Person` | Evaluates to `true` if its operand evaluates to `true` for any possible value of `_`, which means any agent in the world. In the example, any singular agent can like `Person` for the whole expression to evaluate to `true`. |
 | `count _ where` | `count Other where Other.likes.Person` | Counts the number of values of `_` for which its operand evaluates to `true` for. The example will count the number of people that like `Person`. |
@@ -254,7 +254,7 @@ to point out: short-circuit guarantees.**
 Consider the following condition:
 
 ```
-Other.trusts.Person.level is high
+Other.trusts.Person.level is #high
 ```
 
 Given the correct relation type definitions, this seems as though it should
@@ -276,7 +276,7 @@ by coincidence.
 Consider the following statement instead:
 
 ```
-Other.trusts.Person and Other.trusts.Person.level is high
+Other.trusts.Person and Other.trusts.Person.level is #high
 ```
 
 `and` expressions only evaluate to `true` if both sides are `true`. That means
@@ -295,21 +295,21 @@ field.
 
 If you are familiar with other programming languages, you can think of this as
 a sort of boolean logic if-statement: "if `Other.trusts.Person` exists, then
-evaluate `Other.trusts.Person.level is high`, else false."
+evaluate `Other.trusts.Person.level is #high`, else false."
 
 This excludes anyone who does not trust `Person`, but what if you want to
 include them? It turns out this logic works with other expressions in the
 system:
 
 ```
-not Other.trusts.Person or Other.trusts.Person.level is low
+not Other.trusts.Person or Other.trusts.Person.level is #low
 ```
 
 Instead of evaluating to `false` if the relation does not exist, this one
 evaluates to `true`! This is because `or` short-circuits if the first statement
 is `true` instead, and we can use the `not` operator to negate the existence
 check. It reads out as "if `Other.trusts.Person` does not exist, evaluate to
-`true`, otherwise evaluate to `Other.trusts.Person.level is low`." In other
+`true`, otherwise evaluate to `Other.trusts.Person.level is #low`." In other
 words, "count anyone who either doesn't have a `trusts` relation at all or has
 a low level of trust."
 
@@ -518,8 +518,8 @@ the following:
 | `activate` | `activate Actor` | Sets an actor to active, which displays them to the player. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
 | `deactivate` | `deactivate Actor` | Sets an actor to inactive, which prevents them from being shown to the player. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
 | `delete` | `delete Person.is.tired` | Removes the specified relation from the world. `delete self` is a common pattern for practices that provide a single-use action, like `greet` in the above example. See [The `self` Binding](#the-self-binding) below for more info. |
-| `set` | `set Person.trusts.Other { level: high }` | Adds a new relation to the world. What appears to the right of `set` is exactly the same as declarations in the [World Script](#world-script). If the relation has fields, they must be specified within curly brackets and delimited by newlines. Otherwise, the brackets may be omitted. **Note:** This is how relations create other relations, which is an important mechanism in keeping the world running. For example, if an `argue` practice escalates to a high degree, an action may become available for one of the participants that allows for them to initiate a `divorce` practice if they are married. |
-| `update` | `update Person.trusts.Other.level to high` | Updates a single field of a relation to a new value. **This is currently not type checked, so use with caution.** An error will be thrown if the relation does not exist. (TODO) |
+| `set` | `set Person.trusts.Other { level: #high }` | Adds a new relation to the world. What appears to the right of `set` is exactly the same as declarations in the [World Script](#world-script). If the relation has fields, they must be specified within curly brackets and delimited by newlines. Otherwise, the brackets may be omitted. **Note:** This is how relations create other relations, which is an important mechanism in keeping the world running. For example, if an `argue` practice escalates to a high degree, an action may become available for one of the participants that allows for them to initiate a `divorce` practice if they are married. |
+| `update` | `update Person.trusts.Other.level to #high` | Updates a single field of a relation to a new value. **This is currently not type checked, so use with caution.** An error will be thrown if the relation does not exist. (TODO) |
 | `increase` | `increase Person.trusts.Other.level` | Coming soon... |
 | `cycle` | `cycle Person.trusts.Other.level` | Coming soon... |
 
@@ -543,7 +543,10 @@ operations.
 - **Variant lists:** A field can also be defined as a list of named variants,
 such as `calm | tense | furious`. This means that the field can only take on
 one of those three values. If you are familiar with other programming
-languages, this is essentially an `enum`.
+languages, this is essentially an `enum`. When assigning to or accessing this
+field, to avoid collisions with sentences, the language requires you prefix the
+value with a "#". For example, `Person.trusts.Other { level: #high }` or
+`Person.trusts.Other.level is #high`.
 
 TODO: add support for booleans and strings as field types.
 
@@ -567,7 +570,8 @@ your world, including the different social practices that characters follow.
 The world script includes two things:
 
 - **Actor definitions:** This is where you define the different actors that
-exist within your world, including their display names and goals.
+exist within your world, including their display names and goals. See more in
+the [Defining Actors](#defining-actors) and [Goals](#goals) sections above.
 - **Declarations:** This is where you initialize certain relations between
 agents, as well as social practices that the agents start engaged in. These
 behave exactly the same as the `set` effect, described in the

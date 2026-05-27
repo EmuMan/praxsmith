@@ -15,6 +15,13 @@ impl Bindings {
         Bindings { variables, self_id }
     }
 
+    pub fn self_only(self_id: Sentence) -> Self {
+        Bindings {
+            variables: HashMap::new(),
+            self_id: Some(self_id),
+        }
+    }
+
     /// Retrieves the value of a variable from the bindings, if it exists.
     pub fn get(&self, var: &str) -> Option<&String> {
         self.variables.get(var)

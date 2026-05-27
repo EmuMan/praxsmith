@@ -371,8 +371,8 @@ impl fmt::Display for RelationQuery {
                     .iter()
                     .map(|p| p.symbol())
                     .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "practice.{} with.{}", type_name, participants_str)
+                    .join(".");
+                write!(f, "practice.{}.{}", type_name, participants_str)
             }
         }
     }

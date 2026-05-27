@@ -1,9 +1,13 @@
 Major:
-- Better code editor
-- Documentation
+- `self` context in condition type checking
+- Increment and Cycle operators
+- Allow for iterators over agents to exclude self (or just exclude self by default?)
+- Support for booleans and strings as field types
+- Use epsilons in all numeric operations
+- Escalating Argument and Gossip Chain examples
+- Type check effects (especially updates, which can use guarantees provided by the conditions)
 
 Meh:
-- Type checking
 - Free variables creating actions?
 
 Minor:

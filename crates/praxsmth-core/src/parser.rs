@@ -27,6 +27,11 @@ fn parse_string(pair: Pair<Rule>) -> String {
     pair.as_str().trim_matches('"').to_string()
 }
 
+fn parse_variant_single(pair: Pair<Rule>) -> String {
+    // pair is Rule::variant_single
+    pair.as_str().trim_matches('#').to_string()
+}
+
 fn parse_sentence(pair: Pair<Rule>) -> Sentence {
     // pair is Rule::sentence
     pair.into_inner()
@@ -39,14 +44,8 @@ fn parse_value(pair: Pair<Rule>) -> Value {
     match pair.as_rule() {
         Rule::number => Value::Number(pair.as_str().parse().unwrap()),
         Rule::string => Value::String(parse_string(pair)),
-        Rule::sentence => {
-            let parts = parse_sentence(pair);
-            if parts.len() == 1 {
-                Value::Variant(parts.into_iter().next().unwrap())
-            } else {
-                Value::Variable(parts)
-            }
-        }
+        Rule::variant_single => Value::Variant(parse_variant_single(pair)),
+        Rule::sentence => Value::Variable(parse_sentence(pair)),
         _ => unreachable!(),
     }
 }
@@ -55,7 +54,7 @@ pub fn parse_constant(pair: Pair<Rule>) -> Constant {
     match pair.as_rule() {
         Rule::number => Constant::Number(pair.as_str().parse().unwrap()),
         Rule::string => Constant::String(parse_string(pair)),
-        Rule::var_name => Constant::Variant(pair.as_str().to_string()),
+        Rule::variant_single => Constant::Variant(parse_variant_single(pair)),
         _ => unreachable!(),
     }
 }

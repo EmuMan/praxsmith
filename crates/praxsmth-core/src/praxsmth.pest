@@ -33,9 +33,10 @@ field_def      =  { var_name ~ ":" ~ field }
 field          = _{ number_range | variant_list }
 number_range   =  { number ~ ".." ~ number }
 variant_list   =  { var_name ~ ("|" ~ var_name)+ }
+variant_single = @{ "#" ~ var_name }
 
-const = _{ number | string | var_name }
-value = _{ number | string | sentence }
+const = _{ number | string | variant_single }
+value = _{ number | string | variant_single | sentence }
 
 // Pratt parsing, following Pest's example
 expression = {
