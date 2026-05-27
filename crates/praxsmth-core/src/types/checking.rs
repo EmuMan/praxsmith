@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     expressions::Expression,
-    queries::{Query, RelationQuery},
+    queries::{ActorRef, Query, RelationQuery},
     types::{FieldType, RelationTypeData},
     values::{Sentence, Value},
     world::{World, bindings::Bindings, goals::GoalMeasurement, simulation::Effect},
@@ -511,18 +511,34 @@ pub fn type_check_world(world: &World) -> Result<()> {
             } => {
                 let practice_valid_actors = get_valid_actors(world, &params);
 
+                // Because we are in a practice, we can guarantee that whatever
+                // `self` resolves to will always exist.
+                let mut guarantees = Guarantees::new(vec![RelationQuery::Practice {
+                    type_name: relation_type.name.clone(),
+                    participants: params
+                        .iter()
+                        .map(|param| ActorRef::Free(param.clone()))
+                        .collect(),
+                }]);
+
                 for action in actions.iter() {
                     // any guarantees from conditions can be applied to
                     // outcomes, since they can only run if all conditions are
-                    // true
-                    let mut guarantees =
-                        type_check_conditions(&action.conditions, world, params, Some(self_id))
-                            .with_context(|| {
-                                format!(
-                                    "type checking conditions of action {} in practice {}",
-                                    action.name, relation_type.name
-                                )
-                            })?;
+                    // true. they will be added to `guarantees` in the process
+                    // of type checking.
+                    type_check_conditions(
+                        &action.conditions,
+                        world,
+                        params,
+                        Some(self_id),
+                        &mut guarantees,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "type checking conditions of action {} in practice {}",
+                            action.name, relation_type.name
+                        )
+                    })?;
 
                     for effect in action.effects.iter() {
                         type_check_effect(
@@ -610,15 +626,19 @@ fn expect_type(
     Ok(())
 }
 
+/// Runs a type check on the given list of condition expressions, building on
+/// `guarantees` in the process with any guarantees introduced by the conditions.
 fn type_check_conditions(
     expressions: &[Expression],
     world: &World,
     extra_bindings: &[String],
     self_id: Option<&Sentence>,
-) -> Result<Guarantees> {
-    let mut guarantees = Guarantees::default();
+    guarantees: &mut Guarantees,
+) -> Result<()> {
+    // Building on guarantees allows us to carry guarantees from one condition
+    // to the next! On top of passing the self guarantee through.
     for expression in expressions.iter() {
-        let eval = type_check(expression, world, extra_bindings, self_id, None)
+        let eval = type_check(expression, world, extra_bindings, self_id, Some(guarantees))
             .with_context(|| format!("type checking condition expression {}", expression))?;
         match eval {
             ResultType::Boolean {
@@ -633,7 +653,8 @@ fn type_check_conditions(
             ),
         }
     }
-    Ok(guarantees)
+
+    Ok(())
 }
 
 fn type_check_effect(

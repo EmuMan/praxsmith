@@ -327,6 +327,12 @@ statement in mind and need help forming it to predicate logic. Give it the
 guidance; just make sure you add a detailed comment and/or fully understand the
 outcome so that it doesn't become confusing later on!
 
+> [!tip] The automatic self guarantee
+> There is one case in which you do not need to explicitly guarantee values,
+> which is with the `self` keyword when you are working in practice conditions
+> and outcomes. The system knows that since you are already working inside an
+> action, `self` must refer to the practice you are currently working with.
+
 # Relation Types
 
 Relations can be defined as one of many variants, which determine how they

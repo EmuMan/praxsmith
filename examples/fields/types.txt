@@ -7,7 +7,7 @@ practice test_mutating_effects (Actor) {
       for: Actor
       name: "Increase"
       conditions: [
-        self and self.num < 5
+        self.num < 5
       ]
       outcomes: [
         increase self.num by 1
@@ -16,7 +16,7 @@ practice test_mutating_effects (Actor) {
     {
       for: Actor
       name: "Cycle"
-      conditions: [ self ]
+      conditions: []
       outcomes: [
         cycle self.var by 1
       ]
@@ -25,7 +25,7 @@ practice test_mutating_effects (Actor) {
       for: Actor
       name: "Exclaim"
       conditions: [
-        self and self.var is #high
+        self.var is #high
       ]
       outcomes: [
         broadcast "Test var is high!"
@@ -34,7 +34,7 @@ practice test_mutating_effects (Actor) {
     {
       for: Actor
       name: "Toggle"
-      conditions: [ self ]
+      conditions: []
       outcomes: [
         update self.toggle to (not self.toggle)
         broadcast "toggle is now " + self.toggle
@@ -51,7 +51,7 @@ practice test_field_types (Actor) {
     {
       for: Actor
       name: "Print Stuff"
-      conditions: [ self ]
+      conditions: []
       outcomes: [
         broadcast self.s + self.a + "! b is " + self.b
       ]

@@ -20,7 +20,6 @@ practice greet (Greeter, Greeted) {
       for: Greeter
       name: "Greet [Greeted]"
       conditions: [
-        self
         any Place where Greeter.is_in.Place and Greeted.is_in.Place
       ]
       outcomes: [

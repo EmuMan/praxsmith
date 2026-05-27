@@ -1,5 +1,4 @@
 Major:
-- Auto self guarantee
 - Escalating Argument and Gossip Chain examples
 - Functional debug window
 - Autonomous actors
