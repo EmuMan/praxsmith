@@ -14,6 +14,7 @@
     import Chat from "$lib/Chat.svelte";
     import Actions from "$lib/Actions.svelte";
     import ErrorPane from "$lib/ErrorPane.svelte";
+    import DebugPanel from "$lib/DebugPanel.svelte";
 
     let wasmReady = $state(false);
     let api: PraxsmthApi | null = $state(null);
@@ -208,6 +209,8 @@
         <div class="reset-row">
             <button class="reset" onclick={reset}>edit world</button>
         </div>
+
+        <DebugPanel {api} defaultActorName={selectedActorName} />
     {/if}
 </main>
 

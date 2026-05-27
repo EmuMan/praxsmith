@@ -1,7 +1,7 @@
 Major:
 - Escalating Argument and Gossip Chain examples
-- Functional debug window
 - Autonomous actors
+- README.md
 
 Meh:
 - Free variables creating actions?
