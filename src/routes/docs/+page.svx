@@ -229,6 +229,10 @@ above example, since it also helps improve readability.
 | `or` | `Person.feels.sad or Person.feels.angry` | Requires both sides to be booleans, and will evaluate to `true` if either side or both sides are `true`, and false if both are `false`. In `x or y`, either `x` or `y`, or both, must be `true` for the statement to evaluate to `true`. If you want to exclude the case in which both are `true`, use the `xor` operator instead. This operator **short-circuits**, which you can learn more about in [Conditionals](#conditionals) and [Appeasing the Type Checker](#appeasing-the-type-checker), including why this is important. |
 | `not` | `not Person.is.lactose_intolerant` | Requires its operand to be a boolean, and negates its value. `true` will become `false`, and `false` will become `true`. |
 | `is` | `Person.trusts.Other.amount is #high` | Requires both sides to be of the same type (e.g. number and number, variant and variant), and returns `true` if they are equal and `false` otherwise. For example, `5 is 5` evaluates to `true`, `5 is 3` to false, and `5 is #high` throws an error. Variants can be compared across types, so `#high` will always equal `#high` regardless of if it comes from `Person.trusts.Other.amount` or `Person.admires.Other.amount` |
+| `+` | `Person.is.rich.amount + 2` | If both sides are numbers, returns the sum of the two. If one side is a string and the other is any other type, the other side will be converted to a string and the two will be concatenated together. For example, `"$" + Person.is.rich.amount` will evaluate to something like `"$100"`. |
+| `-` | `Person.is.rich.amount - 2` | Requires both sides to be numbers, and returns the result of subtracting the second from the first. |
+| `*` | `Person.is.rich.amount * 2` | If both sides are numbers, returns the multiplication between the two. If one side is a number `n` and the other is a string, returns the string repeated `n` times. If one side is a number `n` and the other is a boolean, returns `n` or 0, depending on the state of the boolean. |
+| `/` | `Person.is.rich.amount / 2` | Requires both sides to be numbers, and returns the result of dividing the first by the second. |
 | `for all _` | `for all Other, Other.likes.Person` | Evaluates to `true` only if its operand evaluates to `true` for every possible value of `_`, which means every actor in the world. In the example, every actor must like `Person` for it to evaluate to `true`.<br />**Warning:** This cares about *every* entity. If there is a house, it will get checked as well. Consider adding an `a_person` trait relation so you can use the following instead: `for all Other, Other.is.a_person and Other.likes.Person`. If there is not a relevant relation from the actor to itself, this will also evaluate to `false`. Consider manually excluding this case as such: `for all Other, (@Person is @Other) or (Other.is.a_person and Other.likes.Person)`. |
 | `any _ where` | `any Other where Other.likes.Person` | Evaluates to `true` if its operand evaluates to `true` for any possible value of `_`, which means any actor in the world. In the example, any singular actor can like `Person` for the whole expression to evaluate to `true`. |
 | `count _ where` | `count Other where Other.likes.Person` | Counts the number of values of `_` for which its operand evaluates to `true` for. The example will count the number of people that like `Person`. |
@@ -454,15 +458,17 @@ emotion happy
 exclusive directional is_in / contains
 
 practice greet (Greeter, Greeted) {
+  exclamation: string
   actions: [
     {
       for: Greeter
       name: "Greet [Greeted]"
       conditions: [
+        self
         any Place where Greeter.is_in.Place and Greeted.is_in.Place
       ]
       outcomes: [
-        say "Hello, [Greeted]!"
+        say self.exclamation
         set Greeted.feels.happy
         broadcast "[Greeter]'s greeting has made [Greeted] happy!"
         delete self
@@ -476,9 +482,12 @@ All practices have participants. In this case, there are two: `Greeter` and
 `Greeted`, and each will play a unique role in the practice. This behavior is
 common across all practices. As this defines a relation type, it will not be
 applicable to any actors in your world by default, and **you must explicitly
-instantiate it** as such: `practice.greet.jacob.alaina`. This will create a new
-relation of the `greet` practice where `jacob` is the `Greeter` and `alaina` is
-being `Greeted`.
+instantiate it** as such:
+`practice.greet.jacob.alaina { exclamation: "Hey [Greeted]!" }`. This will
+create a new relation of the `greet` practice where `jacob` is the `Greeter`
+and `alaina` is being `Greeted`, and the `exclamation` field will be set to
+`"Hey, [Greeted]!"` which will determine what Jacob says upon greeting Alaina.
+If there are no fields, you can omit the curly brackets altogether.
 
 These parameters (`Greeter` and `Greeted`) will then become
 **bound** to `jacob` and `alaina` respectively for any expressions or strings
@@ -513,13 +522,13 @@ the following:
 
 | Outcome Type | Example | Meaning |
 | --- | --- | --- |
-| `broadcast` | `broadcast "[Greeter]'s greeting has made [Greeted] happy!"` | Sends a message into the chat log that has no particular sender. In other places, this may be referred to as a system message. Use it to inform the user of important updates to the world that it doesn't make sense for an actor to say out loud. |
-| `say` | `say "Hello, [Greeted]!"` | Sends a message in the chat log from a particular character. Use this for dialog between characters, as it implies that the phrase is being "said" within the world. |
-| `activate` | `activate Actor` | Sets an actor to active, which displays them to the player. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
-| `deactivate` | `deactivate Actor` | Sets an actor to inactive, which prevents them from being shown to the player. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
+| `broadcast` | `broadcast "[Greeter]'s greeting has made [Greeted] happy!"` | Sends a message into the chat log that has no particular sender. The message can be any [expression](#expressions) that evaluates to a string. The dialog system will attempt to replace any actor in square brackets with its display name. In other places, this may be referred to as a system message. Use it to inform the user of important updates to the world that it doesn't make sense for an actor to say out loud. |
+| `say` | `say "Hello, [Greeted]!"` | Sends a message in the chat log from a particular character. The message can be any [expression](#expressions) that evaluates to a string. The dialog system will attempt to replace any actor in square brackets with its display name. Use this for dialog between characters, as it implies that the phrase is being "said" within the world. |
+| `activate` | `activate Actor` | Sets an actor to active, which displays them to the player. The actor can be any [expression](#expressions) that evaluates to an actor reference. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
+| `deactivate` | `deactivate Actor` | Sets an actor to inactive, which prevents them from being shown to the player. The actor can be any [expression](#expressions) that evaluates to an actor reference. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
 | `delete` | `delete Person.is.tired` | Removes the specified relation from the world. `delete self` is a common pattern for practices that provide a single-use action, like `greet` in the above example. See [The `self` Binding](#the-self-binding) below for more info. |
 | `set` | `set Person.trusts.Other { level: #high }` | Adds a new relation to the world. What appears to the right of `set` is exactly the same as declarations in the [World Script](#world-script). If the relation has fields, they must be specified within curly brackets and delimited by newlines. Otherwise, the brackets may be omitted. **Note:** This is how relations create other relations, which is an important mechanism in keeping the world running. For example, if an `argue` practice escalates to a high degree, an action may become available for one of the participants that allows for them to initiate a `divorce` practice if they are married. |
-| `update` | `update Person.trusts.Other.level to #high` | Updates a single field of a relation to a new value. **This is currently not type checked, so use with caution.** An error will be thrown if the relation does not exist. (TODO) |
+| `update` | `update Person.trusts.Other.level to #high` | Updates a single field of a relation to a new value, which can be any expression, as long as it resolves to something within the target field type. |
 | `increase` | `increase Person.trusts.Other.level by 1` | Increases a number or variant by the specified amount. If it is a number, the value will simply be added, and will be bounded by the field's defined range. If it is a variant, the number will be rounded to the nearest whole number and the variant will advance or retreat along its possible variants, as defined by the field, without advancing past the start or end of the variant list. |
 | `cycle` | `cycle Person.trusts.Other.level by 1` | Increases a number or variant by the specified amount, while also wrapping the result. If it is a number, the value will simply be added, and will wrap around if it goes past either end of the field's defined range (this is an inclusive floating point operation, so watch out for inconsistencies!). If it is a variant, the number will be rounded to the nearest whole number and the variant will advance or retreat along its possible variants, as defined by the field, and looping from the other side if it advances past either end. |
 
@@ -534,7 +543,7 @@ delete it with `delete self`, etc. as I would if it was explicitly referenced.
 
 ## Field Types
 
-There are currently three types a field can be:
+There are five types a field can be:
 
 - **Numeric ranges:** A field can be defined as a numeric range, such as
 `0..10`. This means that the field can take on any value between 0 and 10,
@@ -547,15 +556,20 @@ languages, this is essentially an `enum`. When assigning to or accessing this
 field, to avoid collisions with sentences, the language requires you prefix the
 value with a "#". For example, `alice.trusts.bob { level: #high }` or
 `Person.trusts.Other.level is #high`.
-- **Agent References:** A field can reference an agent in the world, and will
-be type checked upon world load to make sure the agent exists or the binding is
-valid. Specify this by just using "agent" as the field type. When assigning to
+- **Actor References:** A field can reference an actor in the world, and will
+be type checked upon world load to make sure the actor exists or the binding is
+valid. Specify this by just using "actor" as the field type. When assigning to
 or accessing this field, to avoid collisions with sentences, the language
 requires you to prefix the value with a "@". For example,
 `alice.is_weary_of.bob { rumor_spreader: @michelle }` or
 `alice.is_weary_of.bob.rumor_spreader is @Other`.
-
-TODO: add support for booleans and strings as field types.
+- **String:** A field can be a string, which can take on any value. This is
+specified by using "string" as the field type. When assigning to or accessing
+this field, the value must be wrapped in quotes. For example,
+`practice.greet.alice.bob { exclamation: "Hey [Greeted]!" }`.
+- **Boolean:** A field can be a boolean, which can be either `true` or `false`.
+This is specified by using "boolean" as the field type. When assigning to this
+field, the value must be either `true` or `false`.
 
 # The Two Scripts
 
@@ -597,7 +611,7 @@ feeling sad and is on the street, while Jacob is in the house. To end the
 simulation, Alaina must first move to the house (which is permitted via the
 `practice.move.alaina.street.house` declaration that puts her in that practice
 at initialization), and then Jacob can greet her to make her happy, which
-satisfies one of her goals.
+satisfies one of his goals.
 
 **Type script:**
 
@@ -614,15 +628,17 @@ reciprocal is_married_to {
 evaluation likes / liked_by
 
 practice greet (Greeter, Greeted) {
+  exclamation: string
   actions: [
     {
       for: Greeter
       name: "Greet [Greeted]"
       conditions: [
+        self
         any Place where Greeter.is_in.Place and Greeted.is_in.Place
       ]
       outcomes: [
-        say "Hello, [Greeted]!"
+        say self.exclamation
         set Greeted.feels.happy
         broadcast "[Greeter]'s greeting has made [Greeted] happy!"
         delete self
@@ -668,7 +684,9 @@ alaina.is_in.street
 
 alaina.feels.sad
 
-practice.greet.jacob.alaina
+practice.greet.jacob.alaina {
+  exclamation: "Hey [Greeted]! Welcome home!"
+}
 practice.move.alaina.street.house
 ```
 

@@ -138,10 +138,20 @@ impl fmt::Display for ResultType {
     }
 }
 
+/// Runs a type check on the given expression, returning the resulting type.
+///
+/// `valid_actors` is the list of currently valid actor bindings, used to check
+/// ActorRef values and queries. It should include all actors and any extra
+/// bindings, introduced by practices, if there are any.
+/// `self_id` is the sentence representing the "self" practice for the current
+/// context, or None if there is no self.
+/// `initial_guarantees` is any guarantees that should be applied to the
+/// expression being checked, such as conditions that the world has already
+/// verified in practices.
 pub fn type_check(
     expression: &Expression,
     world: &World,
-    extra_bindings: &[String],
+    valid_actors: &[String],
     self_id: Option<&Sentence>,
     initial_guarantees: Option<&mut Guarantees>,
 ) -> Result<ResultType> {
@@ -149,15 +159,6 @@ pub fn type_check(
         Some(guarantees) => guarantees,
         None => &mut Guarantees::default(),
     };
-    let world_entity_ids: Vec<String> = world
-        .iter_actors()
-        .map(|(actor_id, _)| actor_id.clone())
-        .collect();
-    let all_bindings = extra_bindings
-        .iter()
-        .cloned()
-        .chain(world_entity_ids.iter().cloned())
-        .collect();
     let bindings = match self_id {
         Some(self_id) => Bindings::self_only(self_id.clone()),
         None => Bindings::default(),
@@ -166,7 +167,7 @@ pub fn type_check(
         expression,
         world,
         guarantees,
-        &mut ValidActors::new(all_bindings),
+        &mut ValidActors::new(valid_actors.to_vec()),
         &bindings,
     )
 }
@@ -437,6 +438,12 @@ fn type_check_helper(
     }
 }
 
+/// Runs a type check on the given query, returning the resulting type. Used as
+/// a helper for type checking expressions that contain queries.
+///
+/// Fielded queries consume guarantees because they require the relation to
+/// exist, while unfielded queries introduce a true-guarantee for themselves
+/// because they act as an existence check.
 fn type_check_query(
     query: Query,
     world: &World,
@@ -493,6 +500,8 @@ fn type_check_query(
 /// Runs a type check on the world to ensure that all conditions/effects in
 /// practices and actor goals are well-formed.
 pub fn type_check_world(world: &World) -> Result<()> {
+    let global_valid_actors = get_valid_actors(world, &[]);
+
     for relation_type in world.get_relation_type_map().iter_types() {
         match &relation_type.data {
             RelationTypeData::Practice {
@@ -500,7 +509,12 @@ pub fn type_check_world(world: &World) -> Result<()> {
                 actions,
                 params,
             } => {
+                let practice_valid_actors = get_valid_actors(world, &params);
+
                 for action in actions.iter() {
+                    // any guarantees from conditions can be applied to
+                    // outcomes, since they can only run if all conditions are
+                    // true
                     let mut guarantees =
                         type_check_conditions(&action.conditions, world, params, Some(self_id))
                             .with_context(|| {
@@ -511,13 +525,20 @@ pub fn type_check_world(world: &World) -> Result<()> {
                             })?;
 
                     for effect in action.effects.iter() {
-                        type_check_effect(effect, world, params, Some(self_id), &mut guarantees)
-                            .with_context(|| {
-                                format!(
-                                    "type checking effect of action {} in practice {}",
-                                    action.name, relation_type.name
-                                )
-                            })?;
+                        type_check_effect(
+                            effect,
+                            world,
+                            params,
+                            Some(self_id),
+                            &practice_valid_actors,
+                            &mut guarantees,
+                        )
+                        .with_context(|| {
+                            format!(
+                                "type checking outcome '{}' of action {} in practice {}",
+                                effect, action.name, relation_type.name
+                            )
+                        })?;
                     }
                 }
             }
@@ -531,13 +552,17 @@ pub fn type_check_world(world: &World) -> Result<()> {
                 GoalMeasurement::Exists => expect_type(
                     &goal.expression,
                     world,
-                    &[],
+                    &global_valid_actors,
                     None,
                     ResultType::empty_boolean(),
                 ),
-                GoalMeasurement::Delta => {
-                    expect_type(&goal.expression, world, &[], None, ResultType::Number)
-                }
+                GoalMeasurement::Delta => expect_type(
+                    &goal.expression,
+                    world,
+                    &global_valid_actors,
+                    None,
+                    ResultType::Number,
+                ),
             }
             .with_context(|| {
                 format!(
@@ -551,20 +576,27 @@ pub fn type_check_world(world: &World) -> Result<()> {
     Ok(())
 }
 
+fn get_valid_actors(world: &World, extra_bindings: &[String]) -> Vec<String> {
+    world
+        .iter_actors()
+        .map(|(actor_id, _)| actor_id.clone())
+        .chain(extra_bindings.iter().cloned())
+        .collect()
+}
+
 fn expect_type(
     expression: &Expression,
     world: &World,
-    extra_bindings: &[String],
+    valid_actors: &[String],
     self_id: Option<&Sentence>,
     expected: ResultType,
 ) -> Result<()> {
-    let actual =
-        type_check(expression, world, extra_bindings, self_id, None).with_context(|| {
-            format!(
-                "type checking expression {} expected to be {}",
-                expression, expected
-            )
-        })?;
+    let actual = type_check(expression, world, valid_actors, self_id, None).with_context(|| {
+        format!(
+            "type checking expression {} expected to be {}",
+            expression, expected
+        )
+    })?;
 
     if std::mem::discriminant(&actual) != std::mem::discriminant(&expected) {
         bail!(
@@ -609,6 +641,7 @@ fn type_check_effect(
     world: &World,
     extra_bindings: &[String],
     self_id: Option<&Sentence>,
+    valid_actors: &[String],
     guarantees: &mut Guarantees,
 ) -> Result<()> {
     match effect {
@@ -625,6 +658,55 @@ fn type_check_effect(
                 other => bail!(
                     "expected activation expression {} to be ActorRef, but got {}",
                     expr,
+                    other
+                ),
+            }
+        }
+        Effect::Update(sentence, expr) => {
+            let bindings = match self_id {
+                Some(self_id) => Bindings::self_only(self_id.clone()),
+                None => Bindings::default(),
+            };
+            let field_type = type_check_query(
+                Query::parse(world, sentence, &bindings)?,
+                world,
+                guarantees,
+                &ValidActors::new(valid_actors.to_vec()),
+            )
+            .with_context(|| format!("type checking update query: {}", sentence))?;
+
+            let expr_type = type_check(expr, world, extra_bindings, self_id, Some(guarantees))
+                .with_context(|| format!("type checking update expression: {}", expr))?;
+
+            if std::mem::discriminant(&field_type) != std::mem::discriminant(&expr_type) {
+                bail!(
+                    "expected update expression {} to be of type {}, but got {}",
+                    expr,
+                    field_type,
+                    expr_type
+                );
+            }
+
+            Ok(())
+        }
+        Effect::Increase(sentence, ..) | Effect::Cycle(sentence, ..) => {
+            let bindings = match self_id {
+                Some(self_id) => Bindings::self_only(self_id.clone()),
+                None => Bindings::default(),
+            };
+            let result_type = type_check_query(
+                Query::parse(world, sentence, &bindings)?,
+                world,
+                guarantees,
+                &ValidActors::new(valid_actors.to_vec()),
+            )
+            .with_context(|| format!("type checking increment query: {}", sentence))?;
+
+            match result_type {
+                ResultType::Number | ResultType::Variant => Ok(()),
+                other => bail!(
+                    "expected increment query {} to be Number or Variant, but got {}",
+                    sentence,
                     other
                 ),
             }

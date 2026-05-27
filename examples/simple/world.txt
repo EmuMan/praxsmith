@@ -15,5 +15,7 @@ alaina.is_in.street
 
 alaina.feels.sad
 
-practice.greet.jacob.alaina
+practice.greet.jacob.alaina {
+  exclamation: "Hey [Greeted]! Welcome home!"
+}
 practice.move.alaina.street.house

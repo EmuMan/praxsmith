@@ -42,8 +42,8 @@ ft_boolean      =  { "boolean" }
 variant_single = @{ "#" ~ var_name }
 actor_ref      = @{ "@" ~ var_name }
 
-const = _{ number | string | bool_true | variant_single | actor_ref }
-value = _{ number | string | bool_true | variant_single | actor_ref | sentence }
+const = _{ number | string | bool_true | bool_false | variant_single | actor_ref }
+value = _{ number | string | bool_true | bool_false | variant_single | actor_ref | sentence }
 
 // Pratt parsing, following Pest's example
 expression = {
@@ -159,7 +159,7 @@ effect_activate   =  { "activate" ~ expression }
 effect_deactivate =  { "deactivate" ~ expression }
 effect_delete     =  { "delete" ~ sentence }
 effect_set        =  { "set" ~ w_declaration }
-effect_update     =  { "update" ~ sentence ~ "to" ~ value }
+effect_update     =  { "update" ~ sentence ~ "to" ~ expression }
 effect_increase   =  { "increase" ~ sentence ~ "by" ~ number }
 effect_cycle      =  { "cycle" ~ sentence ~ "by" ~ number }
 

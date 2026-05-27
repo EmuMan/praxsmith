@@ -1,7 +1,6 @@
 Major:
 - Auto self guarantee
 - Escalating Argument and Gossip Chain examples
-- Type check effects (especially updates, which can use guarantees provided by the conditions)
 - Functional debug window
 - Autonomous actors
 

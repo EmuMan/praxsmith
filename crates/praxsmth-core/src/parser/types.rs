@@ -6,7 +6,7 @@ use pest::pratt_parser::PrattParser;
 use crate::parser::world::parse_declaration;
 use crate::parser::{
     PraxsmthParser, Rule, build_expression_pratt, parse_expression, parse_field_type,
-    parse_sentence, parse_string, parse_value,
+    parse_sentence, parse_string,
 };
 use crate::types::{FieldType, FieldTypes, PracticeAction, RelationType, RelationTypeData};
 use crate::world::simulation::Effect;
@@ -172,10 +172,13 @@ pub fn parse_effect(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Effect {
             Effect::Set(parse_declaration(decl_pair))
         }
         Rule::effect_update => {
-            // "update" ~ sentence ~ "to" ~ value
+            // "update" ~ sentence ~ "to" ~ expression
             let sentence_pair = inner.next().unwrap();
             let value_pair = inner.next().unwrap();
-            Effect::Update(parse_sentence(sentence_pair), parse_value(value_pair))
+            Effect::Update(
+                parse_sentence(sentence_pair),
+                parse_expression(value_pair, pratt),
+            )
         }
         Rule::effect_increase => {
             // "increase" ~ sentence ~ "by" ~ number

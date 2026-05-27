@@ -14,15 +14,17 @@ reciprocal is_married_to {
 evaluation likes / liked_by
 
 practice greet (Greeter, Greeted) {
+  exclamation: string
   actions: [
     {
       for: Greeter
       name: "Greet [Greeted]"
       conditions: [
+        self
         any Place where Greeter.is_in.Place and Greeted.is_in.Place
       ]
       outcomes: [
-        say "Hello, [Greeted]!"
+        say self.exclamation
         set Greeted.feels.happy
         broadcast "[Greeter]'s greeting has made [Greeted] happy!"
         delete self
@@ -66,6 +68,8 @@ alaina.is_in.street
 
 alaina.feels.sad
 
-practice.greet.jacob.alaina
+practice.greet.jacob.alaina {
+  exclamation: "Hey [Greeted]! Welcome home!"
+}
 practice.move.alaina.street.house
 `;

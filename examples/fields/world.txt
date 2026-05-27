@@ -1,6 +1,14 @@
-actor test as "Test"
+actor alice as "Alice"
+actor bob as "Bob"
 
-practice.test.test {
+practice.test_mutating_effects.alice {
   num: 0
   var: #low
+  toggle: false
+}
+
+practice.test_field_types.alice {
+  b: true
+  s: "Hey, "
+  a: @bob
 }

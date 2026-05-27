@@ -7,7 +7,7 @@ use crate::{
     expressions::Expression,
     queries::{ActorRef, Query, RelationQuery},
     types::{FieldType, RelationTypeData},
-    values::{Constant, Sentence, Value},
+    values::{Constant, Sentence},
     world::{
         Bindings, Relation, RelationData, RelationHandle, World,
         goals::{Goal, GoalMeasurement},
@@ -59,9 +59,27 @@ pub enum Effect {
     Deactivate(Expression),
     Delete(Sentence),
     Set(Declaration),
-    Update(Sentence, Value),
+    Update(Sentence, Expression),
     Increase(Sentence, f64),
     Cycle(Sentence, f64),
+}
+
+impl fmt::Display for Effect {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Effect::Broadcast(expr) => write!(f, "broadcast {}", expr),
+            Effect::Say(expr) => write!(f, "say {}", expr),
+            Effect::Activate(expr) => write!(f, "activate {}", expr),
+            Effect::Deactivate(expr) => write!(f, "deactivate {}", expr),
+            Effect::Delete(sentence) => write!(f, "delete {}", sentence),
+            Effect::Set(declaration) => write!(f, "set {}", declaration),
+            Effect::Update(sentence, expr) => write!(f, "update {} to {}", sentence, expr),
+            Effect::Increase(sentence, amount) => {
+                write!(f, "increase {} by {}", sentence, amount)
+            }
+            Effect::Cycle(sentence, amount) => write!(f, "cycle {} by {}", sentence, amount),
+        }
+    }
 }
 
 /// Adds the information contained within a declaration to the world state.
@@ -175,6 +193,26 @@ fn process_print(
     Ok(dialog)
 }
 
+fn process_activation_change(
+    world: &mut WorldTxn,
+    expr: &Expression,
+    bindings: &Bindings,
+    activate: bool,
+) -> Result<()> {
+    // hell yeah weird formatting bs
+    let word = if activate { "activat" } else { "deactivat" };
+    match expr.evaluate(world.inner(), bindings)? {
+        Constant::ActorRef(actor_id) => world
+            .set_actor_active(&bindings.get_or_same(&actor_id), activate)
+            .with_context(|| format!("{}ing actor {} in effect", word, actor_id)),
+        other => bail!(
+            "{}e effect expression must evaluate to actor reference, got {}",
+            word,
+            other
+        ),
+    }
+}
+
 fn process_delete(world: &mut WorldTxn, sentence: &Sentence, bindings: &Bindings) -> Result<()> {
     let query = Query::parse(world.inner(), sentence, bindings)
         .with_context(|| format!("processing delete outcome {}", sentence))?;
@@ -196,7 +234,7 @@ fn process_delete(world: &mut WorldTxn, sentence: &Sentence, bindings: &Bindings
 fn process_update(
     world: &mut WorldTxn,
     sentence: &Sentence,
-    value: &Value,
+    expr: &Expression,
     bindings: &Bindings,
 ) -> Result<()> {
     let query = Query::parse(world.inner(), sentence, bindings)
@@ -214,26 +252,18 @@ fn process_update(
         .lookup_in_world(world.inner())
         .require_with_context(|| format!("relation not found in update outcome {}", sentence))?;
 
-    let constant_value = match value {
-        Value::Number(n) => Constant::Number(*n),
-        Value::Boolean(b) => Constant::Boolean(*b),
-        Value::Variant(v) => Constant::Variant(v.clone()),
-        Value::String(s) => Constant::String(s.clone()),
-        Value::ActorRef(_) => todo!(),
-        Value::Variable(new_val_sentence) => {
-            evaluate_variable(world.inner(), new_val_sentence, bindings).with_context(|| {
-                format!(
-                    "evaluating variable for new value in update outcome with sentence {}",
-                    new_val_sentence
-                )
-            })?
-        }
-    };
+    // Type mismatches should be caught by the type checker
+    let value = expr.evaluate(world.inner(), bindings).with_context(|| {
+        format!(
+            "evaluating update expression for update outcome {}: {}",
+            sentence, expr
+        )
+    })?;
 
     world
         .update_relation(
             edge.relation_handle.clone(),
-            HashMap::from([(field_name.clone(), constant_value)]),
+            HashMap::from([(field_name.clone(), value)]),
         )
         .with_context(|| format!("applying update outcome {}", sentence))
 }
@@ -429,27 +459,11 @@ pub fn process_effect(
                 bindings,
             )?));
         }
-        Effect::Activate(expr) => match expr.evaluate(world.inner(), bindings)? {
-            Constant::ActorRef(actor_id) => world
-                .set_actor_active(&bindings.get_or_same(&actor_id), true)
-                .with_context(|| format!("activating actor {} in effect", actor_id)),
-            other => bail!(
-                "activate effect expression must evaluate to actor reference, got {}",
-                other
-            ),
-        },
-        Effect::Deactivate(expr) => match expr.evaluate(world.inner(), bindings)? {
-            Constant::ActorRef(actor_id) => world
-                .set_actor_active(&bindings.get_or_same(&actor_id), false)
-                .with_context(|| format!("deactivating actor {} in effect", actor_id)),
-            other => bail!(
-                "deactivate effect expression must evaluate to actor reference, got {}",
-                other
-            ),
-        },
+        Effect::Activate(expr) => process_activation_change(world, expr, bindings, true),
+        Effect::Deactivate(expr) => process_activation_change(world, expr, bindings, false),
         Effect::Delete(sentence) => process_delete(world, sentence, bindings),
         Effect::Set(declaration) => process_declaration(world, declaration, bindings).map(|_| ()),
-        Effect::Update(sentence, value) => process_update(world, sentence, value, bindings),
+        Effect::Update(sentence, expr) => process_update(world, sentence, expr, bindings),
         Effect::Increase(sentence, amount) => process_increase(world, sentence, *amount, bindings),
         Effect::Cycle(sentence, amount) => process_cycle(world, sentence, *amount, bindings),
     }?;

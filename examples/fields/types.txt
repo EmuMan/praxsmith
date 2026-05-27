@@ -1,6 +1,7 @@
-practice test (Actor) {
+practice test_mutating_effects (Actor) {
   num: 0..5
   var: low | med | high
+  toggle: boolean
   actions: [
     {
       for: Actor
@@ -15,7 +16,7 @@ practice test (Actor) {
     {
       for: Actor
       name: "Cycle"
-      conditions: []
+      conditions: [ self ]
       outcomes: [
         cycle self.var by 1
       ]
@@ -28,6 +29,31 @@ practice test (Actor) {
       ]
       outcomes: [
         broadcast "Test var is high!"
+      ]
+    }
+    {
+      for: Actor
+      name: "Toggle"
+      conditions: [ self ]
+      outcomes: [
+        update self.toggle to (not self.toggle)
+        broadcast "toggle is now " + self.toggle
+      ]
+    }
+  ]
+}
+
+practice test_field_types (Actor) {
+  b: boolean
+  s: string
+  a: actor
+  actions: [
+    {
+      for: Actor
+      name: "Print Stuff"
+      conditions: [ self ]
+      outcomes: [
+        broadcast self.s + self.a + "! b is " + self.b
       ]
     }
   ]
