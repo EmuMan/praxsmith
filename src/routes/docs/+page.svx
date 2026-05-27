@@ -229,7 +229,7 @@ above example, since it also helps improve readability.
 | `or` | `Person.feels.sad or Person.feels.angry` | Requires both sides to be booleans, and will evaluate to `true` if either side or both sides are `true`, and false if both are `false`. In `x or y`, either `x` or `y`, or both, must be `true` for the statement to evaluate to `true`. If you want to exclude the case in which both are `true`, use the `xor` operator instead. This operator **short-circuits**, which you can learn more about in [Conditionals](#conditionals) and [Appeasing the Type Checker](#appeasing-the-type-checker), including why this is important. |
 | `not` | `not Person.is.lactose_intolerant` | Requires its operand to be a boolean, and negates its value. `true` will become `false`, and `false` will become `true`. |
 | `is` | `Person.trusts.Other.amount is #high` | Requires both sides to be of the same type (e.g. number and number, variant and variant), and returns `true` if they are equal and `false` otherwise. For example, `5 is 5` evaluates to `true`, `5 is 3` to false, and `5 is #high` throws an error. Variants can be compared across types, so `#high` will always equal `#high` regardless of if it comes from `Person.trusts.Other.amount` or `Person.admires.Other.amount` |
-| `for all _` | `for all Other, Other.likes.Person` | Evaluates to `true` only if its operand evaluates to `true` for every possible value of `_`, which means every actor in the world. In the example, every actor must like `Person` for it to evaluate to `true`.<br />**Warning:** This cares about *every* entity. If there is a house, it will get checked as well. Consider adding an `a_person` trait relation so you can use the following instead: `for all Other, Other.is.a_person and Other.likes.Person`. TODO: allow for comparisons between actors to exclude self-comparisons. |
+| `for all _` | `for all Other, Other.likes.Person` | Evaluates to `true` only if its operand evaluates to `true` for every possible value of `_`, which means every actor in the world. In the example, every actor must like `Person` for it to evaluate to `true`.<br />**Warning:** This cares about *every* entity. If there is a house, it will get checked as well. Consider adding an `a_person` trait relation so you can use the following instead: `for all Other, Other.is.a_person and Other.likes.Person`. If there is not a relevant relation from the actor to itself, this will also evaluate to `false`. Consider manually excluding this case as such: `for all Other, (@Person is @Other) or (Other.is.a_person and Other.likes.Person)`. |
 | `any _ where` | `any Other where Other.likes.Person` | Evaluates to `true` if its operand evaluates to `true` for any possible value of `_`, which means any actor in the world. In the example, any singular actor can like `Person` for the whole expression to evaluate to `true`. |
 | `count _ where` | `count Other where Other.likes.Person` | Counts the number of values of `_` for which its operand evaluates to `true` for. The example will count the number of people that like `Person`. |
 | Aggregations (`sum`, `average`, `min`, `max`) | `sum Person.is.rich.amount across Person where Person.is.rich` | Aggregate operators are designed to combine many numbers, and they take the form of `OP BODY across SYM where FILTER`. `OP` can be one of `sum`, `average`, `min`, or `max`, and it determines how the numbers are combined. `SYM` is the name of the variable that will be substituted for all actors, and behaves the same as the `_` in `for all _` queries. `BODY` describes what numbers to grab and is a normal expression that must evaluate to a number, such as `Person.is.rich.amount` in the example. `FILTER` must evaluate to a boolean, and is designed to limit which actors are summed together. In the example, people are only considered if they have the `rich` trait, which is actually necessary for the statement to work at all. In fact, **the filter in general is required by design.** You can read more about this in the following [Appeasing the Type Checker](#appeasing-the-type-checker) section. |
@@ -534,7 +534,7 @@ delete it with `delete self`, etc. as I would if it was explicitly referenced.
 
 ## Field Types
 
-There are currently just two types a field can be:
+There are currently three types a field can be:
 
 - **Numeric ranges:** A field can be defined as a numeric range, such as
 `0..10`. This means that the field can take on any value between 0 and 10,
@@ -545,8 +545,15 @@ such as `calm | tense | furious`. This means that the field can only take on
 one of those three values. If you are familiar with other programming
 languages, this is essentially an `enum`. When assigning to or accessing this
 field, to avoid collisions with sentences, the language requires you prefix the
-value with a "#". For example, `Person.trusts.Other { level: #high }` or
+value with a "#". For example, `alice.trusts.bob { level: #high }` or
 `Person.trusts.Other.level is #high`.
+- **Agent References:** A field can reference an agent in the world, and will
+be type checked upon world load to make sure the agent exists or the binding is
+valid. Specify this by just using "agent" as the field type. When assigning to
+or accessing this field, to avoid collisions with sentences, the language
+requires you to prefix the value with a "@". For example,
+`alice.is_weary_of.bob { rumor_spreader: @michelle }` or
+`alice.is_weary_of.bob.rumor_spreader is @Other`.
 
 TODO: add support for booleans and strings as field types.
 

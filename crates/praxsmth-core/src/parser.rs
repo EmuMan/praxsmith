@@ -50,6 +50,7 @@ fn parse_value(pair: Pair<Rule>) -> Value {
         Rule::number => Value::Number(pair.as_str().parse().unwrap()),
         Rule::string => Value::String(parse_string(pair)),
         Rule::variant_single => Value::Variant(parse_variant_single(pair)),
+        Rule::actor_ref => Value::ActorRef(parse_actor_ref(pair)),
         Rule::sentence => Value::Variable(parse_sentence(pair)),
         _ => unreachable!(),
     }
@@ -84,7 +85,8 @@ fn parse_field_type(pair: Pair<Rule>) -> FieldType {
             FieldType::VariantList(variants)
         }
         Rule::ft_actor => {
-            todo!()
+            // ft_actor is just the keyword "actor", so it has no inner pairs
+            FieldType::ActorRef
         }
         _ => unreachable!(),
     }

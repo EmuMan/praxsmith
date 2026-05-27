@@ -1,5 +1,4 @@
 Major:
-- Allow for iterators over actors to exclude self (or just exclude self by default?)
 - Support for booleans and strings as field types
 - Use epsilons in all numeric operations
 - Escalating Argument and Gossip Chain examples

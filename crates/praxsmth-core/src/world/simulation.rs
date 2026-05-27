@@ -440,6 +440,7 @@ pub fn get_available_actions(world: &World, actor_id: &str) -> Result<Vec<Action
     let actor = world
         .get_actor(actor_id)
         .with_context(|| format!("actor {} not found", actor_id))?;
+
     let mut available_actions = Vec::new();
 
     for (edge, relation) in world.iter_actor_relations(actor) {
@@ -451,15 +452,23 @@ pub fn get_available_actions(world: &World, actor_id: &str) -> Result<Vec<Action
                     .with_context(|| {
                         format!("type {} not found for practice action", relation.type_name)
                     })?;
-                let RelationTypeData::Practice { actions, .. } = &relation_type.data else {
+                let RelationTypeData::Practice {
+                    actions, params, ..
+                } = &relation_type.data
+                else {
                     bail!(
                         "type {} data is not practice for action lookup",
                         relation.type_name
                     );
                 };
                 'action_loop: for (i, action) in actions.iter().enumerate() {
-                    let action_for = World::resolve_binding_or_same(&action.for_actor, bindings);
-                    if action_for != actor_id {
+                    let for_index = params.iter().position(|p| p == &action.for_actor).with_context(|| {
+                        format!(
+                            "for_actor {} not found in practice parameters for action {} of practice {}",
+                            action.for_actor, action.name, relation_type.name
+                        )
+                    })?;
+                    if edge.index != for_index {
                         continue;
                     }
                     for condition in &action.conditions {

@@ -95,6 +95,7 @@ pub struct PracticeAction {
 pub enum FieldType {
     NumberRange(f64, f64),
     VariantList(Vec<String>),
+    ActorRef,
 }
 
 impl fmt::Display for FieldType {
@@ -102,6 +103,7 @@ impl fmt::Display for FieldType {
         match self {
             FieldType::NumberRange(start, end) => write!(f, "{}..{}", start, end),
             FieldType::VariantList(variants) => write!(f, "{}", variants.join(" | ")),
+            FieldType::ActorRef => write!(f, "ActorRef"),
         }
     }
 }

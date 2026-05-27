@@ -110,6 +110,7 @@ pub enum ResultType {
     Number,
     String,
     Variant,
+    ActorRef,
 }
 
 impl ResultType {
@@ -128,6 +129,7 @@ impl fmt::Display for ResultType {
             ResultType::Number => write!(f, "Number"),
             ResultType::String => write!(f, "String"),
             ResultType::Variant => write!(f, "Variant"),
+            ResultType::ActorRef => write!(f, "ActorRef"),
         }
     }
 }
@@ -174,7 +176,13 @@ fn type_check_helper(
             Value::Boolean(_) => Ok(ResultType::empty_boolean()),
             Value::Variant(_) => Ok(ResultType::Variant),
             Value::String(_) => Ok(ResultType::String),
-            Value::ActorRef(_) => todo!(),
+            Value::ActorRef(r) => {
+                if valid_actors.is_valid(r) {
+                    Ok(ResultType::ActorRef)
+                } else {
+                    bail!("actor {} is not in scope", r)
+                }
+            }
             Value::Variable(sentence) => type_check_query(
                 Query::parse(world, sentence, bindings)?,
                 world,
@@ -401,6 +409,7 @@ fn type_check_query(
             match field {
                 FieldType::NumberRange(..) => Ok(ResultType::Number),
                 FieldType::VariantList(..) => Ok(ResultType::Variant),
+                FieldType::ActorRef => Ok(ResultType::ActorRef),
             }
         }
         Query::Unfielded(relation_query) => {

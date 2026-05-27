@@ -1,0 +1,6 @@
+actor alice as "Alice"
+actor bob as "Bob"
+
+// Note how only the top one is an available action!
+practice.test.alice.alice
+practice.test.alice.bob

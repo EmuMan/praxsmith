@@ -134,7 +134,7 @@ impl Expression {
                 Value::Boolean(b) => Ok(Constant::Boolean(*b)),
                 Value::Variant(v) => Ok(Constant::Variant(v.clone())),
                 Value::String(s) => Ok(Constant::String(s.clone())),
-                Value::ActorRef(_) => todo!(),
+                Value::ActorRef(r) => Ok(Constant::ActorRef(bindings.get_or_same(r))),
                 Value::Variable(sentence) => Query::parse(world, sentence, bindings)?
                     .apply_bindings(bindings)
                     .evaluate_in_world(world)

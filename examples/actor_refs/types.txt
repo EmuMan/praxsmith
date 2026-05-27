@@ -1,0 +1,14 @@
+practice test (Actor, Other) {
+  actions: [
+    {
+      for: Actor
+      name: "The Same!"
+      conditions: [
+        @Actor is @Other
+      ]
+      outcomes: [
+        broadcast "[Actor] is [Other]!"
+      ]
+    }
+  ]
+}
