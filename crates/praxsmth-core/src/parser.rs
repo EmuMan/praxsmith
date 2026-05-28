@@ -23,8 +23,33 @@ pub mod world;
 struct PraxsmthParser;
 
 fn parse_string(pair: Pair<Rule>) -> String {
-    // pair is Rule::string
-    pair.as_str().trim_matches('"').to_string()
+    // pair is Rule::string; its single inner is Rule::string_inner
+    let raw = pair.into_inner().next().unwrap().as_str();
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next().unwrap() {
+            '"' => out.push('"'),
+            '\\' => out.push('\\'),
+            '/' => out.push('/'),
+            'b' => out.push('\u{0008}'),
+            'f' => out.push('\u{000C}'),
+            'n' => out.push('\n'),
+            'r' => out.push('\r'),
+            't' => out.push('\t'),
+            'u' => {
+                let hex: String = (&mut chars).take(4).collect();
+                let cp = u32::from_str_radix(&hex, 16).unwrap();
+                out.push(char::from_u32(cp).unwrap());
+            }
+            _ => unreachable!(), // grammar guarantees valid escape
+        }
+    }
+    out
 }
 
 fn parse_variant_single(pair: Pair<Rule>) -> String {

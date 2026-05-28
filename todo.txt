@@ -1,8 +1,6 @@
 Major:
 - Relationship list in debug window
-- Make sure relationships can't be duplicate
-- Implement `get_type_or_primary` when applicable to allow lookups by backwards edge
-- Proper string parsing (escaped quotes don't really work)
+- Make sure relationships can't be duplicate (remove old ones when adding new ones)
 
 Meh:
 - Free variables creating actions?
