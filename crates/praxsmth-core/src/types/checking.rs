@@ -466,7 +466,7 @@ fn type_check_query(
 
             let relation_type = world
                 .get_relation_type_map()
-                .get_type_or_primary(relation_query.type_name())
+                .get_type(relation_query.type_name())
                 .unwrap();
 
             let field = relation_type.fields.get(&field_name).with_context(|| {
@@ -706,7 +706,7 @@ fn type_check_effect(
 
             let relation_type = world
                 .get_relation_type_map()
-                .get_type_or_primary(query.relation_query().type_name())
+                .get_type(query.relation_query().type_name())
                 .unwrap();
 
             let mut unprocessed_field_names: HashSet<String> =

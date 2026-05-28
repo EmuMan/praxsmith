@@ -1,4 +1,4 @@
-directional dislikes / is_disliked_by {
+directional dislikes {
   reason: string
 }
 

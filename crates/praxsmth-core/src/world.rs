@@ -955,13 +955,6 @@ impl World {
         to_id: &str,
         type_id: &str,
     ) -> Result<Option<(&ActorToRelation, &Relation)>> {
-        // If the edge is a complement, perform a search on the primary type
-        // with the from and to reversed. This allows us to find the edge
-        // regardless of which direction it's referred to as.
-        if let Some(primary_type_name) = self.relation_type_map.get_complement_entry(type_id) {
-            return self.get_directional(to_id, from_id, primary_type_name);
-        }
-
         // Error checking!
         let directional_ctx = || {
             format!(
@@ -1126,146 +1119,6 @@ impl World {
                         if (a1 == actor_1_id && a2 == actor_2_id)
                             || (a1 == actor_2_id && a2 == actor_1_id)
                         {
-                            return Some((edge, relation));
-                        }
-                    }
-                }
-            }
-            None
-        }))
-    }
-
-    /// Adds an evaluation to the world.
-    ///
-    /// An evaluation is a directed relation that connects two actors, but also
-    /// includes a "reason" field that provides additional context for the
-    /// relation. As with directional relations, the from actor is always at
-    /// index `0` in the relation's edges list, and the to actor is always at
-    /// index `1`.
-    ///
-    /// Returns an error if the type does not exist or is not an evaluation
-    /// type, if either actor does not exist, or if the fields do not match the
-    /// type definition. Otherwise, returns an associated `RelationCreated`
-    /// containing a handle to the newly created relation and a list of
-    /// mutations that were applied to the world as part of creating the
-    /// relation.
-    pub fn add_evaluation(
-        &mut self,
-        from_id: &str,
-        to_id: &str,
-        type_id: &str,
-        fields: Fields,
-        reason: &str,
-    ) -> Result<RelationCreated> {
-        let evaluation_ctx = || {
-            format!(
-                "adding evaluation {} from {} to {}",
-                type_id, from_id, to_id
-            )
-        };
-
-        self.expect_type(type_id, "evaluation", |d| {
-            matches!(d, RelationTypeData::Evaluation { .. })
-        })
-        .with_context(evaluation_ctx)?;
-
-        self.validate_type_fields(type_id, &fields)
-            .with_context(evaluation_ctx)?;
-
-        self.validate_actors(&[from_id, to_id])
-            .with_context(evaluation_ctx)?;
-
-        let mut created = self.add_relation(Relation {
-            type_name: type_id.to_string(),
-            edges: vec![
-                RelationToActor::Forward(from_id.to_string()),
-                RelationToActor::Backward(to_id.to_string()),
-            ],
-            fields,
-            data: RelationData::Evaluation {
-                actor_from: from_id.to_string(),
-                actor_to: to_id.to_string(),
-                reason: reason.to_string(),
-            },
-        });
-
-        let from_actor = self.actors.get_mut(from_id).unwrap();
-
-        created.mutations.push(WorldMutation::ActorEdgesUpdated {
-            actor_id: from_id.to_string(),
-            prior_edges: from_actor.edges.clone(),
-        });
-
-        from_actor.edges.push(ActorToRelation {
-            index: 0,
-            relation_type: type_id.to_string(),
-            relation_handle: created.handle.clone(),
-        });
-
-        let to_actor = self.actors.get_mut(to_id).unwrap();
-
-        created.mutations.push(WorldMutation::ActorEdgesUpdated {
-            actor_id: to_id.to_string(),
-            prior_edges: to_actor.edges.clone(),
-        });
-
-        to_actor.edges.push(ActorToRelation {
-            index: 1,
-            relation_type: type_id.to_string(),
-            relation_handle: created.handle.clone(),
-        });
-
-        Ok(created)
-    }
-
-    /// Retrieves an evaluation relation for the given from and to actors and
-    /// type, if it exists. Works on both primary and complement type names,
-    /// but requires correct ordering of arguments, with the from actor as
-    /// `from` and the to actor as `to`.
-    ///
-    /// Refer to `World::get_directional` for more details on how the lookup
-    /// handles type complements and ordering of arguments.
-    ///
-    /// Returns an error if the type does not exist or is not an evaluation
-    /// type, or if either of the actors do not exist. Otherwise, returns
-    /// `Ok(None)` if the actors do not have that relation, and
-    /// `Ok(Some((edge, relation)))` if they do.
-    pub fn get_evaluation(
-        &self,
-        from_id: &str,
-        to_id: &str,
-        type_id: &str,
-    ) -> Result<Option<(&ActorToRelation, &Relation)>> {
-        // If the edge is a complement, perform a search on the primary type
-        // with the from and to reversed. This allows us to find the edge
-        // regardless of which direction it's referred to as.
-        if let Some(primary_type_name) = self.relation_type_map.get_complement_entry(type_id) {
-            return self.get_evaluation(to_id, from_id, primary_type_name);
-        }
-
-        // Error checking!
-        let evaluation_ctx = || {
-            format!(
-                "getting evaluation {} from {} to {}",
-                type_id, from_id, to_id
-            )
-        };
-
-        self.expect_type(type_id, "evaluation", |d| {
-            matches!(d, RelationTypeData::Evaluation { .. })
-        })
-        .with_context(evaluation_ctx)?;
-
-        self.validate_actors(&[from_id, to_id])
-            .with_context(evaluation_ctx)?;
-
-        let from_actor = self.actors.get(from_id).unwrap();
-
-        Ok(from_actor.edges.iter().find_map(|edge| {
-            if edge.relation_type == type_id && edge.index == 0 {
-                if let Some(relation) = self.relation_store.get(edge.relation_handle.clone()) {
-                    if let RelationData::Evaluation { actor_to, .. } = &relation.data {
-                        if actor_to == to_id {
                             return Some((edge, relation));
                         }
                     }
@@ -1462,7 +1315,7 @@ impl World {
         from_id: &str,
         to_id: &str,
         edge_type_id: &str,
-        mut fields: Fields,
+        fields: Fields,
     ) -> Result<RelationCreated> {
         let edge_type = self
             .relation_type_map
@@ -1479,18 +1332,6 @@ impl World {
             }
             RelationTypeData::Reciprocal => {
                 self.add_reciprocal(from_id, to_id, edge_type_id, fields)
-            }
-            RelationTypeData::Evaluation { .. } => {
-                let reason = fields
-                    .get_mut("reason")
-                    .context("evaluation edges require a 'reason' field")?;
-                let Constant::String(reason_str) = reason else {
-                    bail!("evaluation edge 'reason' field must be a string");
-                };
-                // TODO: Definitely some way to avoid this clone...
-                let reason_string = reason_str.clone();
-                fields.remove("reason");
-                self.add_evaluation(from_id, to_id, edge_type_id, fields, &reason_string)
             }
             _ => bail!(
                 "edge type {} has unsupported variant {:?} for bidirectional declaration",
@@ -1522,9 +1363,6 @@ impl World {
                     self.get_directional(from_id, to_id, edge_type_name)
                 }
                 RelationTypeData::Reciprocal => self.get_reciprocal(from_id, to_id, edge_type_name),
-                RelationTypeData::Evaluation { .. } => {
-                    self.get_evaluation(from_id, to_id, edge_type_name)
-                }
                 _ => bail!(
                     "edge type {} has unsupported variant {:?} for binary relation retrieval",
                     edge_type_name,

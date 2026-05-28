@@ -1,7 +1,7 @@
 trait dead
 trait guilty
 
-directional hates / is_hated_by
+directional hates
 
 practice argue (Actor1, Actor2) {
   turn: actor

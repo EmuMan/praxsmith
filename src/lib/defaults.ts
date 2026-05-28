@@ -5,13 +5,11 @@ export const DEFAULT_TYPES = `
 emotion sad
 emotion happy
 
-exclusive directional is_in / contains
+exclusive directional is_in
 
 reciprocal is_married_to {
   since: 0..3000
 }
-
-evaluation likes / liked_by
 
 practice greet (Greeter, Greeted) {
   exclamation: string

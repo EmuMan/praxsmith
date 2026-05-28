@@ -1,13 +1,12 @@
 Major:
-- Expressions in set effect
-- Escalating Argument and Gossip Chain examples
-- README.md
 - Relationship list in debug window
 - Make sure relationships can't be duplicate
 - Implement `get_type_or_primary` when applicable to allow lookups by backwards edge
+- Proper string parsing (escaped quotes don't really work)
 
 Meh:
 - Free variables creating actions?
+- README.md
 
 Minor:
 - Perform certain operations (e.g. evaluate expression) by calling from world

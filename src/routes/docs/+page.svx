@@ -132,7 +132,7 @@ vary from type to type, but generally look like this (this goes in your type
 script):
 
 ```
-directional trusts / is_trusted_by
+directional trusts
 ```
 
 Any relation can have fields, which give more information on that particular
@@ -140,7 +140,7 @@ relation. For example, Alice may trust Bob more strongly than she does Carol.
 You could represent this by adding a "level" field to the relation:
 
 ```
-directional trusts / is_trusted_by {
+directional trusts {
   level: 0..10
 }
 ```
@@ -152,10 +152,9 @@ section below for more information on what fields can look like.
 
 > [!tip] Naming conventions
 > Naming relations is up to you, but I would **strongly recommend** following
-> conventional English verb patterns. Just as you would say "Alice trusts Bob"
-> and "Bob is trusted by Alice", you should name your relation
-> `trusts / is_trusted_by`. This makes reading and writing the world easier and
-> more intuitive.
+> conventional English verb patterns. Just as you would say "Alice trusts Bob",
+> you should name your relation `trusts`. This makes reading and writing the
+> world easier and more intuitive.
 
 After you define a relation, you can apply it to actors in your world script:
 
@@ -196,8 +195,8 @@ check:
 alice.trusts.bob
 ```
 
-This will return true if there is such a relationship, and false otherwise. The
-[Expressions](#expressions) section below describes how this is used by the
+This will return `true` if there is such a relationship, and `false` otherwise.
+The [Expressions](#expressions) section below describes how this is used by the
 type checker to ensure valid processing and default states, but it can also be
 used practically, as in the first goal example in [Goals](#goals) section
 above.
@@ -352,6 +351,7 @@ trait curious
 
 // Applying / querying
 michelle.is.curious
+Actor.is.curious
 ```
 
 Traits define a property that an actor can have. They only ever have one
@@ -367,6 +367,7 @@ emotion happy
 
 // Applying / querying
 michelle.feels.happy
+Actor.feels.happy
 ```
 
 Emotions define a short-lived feeling an actor can have. Similarly to traits,
@@ -382,25 +383,18 @@ be easily queried and displayed by the frontend for the player to see.
 
 ```
 // Defining
-directional trusts / is_trusted_by
-exclusive directional is_in / contains
+directional trusts
+exclusive directional is_in
 
 // Applying / querying
 alice.trusts.bob
-house.contains.michelle
+Actor.is_in.house
 ```
 
 Directional relations connect two actors asymmetrically. In the first example,
 Alice trusts Bob, but that does not necessarily mean that Bob trusts Alice.
 Most relations present this way, in which one character feels a certain way
 about another, but that feeling is not necessarily mutual.
-
-Praxsmith allows this type of relation to be accessed in both directions, which
-you can see being used in the second example. `michelle.is_in.house` and
-`house.contains.michelle` are two ways of expressing the same thing, and may be
-more convenient in different contexts. Adding one edge will automatically
-create and maintain a link to the other, and removing one will also remove the
-other.
 
 By adding `exclusive` to the type definition, you can make it so that the
 primary actor (in this case, Alice or Michelle) can only have one outgoing
@@ -412,34 +406,13 @@ such as them moving from one room to another. Without this, you would have to
 manually remove their old location relation every time they moved, which would
 get very tedious and is prone to error.
 
-## Evaluations
-
-```
-// Defining
-evaluation trusts / is_trusted_by
-
-// Applying / querying
-alice.trusts.bob
-bob.is_trusted_by.alice
-```
-
-Evaluations are just [directional relations](#directionals) with a mandatory
-`reason` field that is a string. This field is automatically added to the type,
-so you don't need to define it explicitly. This is intended to use when
-characters feel a certain way about another and want to express that reason in
-the frontend. You can see this in action in the
-[Gossip Chain example](#gossip-chain) below.
-
-> [!tip]
-> Evaluations **cannot be exclusive.**
-
 ## Reciprocals
 
 ```
 // Defining
 reciprocal is_married_to
 
-// Applying / querying
+// Applying / querying (both the following are equivalent)
 alice.is_married_to.bob
 bob.is_married_to.alice
 ```
@@ -461,7 +434,7 @@ make them feel happy:
 ```
 emotion happy
 
-exclusive directional is_in / contains
+exclusive directional is_in
 
 practice greet (Greeter, Greeted) {
   exclamation: string
@@ -507,7 +480,7 @@ Each practice provides a set of `actions` that allow actors involved in that
 practice to act. Each action will only be available if all of its conditions
 evaluate to `true`, as dictated by the mandatory `conditions` field.
 
-There are three other mandatory fields in actions:
+There are four mandatory fields in actions:
 - `for` - specifies which participant the action should be available for; in
 this case, greeting is an action available to the `Greeter`. You can only make
 an action available to one participant, so if you want another similar action,
@@ -515,6 +488,10 @@ you must write it explicitly with the participants flipped.
 - `name` - the display name of the practice, as it will appear to the player.
 You can insert the actual names of parameters here by putting them in square
 brackets, as shown in the example.
+- `conditions` - a list of expressions that must all evaluate to `true` for the
+action to be available. Anything guaranteed here will carry over as guarantees
+for outcomes; see the [Appeasing the Type Checker](#appeasing-the-type-checker)
+section for more information on how to use this to your advantage.
 - `outcomes` - detailed in [Action Outcomes](#action-outcomes).
 
 The example only has one action listed, but practices may have as many as they
@@ -625,13 +602,11 @@ satisfies one of his goals.
 emotion sad
 emotion happy
 
-exclusive directional is_in / contains
+exclusive directional is_in
 
 reciprocal is_married_to {
   since: 0..3000
 }
-
-evaluation likes / liked_by
 
 practice greet (Greeter, Greeted) {
   exclamation: string

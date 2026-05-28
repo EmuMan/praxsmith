@@ -48,16 +48,15 @@ fn parse_trait(pair: Pair<Rule>) -> RelationType {
 }
 
 fn parse_directional(pair: Pair<Rule>) -> RelationType {
-    // pair is Rule::t_directional: t_exclusive? ~ "directional" ~ var_name ~ var_name ~ field_brackets?
+    // pair is Rule::t_directional: t_exclusive? ~ "directional" ~ var_name ~ field_brackets?
     let mut inner = pair.into_inner();
 
     let first = inner.next().unwrap();
-    let (exclusive, forward_name) = if first.as_rule() == Rule::t_exclusive {
+    let (exclusive, type_id) = if first.as_rule() == Rule::t_exclusive {
         (true, inner.next().unwrap().as_str().to_string())
     } else {
         (false, first.as_str().to_string())
     };
-    let backward_name = inner.next().unwrap().as_str().to_string();
 
     let fields = if let Some(brackets) = inner.next() {
         parse_field_brackets(brackets)
@@ -66,12 +65,9 @@ fn parse_directional(pair: Pair<Rule>) -> RelationType {
     };
 
     RelationType {
-        name: forward_name,
+        name: type_id,
         fields,
-        data: RelationTypeData::Directional {
-            complement: backward_name,
-            exclusive,
-        },
+        data: RelationTypeData::Directional { exclusive },
     }
 }
 
@@ -92,29 +88,6 @@ fn parse_reciprocal(pair: Pair<Rule>) -> RelationType {
         name,
         fields,
         data: RelationTypeData::Reciprocal,
-    }
-}
-
-fn parse_evaluation(pair: Pair<Rule>) -> RelationType {
-    // pair is Rule::t_evaluation: "evaluation" ~ var_name ~ var_name ~ field_brackets?
-    let mut inner = pair.into_inner();
-    let forward_name = inner.next().unwrap().as_str().to_string();
-    let backward_name = inner.next().unwrap().as_str().to_string();
-
-    // Check if there's a field_brackets
-    let fields = if let Some(brackets) = inner.next() {
-        // brackets is Rule::field_brackets, contains field_def pairs
-        parse_field_brackets(brackets)
-    } else {
-        FieldTypes::new()
-    };
-
-    RelationType {
-        name: forward_name.clone(),
-        fields: fields.clone(),
-        data: RelationTypeData::Evaluation {
-            complement: backward_name.clone(),
-        },
     }
 }
 
@@ -349,7 +322,6 @@ pub fn parse_types(input_str: &str) -> Result<Vec<RelationType>, Error<Rule>> {
                 Rule::t_trait
                     | Rule::t_directional
                     | Rule::t_reciprocal
-                    | Rule::t_evaluation
                     | Rule::t_emotion
                     | Rule::t_practice
             )
@@ -358,7 +330,6 @@ pub fn parse_types(input_str: &str) -> Result<Vec<RelationType>, Error<Rule>> {
             Rule::t_trait => parse_trait(pair),
             Rule::t_directional => parse_directional(pair),
             Rule::t_reciprocal => parse_reciprocal(pair),
-            Rule::t_evaluation => parse_evaluation(pair),
             Rule::t_emotion => parse_emotion(pair),
             Rule::t_practice => parse_practice(pair, &practice_pratt),
             _ => unreachable!(),

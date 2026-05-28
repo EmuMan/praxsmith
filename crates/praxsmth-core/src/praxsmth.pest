@@ -96,7 +96,6 @@ type_definition = _{
     t_trait
   | t_directional
   | t_reciprocal
-  | t_evaluation
   | t_emotion
   | t_practice
 }
@@ -106,13 +105,10 @@ t_trait = { "trait" ~ var_name ~ field_brackets? }
 
 // Directional rules
 t_exclusive   = { "exclusive" }
-t_directional = { t_exclusive? ~ "directional" ~ var_name ~ "/" ~ var_name ~ field_brackets? }
+t_directional = { t_exclusive? ~ "directional" ~ var_name ~ field_brackets? }
 
 // Reciprocal rules
 t_reciprocal = { "reciprocal" ~ var_name ~ field_brackets? }
-
-// Evaluation rules
-t_evaluation = { "evaluation" ~ var_name ~ "/" ~ var_name ~ field_brackets? }
 
 // Emotion rules
 t_emotion = { "emotion" ~ var_name ~ field_brackets? }

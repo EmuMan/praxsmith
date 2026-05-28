@@ -125,7 +125,6 @@ impl Query {
                 match &relation_type.data {
                     RelationTypeData::Directional { .. } => {}
                     RelationTypeData::Reciprocal { .. } => {}
-                    RelationTypeData::Evaluation { .. } => {}
                     _ => bail!("type {} is not a binary relation", relation_name),
                 }
                 Query::try_new_with_fields(
