@@ -669,6 +669,16 @@ impl World {
 
         self.validate_actor(actor_id).with_context(trait_ctx)?;
 
+        let existing = self
+            .get_trait(actor_id, type_id)
+            .with_context(|| {
+                format!(
+                    "checking for existing trait {} on actor {}",
+                    type_id, actor_id
+                )
+            })?
+            .map(|(edge, _)| edge.relation_handle.clone());
+
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             sentence: Sentence::from_strs(&[actor_id, "is", type_id]),
@@ -691,6 +701,17 @@ impl World {
             relation_type: type_id.to_string(),
             relation_handle: created.handle.clone(),
         });
+
+        if let Some(existing) = existing {
+            // Remove the old trait edge for this actor, since an actor can only have one trait edge of a given type at a time
+            let old_removal_mutations = self.remove_relation(existing).with_context(|| {
+                format!(
+                    "removing existing trait relation {} on {} for new relation",
+                    type_id, actor_id
+                )
+            })?;
+            created.mutations.extend(old_removal_mutations);
+        }
 
         Ok(created)
     }
@@ -755,6 +776,8 @@ impl World {
             .with_context(emotion_ctx)?;
 
         self.validate_actor(actor_id).with_context(emotion_ctx)?;
+
+        // Don't need to check for existing since emotions are exclusive anyways.
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
@@ -868,28 +891,42 @@ impl World {
         self.validate_actors(&[from_id, to_id])
             .with_context(directional_ctx)?;
 
-        let exclusive = matches!(
-            self.relation_type_map.get_type(type_id),
-            Some(t) if matches!(&t.data, RelationTypeData::Directional { exclusive: true, .. })
-        );
+        let mut existing = self
+            .get_directional(from_id, to_id, type_id)
+            .with_context(|| {
+                format!(
+                    "checking for existing directional {} from {} to {}",
+                    type_id, from_id, to_id
+                )
+            })?
+            .map(|(edge, _)| edge.relation_handle.clone());
 
-        let existing = if exclusive {
-            self.actors
-                .get(from_id)
-                .into_iter()
-                .flat_map(|a| a.edges.iter())
-                .find_map(|edge| {
-                    // From actors are always index zero, so if this actor has
-                    // an index zero edge going to this type then it's the one
-                    // we want to replace
-                    if edge.relation_type == type_id && edge.index == 0 {
-                        return Some(edge.relation_handle.clone());
-                    }
-                    None
-                })
-        } else {
-            None
-        };
+        if existing.is_none() {
+            // We only really care about checking for this case if the edge
+            // isn't overriding one that already exists anyways.
+            let exclusive = matches!(
+                self.relation_type_map.get_type(type_id),
+                Some(t) if matches!(&t.data, RelationTypeData::Directional { exclusive: true, .. })
+            );
+
+            existing = if exclusive {
+                self.actors
+                    .get(from_id)
+                    .into_iter()
+                    .flat_map(|a| a.edges.iter())
+                    .find_map(|edge| {
+                        // From actors are always index zero, so if this actor has
+                        // an index zero edge going to this type then it's the one
+                        // we want to replace
+                        if edge.relation_type == type_id && edge.index == 0 {
+                            return Some(edge.relation_handle.clone());
+                        }
+                        None
+                    })
+            } else {
+                None
+            };
+        }
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
@@ -908,7 +945,7 @@ impl World {
         if let Some(existing) = existing {
             let removal_mutations = self
                 .remove_relation(existing)
-                .with_context(|| format!("removing existing exclusive directional relation from {} for new relation from {} to {}", from_id, from_id, to_id))?;
+                .with_context(|| format!("removing existing exclusive directional relation {} from {} for new relation from {} to {}", type_id, from_id, from_id, to_id))?;
             created.mutations.extend(removal_mutations);
         }
 
@@ -1034,6 +1071,16 @@ impl World {
         self.validate_actors(&[actor_1_id, actor_2_id])
             .with_context(reciprocal_ctx)?;
 
+        let existing = self
+            .get_reciprocal(actor_1_id, actor_2_id, type_id)
+            .with_context(|| {
+                format!(
+                    "checking for existing reciprocal {} between {} and {}",
+                    type_id, actor_1_id, actor_2_id
+                )
+            })?
+            .map(|(edge, _)| edge.relation_handle.clone());
+
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
             sentence: Sentence::from_strs(&[actor_1_id, type_id, actor_2_id]),
@@ -1073,6 +1120,13 @@ impl World {
             relation_type: type_id.to_string(),
             relation_handle: created.handle.clone(),
         });
+
+        if let Some(existing) = existing {
+            let removal_mutations = self
+                .remove_relation(existing)
+                .with_context(|| format!("removing existing reciprocal relation {} between {} and {} for new relation between them", type_id, actor_1_id, actor_2_id))?;
+            created.mutations.extend(removal_mutations);
+        }
 
         Ok(created)
     }
@@ -1178,6 +1232,16 @@ impl World {
         self.validate_actors(&participant_ids)
             .with_context(practice_ctx)?;
 
+        let existing = self
+            .get_practice(participant_ids.clone(), type_id)
+            .with_context(|| {
+                format!(
+                    "checking for existing practice {} with participants {:?}",
+                    type_id, participant_ids
+                )
+            })?
+            .map(|(edge, _)| edge.relation_handle.clone());
+
         let type_def = self
             .relation_type_map
             .get_type(type_id)
@@ -1236,6 +1300,13 @@ impl World {
                 relation_type: type_id.to_string(),
                 relation_handle: created.handle.clone(),
             });
+        }
+
+        if let Some(existing) = existing {
+            let removal_mutations = self
+                .remove_relation(existing)
+                .with_context(|| format!("removing existing practice relation {} with participants {:?} for new relation", type_id, participant_ids))?;
+            created.mutations.extend(removal_mutations);
         }
 
         Ok(created)

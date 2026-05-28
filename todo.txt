@@ -1,5 +1,4 @@
 Major:
-- Remove old duplicate relations when adding new ones
 - Add examples to docs
 
 Meh:
