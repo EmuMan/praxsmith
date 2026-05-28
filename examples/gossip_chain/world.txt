@@ -1,0 +1,19 @@
+actor isabella as "Isabella"
+actor adrian as "Adrian"
+actor stella as "Stella"
+actor beth as "Beth"
+
+adrian.is.gullible {
+  amount: #high
+}
+
+stella.is.gullible {
+  amount: #high
+}
+
+isabella.dislikes.beth {
+  reason: "she was talking to the person I like."
+}
+
+practice.gossip.isabella.adrian.beth
+practice.gossip.adrian.stella.beth

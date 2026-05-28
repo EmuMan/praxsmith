@@ -24,7 +24,7 @@ practice greet (Greeter, Greeted) {
       ]
       outcomes: [
         say self.exclamation
-        set Greeted.feels.happy
+        create Greeted.feels.happy
         broadcast "[Greeter]'s greeting has made [Greeted] happy!"
         delete self
       ]
@@ -41,7 +41,7 @@ practice move (Actor, From, To) {
         Actor.is_in.From
       ]
       outcomes: [
-        set Actor.is_in.To
+        create Actor.is_in.To
         broadcast "[Actor] moves from [From] to [To]."
       ]
     }

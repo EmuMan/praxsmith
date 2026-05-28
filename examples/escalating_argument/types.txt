@@ -1,0 +1,119 @@
+trait dead
+trait guilty
+
+directional hates / is_hated_by
+
+practice argue (Actor1, Actor2) {
+  turn: actor
+  intensity: low | medium | high
+  actions: [
+    {
+      for: Actor1
+      name: "Argue with [Actor2]"
+      conditions: [
+        self.turn is @Actor1
+        self.intensity is #low
+      ]
+      outcomes: [
+        say "I'm right!"
+        set self.turn to @Actor2
+      ]
+    }
+    {
+      for: Actor1
+      name: "Personally attack [Actor2]"
+      conditions: [
+        self.turn is @Actor1
+        self.intensity is #medium
+      ]
+      outcomes: [
+        say "You're a LOSER!!!"
+        set self.turn to @Actor2
+      ]
+    }
+    {
+      for: Actor1
+      name: "SHOUT AT [Actor2]"
+      conditions: [
+        self.turn is @Actor1
+        self.intensity is #high
+      ]
+      outcomes: [
+        say "I HATE YOU!!!!"
+        set self.turn to @Actor2
+      ]
+    }
+    {
+      for: Actor2
+      name: "Argue with [Actor1]"
+      conditions: [
+        self.turn is @Actor2
+        self.intensity is #low
+      ]
+      outcomes: [
+        say "No you're not!"
+        set self.turn to @Actor1
+        increase self.intensity by 1
+      ]
+    }
+    {
+      for: Actor2
+      name: "Fight back against [Actor1]"
+      conditions: [
+        self.turn is @Actor2
+        self.intensity is #medium
+      ]
+      outcomes: [
+        say "Says YOU!!!"
+        set self.turn to @Actor1
+        increase self.intensity by 1
+      ]
+    }
+    {
+      for: Actor2
+      name: "Agree to disagree with [Actor1]"
+      conditions: [
+        self.turn is @Actor2
+        self.intensity is #high
+      ]
+      outcomes: [
+        say "Let's agree to disagree."
+        delete self
+      ]
+    }
+    {
+      for: Actor2
+      name: "Never forgive [Actor1]."
+      conditions: [
+        self.turn is @Actor2
+        self.intensity is #high
+      ]
+      outcomes: [
+        say "I'll remember this."
+        create Actor2.hates.Actor1
+        create practice.kill.Actor2.Actor1
+        delete self
+      ]
+    }
+  ]
+}
+
+practice kill (Killer, Victim) {
+  actions: [
+    {
+      for: Killer
+      name: "Kill [Victim]."
+      conditions: [
+        Killer.hates.Victim
+        not Victim.is.dead
+      ]
+      outcomes: [
+        create Victim.is.dead
+        create Killer.is.guilty
+        broadcast "[Victim] has met their end."
+        deactivate @Victim
+        delete self
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@ use crate::{
     world::{World, bindings::Bindings},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Value(Value),
     /// Boolean, Boolean -> Boolean

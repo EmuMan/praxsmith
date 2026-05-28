@@ -1,0 +1,29 @@
+directional dislikes / is_disliked_by {
+  reason: string
+}
+
+trait gullible {
+  amount: low | medium | high
+}
+
+practice gossip (From, To, About) {
+  actions: [
+    {
+      for: From
+      name: "Gossip to [To] about [About]"
+      conditions: [
+        // i dislike them...
+        From.dislikes.About
+        // ... but they don't yet.
+        not To.dislikes.About
+        To.is.gullible and To.is.gullible.amount is #high
+      ]
+      outcomes: [
+        say "[To], I don't like [About] because " + From.dislikes.About.reason
+        create To.dislikes.About {
+          reason: @From + " told me: \"" + From.dislikes.About.reason + "\""
+        }
+      ]
+    }
+  ]
+}

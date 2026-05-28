@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use pest::Parser;
 use pest::error::Error;
 use pest::iterators::Pair;
 use pest::pratt_parser::PrattParser;
 
-use crate::parser::world::parse_declaration;
+use crate::expressions::Expression;
 use crate::parser::{
     PraxsmthParser, Rule, build_expression_pratt, parse_expression, parse_field_type,
     parse_sentence, parse_string,
@@ -136,6 +138,25 @@ fn parse_emotion(pair: Pair<Rule>) -> RelationType {
     }
 }
 
+pub fn parse_effect_brackets(
+    pair: Pair<Rule>,
+    pratt: &PrattParser<Rule>,
+) -> HashMap<String, Expression> {
+    // pair is Rule::effect_create_brackets: "{" ~ effect_create_field_asgn* ~ "}"
+
+    let mut fields = HashMap::new();
+
+    for field_asgn in pair.into_inner() {
+        // field_def is Rule::effect_create_field_asgn: var_name ~ ":" ~ expression
+        let mut field_inner = field_asgn.into_inner();
+        let field_name = field_inner.next().unwrap().as_str().to_string();
+        let field_value = parse_expression(field_inner.next().unwrap(), pratt);
+        fields.insert(field_name, field_value);
+    }
+
+    fields
+}
+
 pub fn parse_effect(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Effect {
     // pair is one of the effect_* rules
     let mut inner = pair.clone().into_inner();
@@ -166,16 +187,23 @@ pub fn parse_effect(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Effect {
             let sentence_pair = inner.next().unwrap();
             Effect::Delete(parse_sentence(sentence_pair))
         }
-        Rule::effect_set => {
-            // "set" ~ w_declaration
-            let decl_pair = inner.next().unwrap();
-            Effect::Set(parse_declaration(decl_pair))
+        Rule::effect_create => {
+            // "create" ~ sentence ~ effect_create_brackets?
+            let sentence_pair = inner.next().unwrap();
+            let brackets = match inner.next() {
+                Some(brackets_pair) => {
+                    // brackets_pair is Rule::effect_create_brackets
+                    parse_effect_brackets(brackets_pair, pratt)
+                }
+                None => HashMap::new(),
+            };
+            Effect::Create(parse_sentence(sentence_pair), brackets)
         }
-        Rule::effect_update => {
-            // "update" ~ sentence ~ "to" ~ expression
+        Rule::effect_set => {
+            // "set" ~ sentence ~ "to" ~ expression
             let sentence_pair = inner.next().unwrap();
             let value_pair = inner.next().unwrap();
-            Effect::Update(
+            Effect::Set(
                 parse_sentence(sentence_pair),
                 parse_expression(value_pair, pratt),
             )

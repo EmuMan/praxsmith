@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
 use anyhow::{Context, Result, bail};
 
@@ -194,7 +194,7 @@ fn type_check_helper(
                 }
             }
             Value::Variable(sentence) => type_check_query(
-                Query::parse(world, sentence, bindings)?,
+                &Query::parse(world, sentence, bindings)?,
                 world,
                 guarantees,
                 valid_actors,
@@ -445,7 +445,7 @@ fn type_check_helper(
 /// exist, while unfielded queries introduce a true-guarantee for themselves
 /// because they act as an existence check.
 fn type_check_query(
-    query: Query,
+    query: &Query,
     world: &World,
     guarantees: &Guarantees,
     valid_actors: &ValidActors,
@@ -466,7 +466,7 @@ fn type_check_query(
 
             let relation_type = world
                 .get_relation_type_map()
-                .get_type(relation_query.type_name())
+                .get_type_or_primary(relation_query.type_name())
                 .unwrap();
 
             let field = relation_type.fields.get(&field_name).with_context(|| {
@@ -490,7 +490,7 @@ fn type_check_query(
             // Unfielded queries always return booleans, and we can introduce
             // a true-guarantee for it because it acts as an existence check.
             Ok(ResultType::Boolean {
-                true_guarantees: Guarantees::new(vec![relation_query]),
+                true_guarantees: Guarantees::new(vec![relation_query.clone()]),
                 false_guarantees: Guarantees::default(),
             })
         }
@@ -683,25 +683,110 @@ fn type_check_effect(
                 ),
             }
         }
-        Effect::Update(sentence, expr) => {
+        Effect::Create(sentence, field_asgns) => {
             let bindings = match self_id {
                 Some(self_id) => Bindings::self_only(self_id.clone()),
                 None => Bindings::default(),
             };
-            let field_type = type_check_query(
-                Query::parse(world, sentence, &bindings)?,
+            let query = Query::parse(world, sentence, &bindings)
+                .with_context(|| format!("parsing set effect query: {}", sentence))?;
+            if matches!(query, Query::Fielded(..)) {
+                bail!(
+                    "create effects must specify a relation without a field, got {}",
+                    sentence
+                );
+            }
+            type_check_query(
+                &query,
                 world,
                 guarantees,
                 &ValidActors::new(valid_actors.to_vec()),
             )
-            .with_context(|| format!("type checking update query: {}", sentence))?;
+            .with_context(|| format!("type checking create effect query: {}", sentence))?;
+
+            let relation_type = world
+                .get_relation_type_map()
+                .get_type_or_primary(query.relation_query().type_name())
+                .unwrap();
+
+            let mut unprocessed_field_names: HashSet<String> =
+                relation_type.fields.iter_names().cloned().collect();
+
+            for (field_name, expr) in field_asgns.iter() {
+                let field_type = relation_type.fields.get(field_name).with_context(|| {
+                    format!(
+                        "field {} does not exist on type {}",
+                        field_name, relation_type.name
+                    )
+                })?;
+                if !unprocessed_field_names.contains(field_name) {
+                    bail!(
+                        "duplicate assignment for field {} on type {} in create effect",
+                        field_name,
+                        relation_type.name
+                    );
+                }
+                let expr_type = type_check(expr, world, extra_bindings, self_id, Some(guarantees))
+                    .with_context(|| {
+                        format!(
+                            "type checking create effect expression for field {}: {}",
+                            field_name, expr
+                        )
+                    })?;
+                match (field_type, expr_type) {
+                    (FieldType::NumberRange { .. }, ResultType::Number)
+                    | (FieldType::VariantList { .. }, ResultType::Variant)
+                    | (FieldType::ActorRef, ResultType::ActorRef)
+                    | (FieldType::String, ResultType::String)
+                    | (FieldType::Boolean, ResultType::Boolean { .. }) => {}
+                    (field_type, expr_type) => bail!(
+                        "type mismatch for field {}: expected {}, got {}",
+                        field_name,
+                        field_type,
+                        expr_type
+                    ),
+                }
+                unprocessed_field_names.remove(field_name);
+            }
+
+            if !unprocessed_field_names.is_empty() {
+                bail!(
+                    "missing assignments for fields {} in type {} in create effect",
+                    unprocessed_field_names
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                    relation_type.name
+                );
+            }
+
+            Ok(())
+        }
+        Effect::Set(sentence, expr) => {
+            let bindings = match self_id {
+                Some(self_id) => Bindings::self_only(self_id.clone()),
+                None => Bindings::default(),
+            };
+            let query = Query::parse(world, sentence, &bindings)
+                .with_context(|| format!("parsing set effect query: {}", sentence))?;
+            if matches!(query, Query::Unfielded(..)) {
+                bail!("set effects must specify a field, got {}", sentence);
+            }
+            let field_type = type_check_query(
+                &query,
+                world,
+                guarantees,
+                &ValidActors::new(valid_actors.to_vec()),
+            )
+            .with_context(|| format!("type checking set effect query: {}", sentence))?;
 
             let expr_type = type_check(expr, world, extra_bindings, self_id, Some(guarantees))
-                .with_context(|| format!("type checking update expression: {}", expr))?;
+                .with_context(|| format!("type checking set effect expression: {}", expr))?;
 
             if std::mem::discriminant(&field_type) != std::mem::discriminant(&expr_type) {
                 bail!(
-                    "expected update expression {} to be of type {}, but got {}",
+                    "expected set effect expression {} to be of type {}, but got {}",
                     expr,
                     field_type,
                     expr_type
@@ -715,8 +800,13 @@ fn type_check_effect(
                 Some(self_id) => Bindings::self_only(self_id.clone()),
                 None => Bindings::default(),
             };
+            let query = Query::parse(world, sentence, &bindings)
+                .with_context(|| format!("parsing increment effect query: {}", sentence))?;
+            if matches!(query, Query::Unfielded(..)) {
+                bail!("increment effects must specify a field, got {}", sentence);
+            }
             let result_type = type_check_query(
-                Query::parse(world, sentence, &bindings)?,
+                &query,
                 world,
                 guarantees,
                 &ValidActors::new(valid_actors.to_vec()),

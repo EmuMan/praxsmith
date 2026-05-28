@@ -58,8 +58,8 @@ pub enum Effect {
     Activate(Expression),
     Deactivate(Expression),
     Delete(Sentence),
-    Set(Declaration),
-    Update(Sentence, Expression),
+    Create(Sentence, HashMap<String, Expression>),
+    Set(Sentence, Expression),
     Increase(Sentence, f64),
     Cycle(Sentence, f64),
 }
@@ -72,8 +72,14 @@ impl fmt::Display for Effect {
             Effect::Activate(expr) => write!(f, "activate {}", expr),
             Effect::Deactivate(expr) => write!(f, "deactivate {}", expr),
             Effect::Delete(sentence) => write!(f, "delete {}", sentence),
-            Effect::Set(declaration) => write!(f, "set {}", declaration),
-            Effect::Update(sentence, expr) => write!(f, "update {} to {}", sentence, expr),
+            Effect::Create(sentence, field_asgns) => {
+                let field_asgns_str: Vec<_> = field_asgns
+                    .iter()
+                    .map(|(name, expr)| format!("{}: {}", name, expr))
+                    .collect();
+                write!(f, "create {} {{{}}}", sentence, field_asgns_str.join(", "))
+            }
+            Effect::Set(sentence, expr) => write!(f, "update {} to {}", sentence, expr),
             Effect::Increase(sentence, amount) => {
                 write!(f, "increase {} by {}", sentence, amount)
             }
@@ -231,31 +237,91 @@ fn process_delete(world: &mut WorldTxn, sentence: &Sentence, bindings: &Bindings
         .with_context(|| format!("removing relation in delete outcome {}", sentence))
 }
 
-fn process_update(
+fn process_create(
     world: &mut WorldTxn,
     sentence: &Sentence,
-    expr: &Expression,
+    field_asgns: &HashMap<String, Expression>,
     bindings: &Bindings,
-) -> Result<()> {
-    let query = Query::parse(world.inner(), sentence, bindings)
-        .with_context(|| format!("processing update outcome {}", sentence))?;
-    let Query::Fielded(relation_query, field_name) = &query else {
+) -> Result<RelationHandle> {
+    let query = Query::parse(world.inner(), &sentence, bindings)
+        .with_context(|| format!("processing create effect for sentence {}", sentence))?;
+
+    let Query::Unfielded(relation_query) = &query else {
         bail!(
-            "update outcome must specify a field to update: {}",
+            "extra parameters in create effect for sentence {}",
             sentence
         );
     };
 
     let relation_query = relation_query.apply_bindings(bindings);
 
+    let evaluated_fields = field_asgns
+        .iter()
+        .map(|(name, expr)| {
+            let value = expr.evaluate(world.inner(), bindings).with_context(|| {
+                format!(
+                    "evaluating field assignment expression for create effect for sentence {}: {}",
+                    sentence, expr
+                )
+            })?;
+            Ok((name.clone(), value))
+        })
+        .collect::<Result<HashMap<String, Constant>>>()?;
+
+    match relation_query {
+        RelationQuery::Trait { actor, trait_name } => {
+            world.add_trait(actor.as_literal()?, &trait_name, evaluated_fields)
+        }
+        RelationQuery::Emotion {
+            actor,
+            emotion_name,
+        } => world.add_emotion(actor.as_literal()?, &emotion_name, evaluated_fields),
+        RelationQuery::Binary {
+            actor_1,
+            actor_2,
+            type_name,
+        } => world.add_binary_relation(
+            actor_1.as_literal()?,
+            actor_2.as_literal()?,
+            &type_name,
+            evaluated_fields,
+        ),
+        RelationQuery::Practice {
+            participants,
+            type_name,
+        } => world.add_practice(
+            participants
+                .iter()
+                .map(ActorRef::as_literal)
+                .collect::<Result<Vec<&str>>>()?,
+            &type_name,
+            evaluated_fields,
+        ),
+    }
+}
+
+fn process_set(
+    world: &mut WorldTxn,
+    sentence: &Sentence,
+    expr: &Expression,
+    bindings: &Bindings,
+) -> Result<()> {
+    let query = Query::parse(world.inner(), sentence, bindings)
+        .with_context(|| format!("processing set outcome for sentence {}", sentence))?;
+    let Query::Fielded(relation_query, field_name) = &query else {
+        bail!("set outcome must specify a field to set: {}", sentence);
+    };
+
+    let relation_query = relation_query.apply_bindings(bindings);
+
     let (edge, _) = relation_query
         .lookup_in_world(world.inner())
-        .require_with_context(|| format!("relation not found in update outcome {}", sentence))?;
+        .require_with_context(|| format!("relation not found in set outcome {}", sentence))?;
 
     // Type mismatches should be caught by the type checker
     let value = expr.evaluate(world.inner(), bindings).with_context(|| {
         format!(
-            "evaluating update expression for update outcome {}: {}",
+            "evaluating set expression for update outcome {}: {}",
             sentence, expr
         )
     })?;
@@ -265,7 +331,7 @@ fn process_update(
             edge.relation_handle.clone(),
             HashMap::from([(field_name.clone(), value)]),
         )
-        .with_context(|| format!("applying update outcome {}", sentence))
+        .with_context(|| format!("applying set outcome {}", sentence))
 }
 
 fn get_value_and_field_type<'a, 'b>(
@@ -462,8 +528,10 @@ pub fn process_effect(
         Effect::Activate(expr) => process_activation_change(world, expr, bindings, true),
         Effect::Deactivate(expr) => process_activation_change(world, expr, bindings, false),
         Effect::Delete(sentence) => process_delete(world, sentence, bindings),
-        Effect::Set(declaration) => process_declaration(world, declaration, bindings).map(|_| ()),
-        Effect::Update(sentence, expr) => process_update(world, sentence, expr, bindings),
+        Effect::Create(sentence, field_asgns) => {
+            process_create(world, sentence, field_asgns, bindings).map(|_| ())
+        }
+        Effect::Set(sentence, expr) => process_set(world, sentence, expr, bindings),
         Effect::Increase(sentence, amount) => process_increase(world, sentence, *amount, bindings),
         Effect::Cycle(sentence, amount) => process_cycle(world, sentence, *amount, bindings),
     }?;

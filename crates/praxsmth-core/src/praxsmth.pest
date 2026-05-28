@@ -142,26 +142,28 @@ t_condition_list = { "[" ~ expression* ~ "]" }
 
 t_practice_outcomes = { "[" ~ effect* ~ "]" }
 
-effect            = _{
+effect                   = _{
     effect_broadcast
   | effect_say
   | effect_activate
   | effect_deactivate
   | effect_delete
+  | effect_create
   | effect_set
-  | effect_update
   | effect_increase
   | effect_cycle
 }
-effect_broadcast  =  { "broadcast" ~ expression }
-effect_say        =  { "say" ~ expression }
-effect_activate   =  { "activate" ~ expression }
-effect_deactivate =  { "deactivate" ~ expression }
-effect_delete     =  { "delete" ~ sentence }
-effect_set        =  { "set" ~ w_declaration }
-effect_update     =  { "update" ~ sentence ~ "to" ~ expression }
-effect_increase   =  { "increase" ~ sentence ~ "by" ~ number }
-effect_cycle      =  { "cycle" ~ sentence ~ "by" ~ number }
+effect_broadcast         =  { "broadcast" ~ expression }
+effect_say               =  { "say" ~ expression }
+effect_activate          =  { "activate" ~ expression }
+effect_deactivate        =  { "deactivate" ~ expression }
+effect_delete            =  { "delete" ~ sentence }
+effect_create            =  { "create" ~ sentence ~ effect_create_brackets? }
+effect_create_brackets   =  { "{" ~ effect_create_field_asgn* ~ "}" }
+effect_create_field_asgn =  { var_name ~ ":" ~ expression }
+effect_set               =  { "set" ~ sentence ~ "to" ~ expression }
+effect_increase          =  { "increase" ~ sentence ~ "by" ~ number }
+effect_cycle             =  { "cycle" ~ sentence ~ "by" ~ number }
 
 // =================
 // WORLD DEFINITIONS

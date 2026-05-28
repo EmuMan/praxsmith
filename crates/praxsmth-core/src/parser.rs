@@ -250,6 +250,7 @@ pub fn parse_expression(pairs: Pair<Rule>, pratt: &PrattParser<Rule>) -> Express
         .parse(pairs.into_inner())
 }
 
+// TODO: these are probably so broken now
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,9 +260,12 @@ mod tests {
         // `set` wraps a declaration, so this also exercises declaration parsing.
         let effect = parse_effect_str("set actor.likes.food { amount: 5 }").unwrap();
         match effect {
-            Effect::Set(decl) => {
-                assert_eq!(decl.sentence, Sentence::from_strs(&["actor", "likes"]));
-                assert_eq!(decl.fields.get("amount"), Some(&Constant::Number(5.0)));
+            Effect::Create(sentence, field_asgns) => {
+                assert_eq!(sentence, Sentence::from_strs(&["actor", "likes", "food"]));
+                assert_eq!(
+                    field_asgns.get("amount"),
+                    Some(&Expression::Value(Value::Number(5.0)))
+                );
             }
             other => panic!("expected Effect::Set, got {:?}", other),
         }

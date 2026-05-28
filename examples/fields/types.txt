@@ -36,7 +36,7 @@ practice test_mutating_effects (Actor) {
       name: "Toggle"
       conditions: []
       outcomes: [
-        update self.toggle to (not self.toggle)
+        set self.toggle to (not self.toggle)
         broadcast "toggle is now " + self.toggle
       ]
     }
