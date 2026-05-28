@@ -1,10 +1,10 @@
-actor a as "A"
-actor b as "B" {
-  goal (5): delta count Other where b.hates.Other and Other.is.dead
-  goal (-4): b.is.guilty
+actor aaron as "Aaron"
+actor peter as "Peter" {
+  goal (5): delta count Other where peter.hates.Other and Other.is.dead
+  goal (-4): peter.is.guilty
 }
 
-practice.argue.a.b {
+practice.argue.aaron.peter {
   intensity: #low
-  turn: @a
+  turn: @aaron
 }

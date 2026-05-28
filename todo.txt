@@ -1,6 +1,3 @@
-Major:
-- Add examples to docs
-
 Meh:
 - README.md
 

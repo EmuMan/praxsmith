@@ -235,7 +235,7 @@ above example, since it also helps improve readability.
 | `for all _` | `for all Other, Other.likes.Person` | Evaluates to `true` only if its operand evaluates to `true` for every possible value of `_`, which means every actor in the world. In the example, every actor must like `Person` for it to evaluate to `true`.<br />**Warning:** This cares about *every* entity. If there is a house, it will get checked as well. Consider adding an `a_person` trait relation so you can use the following instead: `for all Other, Other.is.a_person and Other.likes.Person`. If there is not a relevant relation from the actor to itself, this will also evaluate to `false`. Consider manually excluding this case as such: `for all Other, (@Person is @Other) or (Other.is.a_person and Other.likes.Person)`. |
 | `any _ where` | `any Other where Other.likes.Person` | Evaluates to `true` if its operand evaluates to `true` for any possible value of `_`, which means any actor in the world. In the example, any singular actor can like `Person` for the whole expression to evaluate to `true`. |
 | `count _ where` | `count Other where Other.likes.Person` | Counts the number of values of `_` for which its operand evaluates to `true` for. The example will count the number of people that like `Person`. |
-| Aggregations (`sum`, `average`, `min`, `max`) | `sum Person.is.rich.amount across Person where Person.is.rich` | Aggregate operators are designed to combine many numbers, and they take the form of `OP BODY across SYM where FILTER`. `OP` can be one of `sum`, `average`, `min`, or `max`, and it determines how the numbers are combined. `SYM` is the name of the variable that will be substituted for all actors, and behaves the same as the `_` in `for all _` queries. `BODY` describes what numbers to grab and is a normal expression that must evaluate to a number, such as `Person.is.rich.amount` in the example. `FILTER` must evaluate to a boolean, and is designed to limit which actors are summed together. In the example, people are only considered if they have the `rich` trait, which is actually necessary for the statement to work at all. In fact, **the filter in general is required by design.** You can read more about this in the following [Appeasing the Type Checker](#appeasing-the-type-checker) section. |
+| Aggregations (`sum`, `average`, `min`, `max`) | `sum Person.is.rich.amount across Person where Person.is.rich` | Aggregate operators are designed to combine many numbers, and they take the form of `OP BODY across SYM where FILTER`. `OP` can be one of `sum`, `average`, `min`, or `max`, and it determines how the numbers are combined. `SYM` is the name of the variable that will be substituted for all actors, and behaves the same as the `_` in `for all _` queries. `BODY` describes what numbers to grab and is a normal expression that must evaluate to a number, such as `Person.is.rich.amount` in the example. `FILTER` must evaluate to a boolean, and is designed to limit which actors are summed together. In the example, people are only considered if they have the `rich` trait, which is actually necessary for the statement to work at all. |
 
 ### Appeasing the Type Checker
 
@@ -530,8 +530,7 @@ There are five types a field can be:
 
 - **Numeric ranges:** A field can be defined as a numeric range, such as
 `0..10`. This means that the field can take on any value between 0 and 10,
-inclusive. Numbers are stored as decimal values. TODO: use epsilons in all
-operations.
+inclusive. Numbers are stored as decimal values.
 - **Variant lists:** A field can also be defined as a list of named variants,
 such as `calm | tense | furious`. This means that the field can only take on
 one of those three values. If you are familiar with other programming
@@ -673,8 +672,236 @@ practice.move.alaina.street.house
 
 ## Escalating Argument
 
-TODO
+This example depicts a more complex practice, in which two characters can argue
+with each other. The argument's intensity is tracked as well as the current
+speaker, and every time it flips back and forth, the intensity increases. The
+series of actions gets progressively more and more intense, until `Actor2`
+has to eventually make a decision: forget the argument or resort to murder.
+
+In the world script, `peter` is given the role of this `Actor2`, so his goals
+will influence this decision. In this case, even though `peter` does not want
+to feel guilty with a weight of `-4`, he wants to see the count of people he
+hates that are also dead rise with a weight of `5`. The killing action ends up
+with the higher score from the planner (with a net score of `1`), so it is the
+one that an autonomous Peter will always choose.
+
+**Type script:**
+
+```
+trait dead
+trait guilty
+
+directional hates
+
+practice argue (Actor1, Actor2) {
+  turn: actor
+  intensity: low | medium | high
+  actions: [
+    {
+      for: Actor1
+      name: "Argue with [Actor2]"
+      conditions: [
+        self.turn is @Actor1
+        self.intensity is #low
+      ]
+      outcomes: [
+        say "I'm right!"
+        set self.turn to @Actor2
+      ]
+    }
+    {
+      for: Actor1
+      name: "Personally attack [Actor2]"
+      conditions: [
+        self.turn is @Actor1
+        self.intensity is #medium
+      ]
+      outcomes: [
+        say "You're a LOSER!!!"
+        set self.turn to @Actor2
+      ]
+    }
+    {
+      for: Actor1
+      name: "SHOUT AT [Actor2]"
+      conditions: [
+        self.turn is @Actor1
+        self.intensity is #high
+      ]
+      outcomes: [
+        say "I HATE YOU!!!!"
+        set self.turn to @Actor2
+      ]
+    }
+    {
+      for: Actor2
+      name: "Argue with [Actor1]"
+      conditions: [
+        self.turn is @Actor2
+        self.intensity is #low
+      ]
+      outcomes: [
+        say "No you're not!"
+        set self.turn to @Actor1
+        increase self.intensity by 1
+      ]
+    }
+    {
+      for: Actor2
+      name: "Fight back against [Actor1]"
+      conditions: [
+        self.turn is @Actor2
+        self.intensity is #medium
+      ]
+      outcomes: [
+        say "Says YOU!!!"
+        set self.turn to @Actor1
+        increase self.intensity by 1
+      ]
+    }
+    {
+      for: Actor2
+      name: "Agree to disagree with [Actor1]"
+      conditions: [
+        self.turn is @Actor2
+        self.intensity is #high
+      ]
+      outcomes: [
+        say "Let's agree to disagree."
+        delete self
+      ]
+    }
+    {
+      for: Actor2
+      name: "Never forgive [Actor1]."
+      conditions: [
+        self.turn is @Actor2
+        self.intensity is #high
+      ]
+      outcomes: [
+        say "I'll remember this."
+        create Actor2.hates.Actor1
+        create practice.kill.Actor2.Actor1
+        delete self
+      ]
+    }
+  ]
+}
+
+practice kill (Killer, Victim) {
+  actions: [
+    {
+      for: Killer
+      name: "Kill [Victim]."
+      conditions: [
+        Killer.hates.Victim
+        not Victim.is.dead
+      ]
+      outcomes: [
+        create Victim.is.dead
+        create Killer.is.guilty
+        broadcast "[Victim] has met their end."
+        deactivate @Victim
+        delete self
+      ]
+    }
+  ]
+}
+```
+
+**World script:**
+
+```
+actor aaron as "Aaron"
+actor peter as "Peter" {
+  goal (5): delta count Other where peter.hates.Other and Other.is.dead
+  goal (-4): peter.is.guilty
+}
+
+practice.argue.aaron.peter {
+  intensity: #low
+  turn: @aaron
+}
+```
 
 ## Gossip Chain
 
-TODO
+This example features three gossipers, Isabella, Adrian, and Stella, and one
+target, Beth. Gossiping requires that the person spreading the rumor (`From`)
+does not like the person in question (`About`) and that the other person (`To`)
+has not yet come to this conclusion. The `dislikes` relation comes with a
+`reason` field, which is extended with "I heard from \_\_\_"-style quotes every
+time the rumor spreads. For example, Isabella will end up getting Adrian to not
+like Beth with the reason of:
+
+> Isabella told me: "she was talking to the person I like."
+
+Two actors have a goal that incentivizes this rumor spreading. It effectively
+boils down to "across all people that are not me, count the number of people
+(`Other`) that we both dislike". In this way, any action that causes another
+actor to dislike someone that this actor dislikes will cause `delta` to
+increase, and a score of `1` will be applied. If there were somehow a way to
+get many people to dislike whoever this actor dislikes, the score would be
+equal to how many people were influenced.
+
+**Type script:**
+
+```
+directional dislikes {
+  reason: string
+}
+
+trait gullible {
+  amount: low | medium | high
+}
+
+practice gossip (From, To, About) {
+  actions: [
+    {
+      for: From
+      name: "Gossip to [To] about [About]"
+      conditions: [
+        // i dislike them...
+        From.dislikes.About
+        // ... but they don't yet.
+        not To.dislikes.About
+        To.is.gullible and To.is.gullible.amount is #high
+      ]
+      outcomes: [
+        say "[To], I don't like [About] because " + From.dislikes.About.reason
+        create To.dislikes.About {
+          reason: @From + " told me: \"" + From.dislikes.About.reason + "\""
+        }
+      ]
+    }
+  ]
+}
+```
+
+**World script:**
+
+```
+actor isabella as "Isabella" {
+  goal (1): delta sum (count Other where isabella.dislikes.Other and Person.dislikes.Other) across Person where not (@Person is @isabella)
+}
+actor adrian as "Adrian" {
+  goal (1): delta sum (count Other where adrian.dislikes.Other and Person.dislikes.Other) across Person where not (@Person is @adrian)
+}
+actor stella as "Stella"
+actor beth as "Beth"
+
+adrian.is.gullible {
+  amount: #high
+}
+
+stella.is.gullible {
+  amount: #high
+}
+
+isabella.dislikes.beth {
+  reason: "she was talking to the person I like."
+}
+
+practice.gossip.isabella.adrian.beth
+practice.gossip.adrian.stella.beth
+```

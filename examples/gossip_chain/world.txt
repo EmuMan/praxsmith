@@ -1,5 +1,9 @@
-actor isabella as "Isabella"
-actor adrian as "Adrian"
+actor isabella as "Isabella" {
+  goal (1): delta sum (count Other where isabella.dislikes.Other and Person.dislikes.Other) across Person where not (@Person is @isabella)
+}
+actor adrian as "Adrian" {
+  goal (1): delta sum (count Other where adrian.dislikes.Other and Person.dislikes.Other) across Person where not (@Person is @adrian)
+}
 actor stella as "Stella"
 actor beth as "Beth"
 
