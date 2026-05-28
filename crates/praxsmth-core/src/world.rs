@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     types::{FieldType, FieldTypes, RelationType, RelationTypeData, RelationTypeMap},
-    values::Constant,
+    values::{Constant, Sentence},
     world::{bindings::Bindings, goals::Goal},
 };
 
@@ -110,6 +110,7 @@ impl RelationToActor {
 #[derive(Debug, Clone)]
 pub struct Relation {
     pub type_name: String,
+    pub sentence: Sentence,
     edges: Vec<RelationToActor>,
     pub fields: Fields,
     pub data: RelationData,
@@ -123,6 +124,10 @@ impl Relation {
             self.fields.insert(field_name, field_value);
         }
         Ok(())
+    }
+
+    pub fn iter_actor_ids(&self) -> impl Iterator<Item = &str> {
+        self.edges.iter().map(|edge| edge.actor())
     }
 }
 
@@ -666,6 +671,7 @@ impl World {
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
+            sentence: Sentence::from_strs(&[actor_id, "is", type_id]),
             edges: vec![RelationToActor::Solo(actor_id.to_string())],
             fields,
             data: RelationData::Trait {
@@ -752,6 +758,7 @@ impl World {
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
+            sentence: Sentence::from_strs(&[actor_id, "feels", type_id]),
             edges: vec![RelationToActor::Solo(actor_id.to_string())],
             fields,
             data: RelationData::Emotion {
@@ -886,6 +893,7 @@ impl World {
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
+            sentence: Sentence::from_strs(&[from_id, type_id, to_id]),
             edges: vec![
                 RelationToActor::Forward(from_id.to_string()),
                 RelationToActor::Backward(to_id.to_string()),
@@ -1028,6 +1036,7 @@ impl World {
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
+            sentence: Sentence::from_strs(&[actor_1_id, type_id, actor_2_id]),
             edges: vec![
                 RelationToActor::Unordered(actor_1_id.to_string()),
                 RelationToActor::Unordered(actor_2_id.to_string()),
@@ -1195,7 +1204,7 @@ impl World {
         let mut self_id = vec!["practice".to_string()];
         self_id.push(type_id.to_string());
         self_id.extend(participant_ids.iter().cloned().map(String::from));
-        let bindings = Bindings::new(variables, Some(self_id.into()));
+        let bindings = Bindings::new(variables, Some(self_id.clone().into()));
 
         let edges = participant_ids
             .iter()
@@ -1205,6 +1214,7 @@ impl World {
 
         let mut created = self.add_relation(Relation {
             type_name: type_id.to_string(),
+            sentence: self_id.into(),
             edges,
             fields,
             data: RelationData::Practice {

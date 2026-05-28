@@ -2,6 +2,7 @@
     import { onMount } from "svelte";
     import { browser } from "$app/environment";
     import init, { PraxsmthApi } from "praxsmth";
+    import type { RelationInfo } from "praxsmth";
     import type {
         AvailableAction,
         ActorInfo,
@@ -34,6 +35,7 @@
     let building = $state(false);
 
     let actors: ActorInfo[] = $state([]);
+    let relations: RelationInfo[] = $state([]);
     let emotions: Record<string, string | undefined> = $state({});
     let modes: Record<string, ActorMode> = $state({});
     let currentActorId: string | null = $state(null);
@@ -93,6 +95,7 @@
         if (!api) return;
         try {
             actors = api.getActorInfo() as ActorInfo[];
+            relations = api.getRelationInfo() as RelationInfo[];
 
             const nextEmotions: Record<string, string | undefined> = {};
             const nextModes: Record<string, ActorMode> = {};
@@ -286,7 +289,11 @@
             <button class="reset" onclick={reset}>edit world</button>
         </div>
 
-        <DebugPanel {api} defaultActorName={currentActorName} />
+        <DebugPanel
+            {api}
+            {relations}
+            defaultActorName={currentActorName}
+        />
     {/if}
 </main>
 

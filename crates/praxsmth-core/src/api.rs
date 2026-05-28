@@ -25,6 +25,13 @@ pub struct ActorInfo {
     pub active: bool,
 }
 
+pub struct RelationInfo {
+    pub type_id: String,
+    pub actors: Vec<String>,
+    pub fields: Vec<(String, Constant)>,
+    pub sentence: String,
+}
+
 pub struct AvailableAction {
     pub index: usize,
     pub display_name: String,
@@ -224,6 +231,7 @@ impl PraxsmthApi {
             }))
     }
 
+    /// Gets the info of every actor in the world.
     pub fn get_actor_info(&self) -> Vec<ActorInfo> {
         self.world
             .iter_actors()
@@ -231,6 +239,23 @@ impl PraxsmthApi {
                 id: id.clone(),
                 name: actor.name.clone(),
                 active: actor.is_active,
+            })
+            .collect()
+    }
+
+    /// Gets the info of every relation in the world.
+    pub fn get_relation_info(&self) -> Vec<RelationInfo> {
+        self.world
+            .iter_relations()
+            .map(|(_, relation)| RelationInfo {
+                type_id: relation.type_name.clone(),
+                actors: relation.iter_actor_ids().map(|id| id.to_string()).collect(),
+                fields: relation
+                    .fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                sentence: relation.sentence.to_string(),
             })
             .collect()
     }

@@ -1,12 +1,21 @@
 <script lang="ts">
-    import type { PraxsmthApi, PraxsmthConstant } from "praxsmth";
+    import type {
+        PraxsmthApi,
+        PraxsmthConstant,
+        RelationInfo,
+    } from "praxsmth";
 
     interface Props {
         api: PraxsmthApi;
+        relations: RelationInfo[];
         defaultActorName?: string | null;
     }
 
-    let { api, defaultActorName = null }: Props = $props();
+    let {
+        api,
+        relations,
+        defaultActorName = null,
+    }: Props = $props();
 
     let open = $state(false);
 
@@ -41,6 +50,22 @@
         } catch (err) {
             exprError = errMessage(err);
         }
+    }
+
+    let hoveredRelation: RelationInfo | null = $state(null);
+    let tooltipBottom = $state(0);
+    let tooltipRight = $state(0);
+
+    function showRelationTooltip(relation: RelationInfo, e: MouseEvent) {
+        const target = e.currentTarget as HTMLElement;
+        const rect = target.getBoundingClientRect();
+        tooltipBottom = window.innerHeight - rect.bottom;
+        tooltipRight = window.innerWidth - rect.left + 8;
+        hoveredRelation = relation;
+    }
+
+    function hideRelationTooltip() {
+        hoveredRelation = null;
     }
 
     function runProcessEffect() {
@@ -120,6 +145,57 @@
                     <pre class="error">{effectError}</pre>
                 {/if}
             </section>
+
+            <section class="block">
+                <h3>relations ({relations.length})</h3>
+                {#if relations.length === 0}
+                    <p class="empty">no relations</p>
+                {:else}
+                    <ul class="relations">
+                        {#each relations as relation, i (i)}
+                            <li
+                                class="relation"
+                                onmouseenter={(e) =>
+                                    showRelationTooltip(relation, e)}
+                                onmouseleave={hideRelationTooltip}
+                            >
+                                <span class="relation-sentence"
+                                    >{relation.sentence}</span
+                                >
+                            </li>
+                        {/each}
+                    </ul>
+                {/if}
+            </section>
+        </div>
+    {/if}
+
+    {#if hoveredRelation}
+        <div
+            class="relation-tooltip"
+            role="tooltip"
+            style="bottom: {tooltipBottom}px; right: {tooltipRight}px;"
+        >
+            <div class="tt-row">
+                <span class="tt-label">type</span>
+                <span class="tt-value">{hoveredRelation.type_id}</span>
+            </div>
+            <div class="tt-row">
+                <span class="tt-label">actors</span>
+                <span class="tt-value"
+                    >{hoveredRelation.actors.join(", ")}</span
+                >
+            </div>
+            {#if hoveredRelation.fields.length > 0}
+                <div class="tt-row">
+                    <span class="tt-label">fields</span>
+                    <span class="tt-value">
+                        {#each hoveredRelation.fields as [k, v]}
+                            <div>{k} = {formatConstant(v)}</div>
+                        {/each}
+                    </span>
+                </div>
+            {/if}
         </div>
     {/if}
 </div>
@@ -241,6 +317,74 @@
         margin: 0;
         white-space: pre-wrap;
         overflow-x: auto;
+    }
+
+    .empty {
+        margin: 0;
+        font-size: 0.8rem;
+        color: #7b7264;
+        font-style: italic;
+    }
+
+    .relations {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+    }
+
+    .relation {
+        position: relative;
+        font-size: 0.82rem;
+        color: #2a2622;
+        padding: 0.35rem 0.5rem;
+        background: #f1ecdf;
+        border: 1px solid #c9bfae;
+        cursor: default;
+    }
+
+    .relation-sentence {
+        display: block;
+    }
+
+    .relation-tooltip {
+        position: fixed;
+        width: 240px;
+        background: #2a2622;
+        color: #fbf7ef;
+        font-family:
+            "JetBrains Mono", "Fira Code", "SF Mono", "Menlo", "Consolas",
+            monospace;
+        font-size: 0.72rem;
+        padding: 0.5rem 0.6rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        z-index: 60;
+        pointer-events: none;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    .tt-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+    }
+
+    .tt-row + .tt-row {
+        margin-top: 0.4rem;
+    }
+
+    .tt-label {
+        font-size: 0.62rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #c9bfae;
+    }
+
+    .tt-value {
+        color: #fbf7ef;
     }
 
     .error {

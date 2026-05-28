@@ -89,6 +89,17 @@ impl PraxsmthApi {
         serde_wasm_bindgen::to_value(&actor_infos).map_err(js_err)
     }
 
+    #[wasm_bindgen(js_name = getRelationInfo)]
+    pub fn get_relation_info(&self) -> Result<JsValue, JsError> {
+        let relation_infos: Vec<RelationInfo> = self
+            .inner
+            .get_relation_info()
+            .into_iter()
+            .map(RelationInfo::from)
+            .collect();
+        serde_wasm_bindgen::to_value(&relation_infos).map_err(js_err)
+    }
+
     #[wasm_bindgen(js_name = getCurrentEmotion)]
     pub fn get_current_emotion(&self, actor: String) -> Result<Option<String>, JsError> {
         Ok(self
@@ -208,6 +219,30 @@ impl From<core::api::ActorInfo> for ActorInfo {
             id: actor_info.id,
             name: actor_info.name,
             active: actor_info.active,
+        }
+    }
+}
+
+#[derive(Tsify, Serialize, Deserialize, Clone, Debug)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct RelationInfo {
+    pub type_id: String,
+    pub actors: Vec<String>,
+    pub fields: Vec<(String, PraxsmthConstant)>,
+    pub sentence: String,
+}
+
+impl From<core::api::RelationInfo> for RelationInfo {
+    fn from(relation_info: core::api::RelationInfo) -> Self {
+        RelationInfo {
+            type_id: relation_info.type_id,
+            actors: relation_info.actors,
+            fields: relation_info
+                .fields
+                .into_iter()
+                .map(|(k, v)| (k, PraxsmthConstant::from(v)))
+                .collect(),
+            sentence: relation_info.sentence,
         }
     }
 }

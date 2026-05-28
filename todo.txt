@@ -1,9 +1,8 @@
 Major:
-- Relationship list in debug window
-- Make sure relationships can't be duplicate (remove old ones when adding new ones)
+- Remove old duplicate relations when adding new ones
+- Add examples to docs
 
 Meh:
-- Free variables creating actions?
 - README.md
 
 Minor:
