@@ -4,26 +4,68 @@
 
     interface Props {
         messages: ChatMessage[];
+        isTyping?: boolean;
+        charDelayMs?: number;
     }
 
-    let { messages }: Props = $props();
+    let {
+        messages,
+        isTyping = $bindable(false),
+        charDelayMs = 18,
+    }: Props = $props();
 
     let chatEl: HTMLDivElement;
 
+    let typedIdx = $state(0);
+    let typedChars = $state(0);
+
+    // If messages were reset (e.g. world rebuild), pull our cursors back.
     $effect(() => {
-        // re-run whenever a new message lands
+        if (typedIdx > messages.length) {
+            typedIdx = 0;
+            typedChars = 0;
+        }
+    });
+
+    let activeMsg = $derived(messages[typedIdx]);
+
+    $effect(() => {
+        if (!activeMsg) {
+            isTyping = false;
+            return;
+        }
+        isTyping = true;
+        typedChars = 0;
+        const line = activeMsg.line;
+        const id = window.setInterval(() => {
+            typedChars++;
+            if (typedChars >= line.length) {
+                window.clearInterval(id);
+                typedIdx++;
+            }
+        }, charDelayMs);
+        return () => window.clearInterval(id);
+    });
+
+    $effect(() => {
         messages.length;
+        typedChars;
+        typedIdx;
         tick().then(() => {
             if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
         });
     });
+
+    function renderMsg(msg: ChatMessage, text: string) {
+        return { msg, text };
+    }
 </script>
 
 <div class="chat" bind:this={chatEl}>
     {#if messages.length === 0}
         <p class="scene">nothing has happened yet.</p>
     {/if}
-    {#each messages as msg, i (i)}
+    {#each messages.slice(0, typedIdx) as msg, i (i)}
         {#if msg.kind === "system"}
             <p class="scene">{msg.line}</p>
         {:else}
@@ -34,6 +76,23 @@
             </div>
         {/if}
     {/each}
+    {#if activeMsg}
+        {#if activeMsg.kind === "system"}
+            <p class="scene">
+                {activeMsg.line.slice(0, typedChars)}<span class="caret"
+                ></span>
+            </p>
+        {:else}
+            <div class="line">
+                <span class="speaker">{activeMsg.speaker}</span>
+                <span class="em">—</span>
+                <span class="said"
+                    >{activeMsg.line.slice(0, typedChars)}<span class="caret"
+                    ></span></span
+                >
+            </div>
+        {/if}
+    {/if}
 </div>
 
 <style>
@@ -74,5 +133,21 @@
 
     .said {
         color: #2a2622;
+    }
+
+    .caret {
+        display: inline-block;
+        width: 0.5ch;
+        background: #2a2622;
+        height: 1em;
+        vertical-align: -0.15em;
+        margin-left: 1px;
+        animation: blink 0.9s steps(2, start) infinite;
+    }
+
+    @keyframes blink {
+        to {
+            visibility: hidden;
+        }
     }
 </style>

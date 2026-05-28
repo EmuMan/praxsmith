@@ -1,33 +1,41 @@
 <script lang="ts">
     import type { ActorInfo } from "./types";
 
+    type ActorMode = "manual" | "auto";
+
     interface Props {
         actors: ActorInfo[];
-        selectedId: string | null;
+        currentId: string | null;
+        modes: Record<string, ActorMode>;
         emotions: Record<string, string | undefined>;
-        onselect: (id: string) => void;
+        ontogglemode: (id: string) => void;
     }
 
-    let { actors, selectedId, emotions, onselect }: Props = $props();
+    let { actors, currentId, modes, emotions, ontogglemode }: Props = $props();
 </script>
 
 <aside class="cast">
     <h2 class="section-title">cast</h2>
     {#each actors as actor (actor.id)}
         {@const emotion = emotions[actor.id]}
-        <button
-            class="card"
-            class:selected={selectedId === actor.id}
-            onclick={() => onselect(actor.id)}
-        >
+        {@const mode = modes[actor.id] ?? "manual"}
+        <div class="card" class:current={currentId === actor.id}>
             <div class="card-head">
                 <span class="card-name">{actor.name}</span>
                 <span class="card-dot" aria-hidden="true"></span>
             </div>
+            <button
+                class="mode"
+                class:auto={mode === "auto"}
+                onclick={() => ontogglemode(actor.id)}
+                title="toggle manual/automatic"
+            >
+                {mode}
+            </button>
             {#if emotion}
                 <span class="tag">felt: {emotion}</span>
             {/if}
-        </button>
+        </div>
     {/each}
     {#if actors.length === 0}
         <p class="empty">no one is here yet.</p>
@@ -57,23 +65,16 @@
         border: 1px solid #c9bfae;
         background: #fbf7ef;
         padding: 0.85rem 0.95rem;
-        outline: none;
-        cursor: pointer;
         text-align: left;
         font: inherit;
         color: inherit;
         transition:
-            border-color 120ms ease,
-            background 120ms ease;
+            border-color 200ms ease,
+            background 200ms ease,
+            box-shadow 200ms ease;
     }
 
-    .card:hover,
-    .card:focus-visible {
-        border-color: #7b7264;
-        background: #fffbf3;
-    }
-
-    .card.selected {
+    .card.current {
         border-color: #2a2622;
         background: #fffbf3;
         box-shadow: inset 0 0 0 1px #2a2622;
@@ -95,6 +96,39 @@
         border-radius: 50%;
         background: #8a7f6d;
         display: inline-block;
+    }
+
+    .card.current .card-dot {
+        background: #2a2622;
+        box-shadow: 0 0 0 3px #d8cdb8;
+    }
+
+    .mode {
+        margin-top: 0.55rem;
+        font-family: inherit;
+        font-size: 0.7rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        background: transparent;
+        border: 1px solid #c9bfae;
+        color: #6a6155;
+        padding: 0.2rem 0.55rem;
+        cursor: pointer;
+        transition:
+            background 120ms ease,
+            color 120ms ease,
+            border-color 120ms ease;
+    }
+
+    .mode:hover {
+        border-color: #2a2622;
+        color: #2a2622;
+    }
+
+    .mode.auto {
+        background: #2a2622;
+        color: #fbf7ef;
+        border-color: #2a2622;
     }
 
     .tag {

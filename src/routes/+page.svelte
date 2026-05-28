@@ -16,14 +16,14 @@
     import ErrorPane from "$lib/ErrorPane.svelte";
     import DebugPanel from "$lib/DebugPanel.svelte";
 
+    type ActorMode = "manual" | "auto";
+
     let wasmReady = $state(false);
     let api: PraxsmthApi | null = $state(null);
 
     const STORAGE_TYPES = "praxsmth:types";
     const STORAGE_WORLD = "praxsmth:world";
 
-    // Restore saved work at init (browser only) so it's in place before any
-    // effect runs — avoids a default-vs-saved write race.
     let typesSrc = $state(
         (browser && localStorage.getItem(STORAGE_TYPES)) || DEFAULT_TYPES,
     );
@@ -35,20 +35,20 @@
 
     let actors: ActorInfo[] = $state([]);
     let emotions: Record<string, string | undefined> = $state({});
-    let selectedId: string | null = $state(null);
+    let modes: Record<string, ActorMode> = $state({});
+    let currentActorId: string | null = $state(null);
     let availableActions: AvailableAction[] = $state([]);
     let actionScoreDepth = $state(3);
     let messages: ChatMessage[] = $state([]);
     let runtimeError: string | null = $state(null);
     let pending = $state(false);
+    let isTyping = $state(false);
 
     onMount(async () => {
         await init();
         wasmReady = true;
     });
 
-    // Persist edits so a refresh doesn't lose work. Effects run only in the
-    // browser, so localStorage is always available here.
     $effect(() => {
         localStorage.setItem(STORAGE_TYPES, typesSrc);
         localStorage.setItem(STORAGE_WORLD, worldSrc);
@@ -59,27 +59,71 @@
         runtimeError = `error in ${where}:\n${line}`;
     }
 
+    function getActions(id: string): AvailableAction[] {
+        if (!api) return [];
+        try {
+            return api.getAvailableActions(id, actionScoreDepth) as AvailableAction[];
+        } catch (err) {
+            reportRuntimeError(err, "getAvailableActions");
+            return [];
+        }
+    }
+
+    // Find the next actor (starting from startIdx, cycling) that has at least
+    // one available action. Returns null if none do.
+    function findActorWithActions(startIdx: number): string | null {
+        const active = actors.filter((a) => a.active);
+        if (active.length === 0) return null;
+        const start = ((startIdx % active.length) + active.length) % active.length;
+        for (let i = 0; i < active.length; i++) {
+            const actor = active[(start + i) % active.length];
+            if (getActions(actor.id).length > 0) return actor.id;
+        }
+        return null;
+    }
+
+    function indexOfActiveActor(id: string | null): number {
+        if (!id) return 0;
+        const active = actors.filter((a) => a.active);
+        const i = active.findIndex((a) => a.id === id);
+        return i === -1 ? 0 : i;
+    }
+
     function refreshFromApi() {
         if (!api) return;
         try {
             actors = api.getActorInfo() as ActorInfo[];
 
             const nextEmotions: Record<string, string | undefined> = {};
+            const nextModes: Record<string, ActorMode> = {};
             for (const a of actors) {
                 nextEmotions[a.id] = api.getCurrentEmotion(a.id) ?? undefined;
+                nextModes[a.id] = modes[a.id] ?? "manual";
             }
             emotions = nextEmotions;
+            modes = nextModes;
 
-            if (selectedId && !actors.some((a) => a.id === selectedId)) {
-                selectedId = null;
+            // If the current actor is gone or inactive, drop them — the next
+            // turn advancement (or initial seeding) will pick someone new.
+            // Otherwise leave the turn alone; advancement is explicit so
+            // onUpdate firing mid-action doesn't double-advance.
+            if (currentActorId) {
+                const still = actors.find((a) => a.id === currentActorId);
+                if (!still || !still.active) currentActorId = null;
             }
 
-            availableActions = selectedId
-                ? api.getAvailableActions(selectedId, actionScoreDepth)
+            availableActions = currentActorId
+                ? getActions(currentActorId)
                 : [];
         } catch (err) {
             reportRuntimeError(err, "refreshFromWorld");
         }
+    }
+
+    function seedTurn() {
+        const start = indexOfActiveActor(currentActorId);
+        currentActorId = findActorWithActions(start);
+        availableActions = currentActorId ? getActions(currentActorId) : [];
     }
 
     function handleDialog(dialog: Dialog) {
@@ -106,9 +150,11 @@
             newApi.setOnUpdate(() => refreshFromApi());
             newApi.setOnDialog((d: Dialog) => handleDialog(d));
             api = newApi;
-            selectedId = null;
+            currentActorId = null;
+            modes = {};
             messages = [];
             refreshFromApi();
+            seedTurn();
         } catch (err) {
             buildError = err instanceof Error ? err.message : String(err);
             api = null;
@@ -117,26 +163,28 @@
         }
     }
 
-    function selectActor(id: string) {
-        selectedId = id;
-        if (api) {
-            try {
-                availableActions = api.getAvailableActions(
-                    id,
-                    actionScoreDepth,
-                );
-            } catch (err) {
-                reportRuntimeError(err, "selectActor");
-                availableActions = [];
-            }
-        }
+    function toggleMode(id: string) {
+        modes = {
+            ...modes,
+            [id]: modes[id] === "auto" ? "manual" : "auto",
+        };
     }
 
-    async function chooseAction(index: number) {
-        if (!api || !selectedId || pending) return;
+    function advanceTurn() {
+        // Move past the current actor before searching, so the same actor
+        // doesn't immediately re-run when they still have actions.
+        const startIdx = indexOfActiveActor(currentActorId) + 1;
+        currentActorId = findActorWithActions(startIdx);
+        availableActions = currentActorId ? getActions(currentActorId) : [];
+    }
+
+    function chooseAction(index: number) {
+        if (!api || !currentActorId || pending || isTyping) return;
+        const actorId = currentActorId;
         pending = true;
         try {
-            api.applyAction(selectedId, index);
+            api.applyAction(actorId, index);
+            advanceTurn();
         } catch (err) {
             reportRuntimeError(err, "applyAction");
         } finally {
@@ -144,22 +192,46 @@
         }
     }
 
+    function pickAutoChoice(actions: AvailableAction[]): number {
+        let best = -Infinity;
+        for (const a of actions) if (a.score > best) best = a.score;
+        const tied: number[] = [];
+        for (let i = 0; i < actions.length; i++) {
+            if (actions[i].score === best) tied.push(i);
+        }
+        return tied[Math.floor(Math.random() * tied.length)];
+    }
+
+    function nextAuto() {
+        if (!api || !currentActorId || pending || isTyping) return;
+        if (availableActions.length === 0) return;
+        const idx = pickAutoChoice(availableActions);
+        chooseAction(idx);
+    }
+
     function reset() {
         api = null;
         actors = [];
         emotions = {};
-        selectedId = null;
+        modes = {};
+        currentActorId = null;
         availableActions = [];
         messages = [];
         buildError = null;
         runtimeError = null;
     }
 
-    let selectedActorName = $derived(
-        actors.find((a) => a.id === selectedId)?.name ?? null,
+    let currentActor = $derived(
+        actors.find((a) => a.id === currentActorId) ?? null,
     );
-
+    let currentActorName = $derived(currentActor?.name ?? null);
+    let currentActorMode: ActorMode | null = $derived(
+        currentActorId ? (modes[currentActorId] ?? "manual") : null,
+    );
     let visibleActors = $derived(actors.filter((a) => a.active));
+    let noOneCanAct = $derived(
+        visibleActors.length > 0 && currentActorId === null,
+    );
 </script>
 
 <main class="page">
@@ -183,18 +255,22 @@
         <section class="layout">
             <Cast
                 actors={visibleActors}
-                {selectedId}
+                currentId={currentActorId}
+                {modes}
                 {emotions}
-                onselect={selectActor}
+                ontogglemode={toggleMode}
             />
 
             <div class="chat-column">
-                <Chat {messages} />
+                <Chat {messages} bind:isTyping />
                 <Actions
                     actions={availableActions}
-                    actorName={selectedActorName}
-                    {pending}
+                    actorName={currentActorName}
+                    actorMode={currentActorMode}
+                    pending={pending || isTyping}
+                    {noOneCanAct}
                     onchoose={chooseAction}
+                    onnext={nextAuto}
                 />
             </div>
         </section>
@@ -210,7 +286,7 @@
             <button class="reset" onclick={reset}>edit world</button>
         </div>
 
-        <DebugPanel {api} defaultActorName={selectedActorName} />
+        <DebugPanel {api} defaultActorName={currentActorName} />
     {/if}
 </main>
 

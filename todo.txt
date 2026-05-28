@@ -1,6 +1,5 @@
 Major:
 - Escalating Argument and Gossip Chain examples
-- Autonomous actors
 - README.md
 
 Meh:
