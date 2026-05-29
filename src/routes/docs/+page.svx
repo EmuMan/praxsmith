@@ -73,11 +73,11 @@ list, you can mark them as inactive as such:
 actor house as "House" inactive
 ```
 
-These characters will still exist within the world and can perform actions, but
-they will be hidden to the player on the frontend.
+These characters will still exist within the world, but they cannot perform
+actions, and they will be hidden to the player on the frontend.
 
 > [!warning] Initialization only!
-> Actrors can only be defined during world initialization and cannot be
+> Actors can only be defined during world initialization and cannot be
 > modified as a result of actions or practices. This is a design choice to keep
 > the system stable and predictable over time. You can toggle whether actors
 > display on the frontend by using the `activate` and `deactivate` effects, as
@@ -88,7 +88,11 @@ they will be hidden to the player on the frontend.
 Actors can have goals that will influence their decision-making. Praxsmith uses
 a planning system to determine which action an actor should take in order to
 maximize the achievement of their goals, so goal definition is crucial in
-getting them to behave how you want.
+getting them to behave how you want. You can see the scores of different
+actions in the interface for manual characters, and automatic characters will
+automatically pick the highest scored option (ties broken randomly). As a more
+technical detail, the world is recursively evaluated with every action the
+actor has up to a depth of 4 to score each action.
 
 Goals are defined as such, with one on each line:
 
@@ -507,8 +511,8 @@ the following:
 | --- | --- | --- |
 | `broadcast` | `broadcast "[Greeter]'s greeting has made [Greeted] happy!"` | Sends a message into the chat log that has no particular sender. The message can be any [expression](#expressions) that evaluates to a string. The dialog system will attempt to replace any actor in square brackets with its display name. In other places, this may be referred to as a system message. Use it to inform the user of important updates to the world that it doesn't make sense for an actor to say out loud. |
 | `say` | `say "Hello, [Greeted]!"` | Sends a message in the chat log from a particular character. The message can be any [expression](#expressions) that evaluates to a string. The dialog system will attempt to replace any actor in square brackets with its display name. Use this for dialog between characters, as it implies that the phrase is being "said" within the world. |
-| `activate` | `activate @Actor` | Sets an actor to active, which displays them to the player. The actor can be any [expression](#expressions) that evaluates to an actor reference. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
-| `deactivate` | `deactivate @Actor` | Sets an actor to inactive, which prevents them from being shown to the player. The actor can be any [expression](#expressions) that evaluates to an actor reference. Does not have any affect on their ability to perform actions. See [Defining Actors](#defining-actors) for more information. |
+| `activate` | `activate @Actor` | Sets an actor to active, which displays them to the player. The actor can be any [expression](#expressions) that evaluates to an actor reference. See [Defining Actors](#defining-actors) for more information. |
+| `deactivate` | `deactivate @Actor` | Sets an actor to inactive, which prevents them from being shown to the player. The actor can be any [expression](#expressions) that evaluates to an actor reference. See [Defining Actors](#defining-actors) for more information. |
 | `delete` | `delete Person.is.tired` | Removes the specified relation from the world. `delete self` is a common pattern for practices that provide a single-use action, like `greet` in the above example. See [The `self` Binding](#the-self-binding) below for more info. |
 | `create` | `create Person.trusts.Other { level: #high }` | Adds a new relation to the world. What appears to the right of `create` is similar to declarations in the [World Script](#world-script), but any field values can also be expressions that will be evaluated upon creation. If the relation has fields, they must be specified within curly brackets and delimited by newlines. Otherwise, the brackets may be omitted. If an identical relation already exists, it will be replaced with this new one. **Note:** This is how relations create other relations, which is an important mechanism in keeping the world running. For example, if an `argue` practice escalates to a high degree, an action may become available for one of the participants that allows for them to initiate a `divorce` practice if they are married. |
 | `set` | `set Person.trusts.Other.level to #high` | Sets a single field of a relation to a new value, which can be any expression, as long as it resolves to something within the target field type. |

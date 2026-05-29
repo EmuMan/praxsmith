@@ -40,7 +40,7 @@
     let modes: Record<string, ActorMode> = $state({});
     let currentActorId: string | null = $state(null);
     let availableActions: AvailableAction[] = $state([]);
-    let actionScoreDepth = $state(3);
+    let actionScoreDepth = $state(4);
     let messages: ChatMessage[] = $state([]);
     let runtimeError: string | null = $state(null);
     let pending = $state(false);
@@ -64,7 +64,10 @@
     function getActions(id: string): AvailableAction[] {
         if (!api) return [];
         try {
-            return api.getAvailableActions(id, actionScoreDepth) as AvailableAction[];
+            return api.getAvailableActions(
+                id,
+                actionScoreDepth,
+            ) as AvailableAction[];
         } catch (err) {
             reportRuntimeError(err, "getAvailableActions");
             return [];
@@ -76,7 +79,8 @@
     function findActorWithActions(startIdx: number): string | null {
         const active = actors.filter((a) => a.active);
         if (active.length === 0) return null;
-        const start = ((startIdx % active.length) + active.length) % active.length;
+        const start =
+            ((startIdx % active.length) + active.length) % active.length;
         for (let i = 0; i < active.length; i++) {
             const actor = active[(start + i) % active.length];
             if (getActions(actor.id).length > 0) return actor.id;
@@ -115,9 +119,7 @@
                 if (!still || !still.active) currentActorId = null;
             }
 
-            availableActions = currentActorId
-                ? getActions(currentActorId)
-                : [];
+            availableActions = currentActorId ? getActions(currentActorId) : [];
         } catch (err) {
             reportRuntimeError(err, "refreshFromWorld");
         }
@@ -289,11 +291,7 @@
             <button class="reset" onclick={reset}>edit world</button>
         </div>
 
-        <DebugPanel
-            {api}
-            {relations}
-            defaultActorName={currentActorName}
-        />
+        <DebugPanel {api} {relations} defaultActorName={currentActorName} />
     {/if}
 </main>
 
