@@ -53,7 +53,7 @@ fn set_actor_active_works() {
             .iter()
             .find(|actor| actor.id == "alice")
             .expect("alice should be in actor info")
-            .active
+            .is_active
     );
 }
 

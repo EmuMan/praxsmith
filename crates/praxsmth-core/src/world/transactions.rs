@@ -96,6 +96,13 @@ impl<'a> WorldTxn<'a> {
         Ok(())
     }
 
+    /// Wrapper for setting an actor's active state that logs undoable actions.
+    pub fn set_actor_hidden(&mut self, name: &str, hidden: bool) -> Result<()> {
+        self.mutation_log
+            .push(self.world.set_actor_hidden(name, hidden)?);
+        Ok(())
+    }
+
     pub fn savepoint(&self) -> usize {
         self.mutation_log.len()
     }

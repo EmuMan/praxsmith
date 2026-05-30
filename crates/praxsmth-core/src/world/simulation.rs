@@ -57,6 +57,8 @@ pub enum Effect {
     Say(Expression),
     Activate(Expression),
     Deactivate(Expression),
+    Hide(Expression),
+    Unhide(Expression),
     Delete(Sentence),
     Create(Sentence, HashMap<String, Expression>),
     Set(Sentence, Expression),
@@ -71,6 +73,8 @@ impl fmt::Display for Effect {
             Effect::Say(expr) => write!(f, "say {}", expr),
             Effect::Activate(expr) => write!(f, "activate {}", expr),
             Effect::Deactivate(expr) => write!(f, "deactivate {}", expr),
+            Effect::Hide(expr) => write!(f, "hide {}", expr),
+            Effect::Unhide(expr) => write!(f, "unhide {}", expr),
             Effect::Delete(sentence) => write!(f, "delete {}", sentence),
             Effect::Create(sentence, field_asgns) => {
                 let field_asgns_str: Vec<_> = field_asgns
@@ -210,6 +214,26 @@ fn process_activation_change(
     match expr.evaluate(world.inner(), bindings)? {
         Constant::ActorRef(actor_id) => world
             .set_actor_active(&bindings.get_or_same(&actor_id), activate)
+            .with_context(|| format!("{}ing actor {} in effect", word, actor_id)),
+        other => bail!(
+            "{}e effect expression must evaluate to actor reference, got {}",
+            word,
+            other
+        ),
+    }
+}
+
+fn process_visibility_change(
+    world: &mut WorldTxn,
+    expr: &Expression,
+    bindings: &Bindings,
+    hidden: bool,
+) -> Result<()> {
+    // hell yeah weird formatting bs
+    let word = if hidden { "hid" } else { "unhid" };
+    match expr.evaluate(world.inner(), bindings)? {
+        Constant::ActorRef(actor_id) => world
+            .set_actor_hidden(&bindings.get_or_same(&actor_id), hidden)
             .with_context(|| format!("{}ing actor {} in effect", word, actor_id)),
         other => bail!(
             "{}e effect expression must evaluate to actor reference, got {}",
@@ -527,6 +551,8 @@ pub fn process_effect(
         }
         Effect::Activate(expr) => process_activation_change(world, expr, bindings, true),
         Effect::Deactivate(expr) => process_activation_change(world, expr, bindings, false),
+        Effect::Hide(expr) => process_visibility_change(world, expr, bindings, true),
+        Effect::Unhide(expr) => process_visibility_change(world, expr, bindings, false),
         Effect::Delete(sentence) => process_delete(world, sentence, bindings),
         Effect::Create(sentence, field_asgns) => {
             process_create(world, sentence, field_asgns, bindings).map(|_| ())

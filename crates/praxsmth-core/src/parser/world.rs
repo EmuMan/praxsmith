@@ -54,11 +54,15 @@ fn parse_actor_goal(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Goal {
 
 fn parse_actor(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> ActorInitInfo {
     // pair is Rule::w_actor:
-    //   "actor" ~ var_name ~ ("as" ~ string)? ~ w_actor_inactive? ~ w_actor_brackets?
+    //   "actor" ~ var_name ~ ("as" ~ string)? ~ w_actor_flag* ~ w_actor_brackets?
+    // The `w_actor_flag` wrapper is silent, so the inner pairs are the concrete
+    // `w_actor_inactive` / `w_actor_hidden` tokens, in whatever order they were
+    // written.
     let mut inner = pair.into_inner();
     let id = inner.next().unwrap().as_str().to_string();
     let mut name = id.clone();
     let mut active = true;
+    let mut hidden = false;
     let mut goals = Vec::new();
 
     for next in inner {
@@ -68,6 +72,9 @@ fn parse_actor(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> ActorInitInfo {
             }
             Rule::w_actor_inactive => {
                 active = false;
+            }
+            Rule::w_actor_hidden => {
+                hidden = true;
             }
             Rule::w_actor_brackets => {
                 for goal_pair in next.into_inner() {
@@ -82,6 +89,7 @@ fn parse_actor(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> ActorInitInfo {
         id,
         name,
         active,
+        hidden,
         goals,
     }
 }

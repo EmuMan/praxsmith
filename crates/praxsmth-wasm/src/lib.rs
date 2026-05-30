@@ -210,7 +210,8 @@ impl From<core::world::simulation::Dialog> for Dialog {
 pub struct ActorInfo {
     id: String,
     name: String,
-    active: bool,
+    is_active: bool,
+    is_hidden: bool,
 }
 
 impl From<core::api::ActorInfo> for ActorInfo {
@@ -218,7 +219,8 @@ impl From<core::api::ActorInfo> for ActorInfo {
         ActorInfo {
             id: actor_info.id,
             name: actor_info.name,
-            active: actor_info.active,
+            is_active: actor_info.is_active,
+            is_hidden: actor_info.is_hidden,
         }
     }
 }

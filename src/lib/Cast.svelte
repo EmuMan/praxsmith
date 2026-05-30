@@ -19,19 +19,27 @@
     {#each actors as actor (actor.id)}
         {@const emotion = emotions[actor.id]}
         {@const mode = modes[actor.id] ?? "manual"}
-        <div class="card" class:current={currentId === actor.id}>
+        <div
+            class="card"
+            class:current={currentId === actor.id}
+            class:inactive={!actor.is_active}
+        >
             <div class="card-head">
                 <span class="card-name">{actor.name}</span>
                 <span class="card-dot" aria-hidden="true"></span>
             </div>
-            <button
-                class="mode"
-                class:auto={mode === "auto"}
-                onclick={() => ontogglemode(actor.id)}
-                title="toggle manual/automatic"
-            >
-                {mode}
-            </button>
+            {#if actor.is_active}
+                <button
+                    class="mode"
+                    class:auto={mode === "auto"}
+                    onclick={() => ontogglemode(actor.id)}
+                    title="toggle manual/automatic"
+                >
+                    {mode}
+                </button>
+            {:else}
+                <span class="mode mode-static">inactive</span>
+            {/if}
             {#if emotion}
                 <span class="tag">felt: {emotion}</span>
             {/if}
@@ -78,6 +86,11 @@
         border-color: #2a2622;
         background: #fffbf3;
         box-shadow: inset 0 0 0 1px #2a2622;
+    }
+
+    .card.inactive {
+        opacity: 0.55;
+        border-style: dashed;
     }
 
     .card-head {
@@ -129,6 +142,12 @@
         background: #2a2622;
         color: #fbf7ef;
         border-color: #2a2622;
+    }
+
+    .mode-static {
+        display: inline-block;
+        cursor: default;
+        font-style: italic;
     }
 
     .tag {

@@ -77,7 +77,7 @@
     // Find the next actor (starting from startIdx, cycling) that has at least
     // one available action. Returns null if none do.
     function findActorWithActions(startIdx: number): string | null {
-        const active = actors.filter((a) => a.active);
+        const active = actors.filter((a) => a.is_active);
         if (active.length === 0) return null;
         const start =
             ((startIdx % active.length) + active.length) % active.length;
@@ -90,7 +90,7 @@
 
     function indexOfActiveActor(id: string | null): number {
         if (!id) return 0;
-        const active = actors.filter((a) => a.active);
+        const active = actors.filter((a) => a.is_active);
         const i = active.findIndex((a) => a.id === id);
         return i === -1 ? 0 : i;
     }
@@ -116,7 +116,7 @@
             // onUpdate firing mid-action doesn't double-advance.
             if (currentActorId) {
                 const still = actors.find((a) => a.id === currentActorId);
-                if (!still || !still.active) currentActorId = null;
+                if (!still || !still.is_active) currentActorId = null;
             }
 
             availableActions = currentActorId ? getActions(currentActorId) : [];
@@ -125,10 +125,22 @@
         }
     }
 
-    function seedTurn() {
-        const start = indexOfActiveActor(currentActorId);
-        currentActorId = findActorWithActions(start);
+    function isHidden(id: string | null): boolean {
+        if (!id) return false;
+        return actors.find((a) => a.id === id)?.is_hidden ?? false;
+    }
+
+    // Point the turn at the first actor with actions from `startIdx`, loading
+    // their actions. Inactive actors are never candidates (findActorWithActions
+    // only considers is_active), so their turns are skipped entirely.
+    function selectNextActor(startIdx: number) {
+        currentActorId = findActorWithActions(startIdx);
         availableActions = currentActorId ? getActions(currentActorId) : [];
+    }
+
+    function seedTurn() {
+        selectNextActor(indexOfActiveActor(currentActorId));
+        autoRunHidden();
     }
 
     function handleDialog(dialog: Dialog) {
@@ -178,9 +190,45 @@
     function advanceTurn() {
         // Move past the current actor before searching, so the same actor
         // doesn't immediately re-run when they still have actions.
-        const startIdx = indexOfActiveActor(currentActorId) + 1;
-        currentActorId = findActorWithActions(startIdx);
-        availableActions = currentActorId ? getActions(currentActorId) : [];
+        selectNextActor(indexOfActiveActor(currentActorId) + 1);
+        autoRunHidden();
+    }
+
+    // Hidden actors are picked for turns like any other active actor, but the
+    // player never drives them: whenever the turn lands on a hidden actor, we
+    // auto-pick and apply their action, then advance — looping until a visible
+    // (non-hidden) actor is up, or no one can act. Deliberately separate from
+    // inactive-skipping (handled in turn selection) and from the per-actor
+    // "auto" mode (which still waits for a manual "next"). Note we cannot gate
+    // this on `pending`, since it runs synchronously inside chooseAction's
+    // pending window.
+    function autoRunHidden() {
+        if (!api) return;
+        let guard = 0;
+        while (isHidden(currentActorId)) {
+            if (guard++ > 10_000) {
+                reportRuntimeError(
+                    new Error("hidden actor turn limit exceeded"),
+                    "autoRunHidden",
+                );
+                break;
+            }
+            // Turn selection only lands on actors with actions, but guard in
+            // case a hidden actor's options vanished out from under us.
+            if (availableActions.length === 0) break;
+            const actorId = currentActorId!;
+            const idx = pickAutoChoice(availableActions);
+            try {
+                api.applyAction(actorId, idx);
+            } catch (err) {
+                reportRuntimeError(err, "applyAction");
+                break;
+            }
+            // applyAction fires onUpdate -> refreshFromApi, which may have
+            // already cleared currentActorId if this actor deactivated itself;
+            // advancing past the actor that just acted is correct either way.
+            selectNextActor(indexOfActiveActor(actorId) + 1);
+        }
     }
 
     function chooseAction(index: number) {
@@ -233,7 +281,10 @@
     let currentActorMode: ActorMode | null = $derived(
         currentActorId ? (modes[currentActorId] ?? "manual") : null,
     );
-    let visibleActors = $derived(actors.filter((a) => a.active));
+    // The cast shows everyone the player is meant to see: hidden actors are
+    // omitted entirely (they act behind the scenes), while inactive actors
+    // still appear — they just don't take turns.
+    let visibleActors = $derived(actors.filter((a) => !a.is_hidden));
     let noOneCanAct = $derived(
         visibleActors.length > 0 && currentActorId === null,
     );

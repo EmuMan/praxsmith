@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt};
 
 use anyhow::{Context, Result, bail};
+use indexmap::IndexMap;
 
 use crate::{
     types::{FieldType, FieldTypes, RelationType, RelationTypeData, RelationTypeMap},
@@ -323,6 +324,7 @@ pub struct ActorInitInfo {
     pub id: String,
     pub name: String,
     pub active: bool,
+    pub hidden: bool,
     pub goals: Vec<Goal>,
 }
 
@@ -347,16 +349,18 @@ pub struct Actor {
     // Quick access field for the singular emotion they might have
     pub emotion: Option<RelationHandle>,
     pub is_active: bool,
+    pub is_hidden: bool,
     pub goals: Vec<Goal>,
 }
 
 impl Actor {
-    pub fn new(name: String, is_active: bool, goals: Vec<Goal>) -> Self {
+    pub fn new(name: String, is_active: bool, is_hidden: bool, goals: Vec<Goal>) -> Self {
         Actor {
             name,
             edges: Vec::new(),
             emotion: None,
             is_active,
+            is_hidden,
             goals,
         }
     }
@@ -389,6 +393,10 @@ pub enum WorldMutation {
         actor_id: String,
         prior_active: bool,
     },
+    ActorSetHidden {
+        actor_id: String,
+        prior_hidden: bool,
+    },
     ActorEdgesUpdated {
         actor_id: String,
         prior_edges: Vec<ActorToRelation>,
@@ -400,7 +408,10 @@ pub enum WorldMutation {
 }
 
 pub struct World {
-    actors: HashMap<String, Actor>,
+    // IndexMap (not HashMap) so actors iterate in the order they were defined
+    // and loaded, keeping the frontend's cast display deterministic across
+    // runs. Actors are never removed, so insertion order is stable.
+    actors: IndexMap<String, Actor>,
     relation_type_map: RelationTypeMap,
     relation_store: RelationStore,
 }
@@ -408,7 +419,7 @@ pub struct World {
 impl World {
     pub fn new(type_map: RelationTypeMap) -> Self {
         World {
-            actors: HashMap::new(),
+            actors: IndexMap::new(),
             relation_type_map: type_map,
             relation_store: RelationStore::new(),
         }
@@ -473,7 +484,12 @@ impl World {
         }
         self.actors.insert(
             info.id.clone(),
-            Actor::new(info.name.clone(), info.active, info.goals.clone()),
+            Actor::new(
+                info.name.clone(),
+                info.active,
+                info.hidden,
+                info.goals.clone(),
+            ),
         );
         Ok(())
     }
@@ -500,6 +516,19 @@ impl World {
         Ok(WorldMutation::ActorSetActive {
             actor_id: name.to_string(),
             prior_active,
+        })
+    }
+
+    pub fn set_actor_hidden(&mut self, name: &str, hidden: bool) -> Result<WorldMutation> {
+        let actor = self
+            .actors
+            .get_mut(name)
+            .with_context(|| format!("looking up actor {} for activation", name))?;
+        let prior_hidden = actor.is_active;
+        actor.is_hidden = hidden;
+        Ok(WorldMutation::ActorSetHidden {
+            actor_id: name.to_string(),
+            prior_hidden,
         })
     }
 
@@ -1488,6 +1517,19 @@ impl World {
                     )
                 })?;
                 actor.is_active = prior_active;
+                Ok(())
+            }
+            WorldMutation::ActorSetHidden {
+                actor_id,
+                prior_hidden,
+            } => {
+                let actor = self.actors.get_mut(&actor_id).with_context(|| {
+                    format!(
+                        "looking up actor {} for undoing hidden state change",
+                        actor_id
+                    )
+                })?;
+                actor.is_hidden = prior_hidden;
                 Ok(())
             }
             WorldMutation::ActorEdgesUpdated {

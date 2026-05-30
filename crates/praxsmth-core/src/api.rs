@@ -22,7 +22,8 @@ use crate::{
 pub struct ActorInfo {
     pub id: String,
     pub name: String,
-    pub active: bool,
+    pub is_active: bool,
+    pub is_hidden: bool,
 }
 
 pub struct RelationInfo {
@@ -238,7 +239,8 @@ impl PraxsmthApi {
             .map(|(id, actor)| ActorInfo {
                 id: id.clone(),
                 name: actor.name.clone(),
-                active: actor.is_active,
+                is_active: actor.is_active,
+                is_hidden: actor.is_hidden,
             })
             .collect()
     }

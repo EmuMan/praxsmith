@@ -155,6 +155,16 @@ pub fn parse_effect(pair: Pair<Rule>, pratt: &PrattParser<Rule>) -> Effect {
             let expr_pair = inner.next().unwrap();
             Effect::Deactivate(parse_expression(expr_pair, pratt))
         }
+        Rule::effect_hide => {
+            // "hide" ~ expression
+            let expr_pair = inner.next().unwrap();
+            Effect::Hide(parse_expression(expr_pair, pratt))
+        }
+        Rule::effect_unhide => {
+            // "unhide" ~ expression
+            let expr_pair = inner.next().unwrap();
+            Effect::Unhide(parse_expression(expr_pair, pratt))
+        }
         Rule::effect_delete => {
             // "delete" ~ sentence
             let sentence_pair = inner.next().unwrap();

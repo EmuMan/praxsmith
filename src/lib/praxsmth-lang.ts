@@ -35,6 +35,7 @@ const STRUCTURE_KEYWORDS = new Set([
   "goal",
   "delta",
   "inactive",
+  "hidden",
   "as",
 ]);
 
@@ -43,6 +44,8 @@ const EFFECT_KEYWORDS = new Set([
   "say",
   "activate",
   "deactivate",
+  "hide",
+  "unhide",
   "delete",
   "create",
   "set",
