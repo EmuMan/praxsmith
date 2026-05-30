@@ -48,8 +48,8 @@ practice move (Actor, From, To) {
 `;
 
 export const DEFAULT_WORLD = `
-actor house as "House" inactive
-actor street as "Street" inactive
+actor house as "House" hidden
+actor street as "Street" hidden
 
 actor jacob as "Jacob" {
   goal (10): delta count Person where Person.feels.happy
